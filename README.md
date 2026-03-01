@@ -1,14 +1,34 @@
-# Fiverr Expo App
+# Fiverr Expo Mobile App
 
-An Expo app that supports Expo Go on both iOS and Android.
+A professional mobile application for managing Fiverr clients, built with React Native and Expo.
 
-## Prerequisites
+## Features
 
-- Node.js (v14 or higher)
-- npm or yarn
-- Expo Go app installed on your iOS or Android device
-- For iOS: macOS with Xcode (optional, for simulator)
-- For Android: Android Studio (optional, for emulator)
+- **Client Management**: View and manage all your Fiverr clients
+- **Messages**: Chat interface with message history
+- **AI Analysis**: Get AI-powered insights about your clients and conversations
+- **Client Information**: Detailed client profiles with ratings, reviews, and more
+- **Modern UI**: Professional dark theme matching the desktop application
+
+## Project Structure
+
+```
+fiverr-expo/
+├── App.js                 # Main app entry point
+├── components/            # Reusable UI components
+│   ├── ClientList.js     # Client list sidebar component
+│   ├── ClientListItem.js # Individual client item
+│   ├── MessageBubble.js # Chat message bubble
+│   └── TabButton.js      # Tab navigation button
+├── screens/              # Screen components
+│   ├── ClientsScreen.js  # Main clients screen
+│   └── ClientDetailsScreen.js # Client details with tabs
+├── constants/            # App constants
+│   └── theme.js          # Theme colors, typography, spacing
+├── utils/                # Utility functions
+│   └── formatTime.js     # Time formatting utilities
+└── package.json          # Dependencies
+```
 
 ## Installation
 
@@ -17,50 +37,43 @@ An Expo app that supports Expo Go on both iOS and Android.
 npm install
 ```
 
-## Running the App
-
-### Start the development server:
+2. Start the development server:
 ```bash
 npm start
 ```
 
-This will start the Expo development server and display a QR code.
+3. Run on your device:
+- Press `i` for iOS simulator
+- Press `a` for Android emulator
+- Scan QR code with Expo Go app on your phone
 
-### Run on iOS:
-```bash
-npm run ios
-```
-Or scan the QR code with the Expo Go app on your iOS device.
+## Dependencies
 
-### Run on Android:
-```bash
-npm run android
-```
-Or scan the QR code with the Expo Go app on your Android device.
+- **expo**: Expo framework
+- **@react-navigation/native**: Navigation library
+- **expo-linear-gradient**: Gradient backgrounds
+- **expo-vector-icons**: Icon library
+- **react-native-reanimated**: Animations
+- **react-native-gesture-handler**: Gesture handling
 
-### Run on Web:
-```bash
-npm run web
-```
+## Design System
 
-## Using Expo Go
+The app uses a consistent design system defined in `constants/theme.js`:
 
-1. Install Expo Go from the App Store (iOS) or Google Play Store (Android)
-2. Start the development server with `npm start`
-3. Scan the QR code displayed in the terminal with:
-   - **iOS**: Camera app (iOS 13+) or Expo Go app
-   - **Android**: Expo Go app
+- **Colors**: Dark theme with gradient accents
+- **Typography**: Consistent font sizes and weights
+- **Spacing**: Standard spacing scale
+- **Border Radius**: Consistent rounded corners
 
-## Project Structure
+## Features in Development
 
-- `App.js` - Main app component
-- `index.js` - Entry point that registers the app
-- `app.json` - Expo configuration
-- `package.json` - Dependencies and scripts
-- `babel.config.js` - Babel configuration
+- [ ] Real-time message synchronization
+- [ ] Push notifications
+- [ ] Offline support
+- [ ] Data persistence
+- [ ] API integration
+- [ ] Authentication
 
-## Notes
+## License
 
-- This app is configured to work with Expo Go, which means you can test it without building a native app
-- For production builds, you'll need to use EAS Build or Expo's build service
-- Make sure your device and computer are on the same network when using Expo Go
+Private project
