@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import ClientList from '../components/ClientList';
 import ClientDetailsScreen from './ClientDetailsScreen';
 import OffcanvasSidebar from '../components/OffcanvasSidebar';
 import BottomBar from '../components/BottomBar';
+import TranslationModal from '../components/TranslationModal';
 import { colors } from '../constants/theme';
 
 // Mock data - replace with actual data source
@@ -47,6 +49,8 @@ const ClientsScreen = () => {
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [clients] = useState(mockClients);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
+  const [translationInitialText, setTranslationInitialText] = useState('');
 
   const selectedClient = clients.find((c) => c.id === selectedClientId);
   const selectedMessages = selectedClientId ? (mockMessages[selectedClientId] || []) : [];
@@ -65,8 +69,25 @@ const ClientsScreen = () => {
     setIsSidebarOpen(!isSidebarOpen);
   };
 
+  const handleOpenTranslationModal = (initialText = '') => {
+    setTranslationInitialText(initialText);
+    setIsTranslationModalVisible(true);
+  };
+
+  const handleTranslationTextReady = (translatedText) => {
+    // Handle the translated text - you can use it to send a message, etc.
+    console.log('Translated text ready:', translatedText);
+    // You can integrate this with your message sending logic
+  };
+
+  const handleUseInputText = (inputText) => {
+    // Handle using the input text (voice detected text)
+    console.log('Input text ready:', inputText);
+    // You can integrate this with your message input logic
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView edges={['top','bottom']} style={styles.container}>
       <View style={styles.content}>
         {/* Offcanvas Sidebar */}
         <OffcanvasSidebar
@@ -111,6 +132,24 @@ const ClientsScreen = () => {
         onMenuToggle={handleMenuToggle}
         isMenuOpen={isSidebarOpen}
       />
+
+      {/* Translation Modal */}
+      <TranslationModal
+        visible={isTranslationModalVisible}
+        onClose={() => setIsTranslationModalVisible(false)}
+        initialText={translationInitialText}
+        targetLanguage={selectedClient?.language === 'English' ? 'en' : selectedClient?.language?.toLowerCase() || 'en'}
+        onTextReady={handleTranslationTextReady}
+        onUseInputText={handleUseInputText}
+      />
+
+      {/* Floating Translation Button */}
+      <TouchableOpacity
+        style={styles.translateFloatingButton}
+        onPress={() => handleOpenTranslationModal()}
+      >
+        <Ionicons name="language" size={24} color={colors.text.white} />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -151,6 +190,22 @@ const styles = StyleSheet.create({
     color: '#a0a0a0',
     textAlign: 'center',
     lineHeight: 24,
+  },
+  translateFloatingButton: {
+    position: 'absolute',
+    bottom: 80,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.accent.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });
 

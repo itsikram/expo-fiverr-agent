@@ -22,12 +22,15 @@ const styles = StyleSheet.create({
   tab: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.md,
+    justifyContent: 'center',
     paddingHorizontal: spacing.xl,
     marginRight: spacing.sm,
     borderTopLeftRadius: borderRadius.md,
     borderTopRightRadius: borderRadius.md,
     backgroundColor: 'transparent',
+    overflow: 'hidden',
+    height: 48,
+    flexShrink: 0,
   },
   tabActive: {
     backgroundColor: colors.background.card,

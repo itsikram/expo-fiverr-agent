@@ -12,11 +12,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import TabButton from '../components/TabButton';
 import MessageBubble from '../components/MessageBubble';
+import TranslationModal from '../components/TranslationModal';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
 const ClientDetailsScreen = ({ client, messages = [], analysis = {} }) => {
   const [activeTab, setActiveTab] = useState('messages');
   const [messageText, setMessageText] = useState('');
+  const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
 
   const renderHeader = () => (
     <LinearGradient
@@ -42,12 +44,7 @@ const ClientDetailsScreen = ({ client, messages = [], analysis = {} }) => {
                 <Text style={styles.infoText}>{client.country}</Text>
               </View>
             )}
-            {client?.language && (
-              <View style={styles.infoBadge}>
-                <Text style={styles.infoIcon}>💬</Text>
-                <Text style={styles.infoText}>{client.language}</Text>
-              </View>
-            )}
+
             {client?.review_avg_rating && (
               <View style={styles.infoBadge}>
                 <Text style={styles.infoIcon}>⭐</Text>
@@ -125,7 +122,10 @@ const ClientDetailsScreen = ({ client, messages = [], analysis = {} }) => {
           onChangeText={setMessageText}
           multiline
         />
-        <TouchableOpacity style={styles.translateButton}>
+        <TouchableOpacity
+          style={styles.translateButton}
+          onPress={() => setIsTranslationModalVisible(true)}
+        >
           <Text style={styles.translateText}>🌐</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.sendButton}>
@@ -218,6 +218,26 @@ const ClientDetailsScreen = ({ client, messages = [], analysis = {} }) => {
           {renderTabContent()}
         </View>
       </LinearGradient>
+
+      {/* Translation Modal */}
+      <TranslationModal
+        visible={isTranslationModalVisible}
+        onClose={() => setIsTranslationModalVisible(false)}
+        initialText={messageText}
+        targetLanguage={
+          client?.language === 'English'
+            ? 'en'
+            : client?.language?.toLowerCase() || 'en'
+        }
+        onTextReady={(translatedText) => {
+          setMessageText(translatedText);
+          setIsTranslationModalVisible(false);
+        }}
+        onUseInputText={(inputText) => {
+          setMessageText(inputText);
+          setIsTranslationModalVisible(false);
+        }}
+      />
     </SafeAreaView>
   );
 };

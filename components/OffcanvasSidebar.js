@@ -102,6 +102,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     flexDirection: 'row',
+    paddingTop: 70,
   },
   overlay: {
     flex: 1,
