@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useWebSocket } from '../context/WebSocketContext';
 import ClientList from '../components/ClientList';
 import ClientDetailsScreen from './ClientDetailsScreen';
 import OffcanvasSidebar from '../components/OffcanvasSidebar';
@@ -9,60 +10,94 @@ import BottomBar from '../components/BottomBar';
 import TranslationModal from '../components/TranslationModal';
 import { colors } from '../constants/theme';
 
-// Mock data - replace with actual data source
-const mockClients = [
-  {
-    id: 1,
-    name: 'John Doe',
-    username: 'johndoe',
-    company: 'Tech Corp',
-    country: 'USA',
-    language: 'English',
-    review_avg_rating: 4.8,
-    review_count: 125,
-    last_message_timestamp: '2024-01-15 10:30:00',
-  },
-  {
-    id: 2,
-    name: 'Jane Smith',
-    username: 'janesmith',
-    company: 'Design Studio',
-    country: 'UK',
-    language: 'English',
-    review_avg_rating: 4.9,
-    review_count: 89,
-    last_message_timestamp: '2024-01-14 15:20:00',
-  },
-];
-
-const mockMessages = {
-  1: [
-    { text: 'Hello, I need a website design', sender: 'client', time: '2024-01-15 10:00:00' },
-    { text: 'Sure! I can help you with that. What kind of design are you looking for?', sender: 'me', time: '2024-01-15 10:05:00' },
-  ],
-  2: [
-    { text: 'Hi, are you available for a new project?', sender: 'client', time: '2024-01-14 15:00:00' },
-  ],
-};
-
 const ClientsScreen = () => {
+  const {
+    isConnected,
+    connectionStatus,
+    clients,
+    messages,
+    clientData,
+    selectedConversationId,
+    setSelectedConversationId,
+    requestAllData,
+    requestClientList,
+    requestMessages,
+    requestClientData,
+  } = useWebSocket();
+
   const [selectedClientId, setSelectedClientId] = useState(null);
-  const [clients] = useState(mockClients);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
   const [translationInitialText, setTranslationInitialText] = useState('');
 
-  const selectedClient = clients.find((c) => c.id === selectedClientId);
-  const selectedMessages = selectedClientId ? (mockMessages[selectedClientId] || []) : [];
+  // Request data when connected
+  useEffect(() => {
+    if (isConnected) {
+      console.log('[ClientsScreen] Connected, requesting data...');
+      requestAllData();
+    }
+  }, [isConnected, requestAllData]);
+
+  // Find selected client
+  const selectedClient = clients.find((c) => {
+    if (selectedClientId) {
+      return c.id === selectedClientId || c.conversationId === selectedClientId || c.username === selectedClientId;
+    }
+    return false;
+  });
+
+  // Get messages for selected client
+  const selectedMessages = React.useMemo(() => {
+    if (!selectedClient) return [];
+    
+    const conversationId = selectedClient.conversationId || selectedClient.username || selectedClient.id;
+    return messages[conversationId] || [];
+  }, [selectedClient, messages]);
 
   const handleSelectClient = (clientId) => {
     setSelectedClientId(clientId);
     setIsSidebarOpen(false); // Close sidebar when client is selected
+    
+    // Request client data and messages for selected client
+    const client = clients.find((c) => c.id === clientId || c.conversationId === clientId || c.username === clientId);
+    if (client) {
+      const conversationId = client.conversationId || client.username || client.id;
+      setSelectedConversationId(conversationId);
+      
+      // Request specific client data and messages
+      requestClientData(conversationId);
+      requestMessages();
+    }
   };
 
   const handleDeleteClient = (clientId) => {
     // Handle delete logic
-    console.log('Delete client:', clientId);
+    Alert.alert(
+      'Delete Client',
+      'Are you sure you want to remove this client?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            console.log('Delete client:', clientId);
+            // TODO: Implement actual delete logic
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRefetch = () => {
+    // Handle refetch logic
+    console.log('Refetching clients...');
+    if (isConnected) {
+      requestAllData();
+      requestClientList();
+    } else {
+      Alert.alert('Not Connected', 'Please wait for connection to server.');
+    }
   };
 
   const handleMenuToggle = () => {
@@ -86,13 +121,39 @@ const ClientsScreen = () => {
     // You can integrate this with your message input logic
   };
 
+  // Connection status indicator
+  const getConnectionStatusColor = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return colors.accent.success || '#4CAF50';
+      case 'connecting':
+        return colors.accent.warning || '#FF9800';
+      case 'error':
+      case 'disconnected':
+        return colors.accent.error || '#F44336';
+      default:
+        return colors.text.secondary;
+    }
+  };
+
   return (
-    <SafeAreaView edges={['top','bottom']} style={styles.container}>
+    <View style={styles.container}>
+      {/* Connection Status Bar */}
+      <View style={[styles.connectionBar, { backgroundColor: getConnectionStatusColor() }]}>
+        <Text style={styles.connectionText}>
+          {connectionStatus === 'connected' && '🟢 Connected'}
+          {connectionStatus === 'connecting' && '🟡 Connecting...'}
+          {connectionStatus === 'disconnected' && '🔴 Disconnected'}
+          {connectionStatus === 'error' && '🔴 Connection Error'}
+        </Text>
+      </View>
+
       <View style={styles.content}>
         {/* Offcanvas Sidebar */}
         <OffcanvasSidebar
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
+          onRefetch={handleRefetch}
         >
           <ClientList
             clients={clients}
@@ -117,10 +178,27 @@ const ClientsScreen = () => {
             >
               <View style={styles.emptyContent}>
                 <Text style={styles.emptyIcon}>👥</Text>
-                <Text style={styles.emptyTitle}>Select a Client</Text>
-                <Text style={styles.emptyText}>
-                  Choose a client from the list to view their details, messages, and analysis.
+                <Text style={styles.emptyTitle}>
+                  {clients.length === 0 ? 'No Clients' : 'Select a Client'}
                 </Text>
+                <Text style={styles.emptyText}>
+                  {clients.length === 0
+                    ? isConnected
+                      ? 'No clients found. Make sure the browser extension is connected and fetch clients.'
+                      : 'Waiting for connection to server...'
+                    : 'Choose a client from the list to view their details, messages, and analysis.'}
+                </Text>
+                {!isConnected && (
+                  <TouchableOpacity
+                    style={styles.retryButton}
+                    onPress={() => {
+                      // The WebSocket context will handle reconnection
+                      requestAllData();
+                    }}
+                  >
+                    <Text style={styles.retryButtonText}>Retry Connection</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </LinearGradient>
           )}
@@ -150,20 +228,47 @@ const ClientsScreen = () => {
       >
         <Ionicons name="language" size={24} color={colors.text.white} />
       </TouchableOpacity>
-    </SafeAreaView>
+    </View>
   );
 };
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
     backgroundColor: colors.background.primary,
+    paddingTop: 40,
+  },
+  connectionBar: {
+    height: 16,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+
+  },
+  connectionText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   content: {
     flex: 1,
   },
   details: {
     flex: 1,
+  },
+  retryButton: {
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: colors.accent.primary,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: colors.text.white,
+    fontSize: 16,
+    fontWeight: '600',
   },
   emptyState: {
     flex: 1,

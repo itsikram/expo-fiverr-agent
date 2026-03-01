@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 import { formatTime } from '../utils/formatTime';
 
@@ -12,6 +13,13 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
       return (parts[0][0] + parts[1][0]).toUpperCase();
     }
     return name.substring(0, 2).toUpperCase();
+  };
+
+  const handleDeletePress = (e) => {
+    e.stopPropagation();
+    if (onDelete) {
+      onDelete();
+    }
   };
 
   return (
@@ -48,6 +56,15 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
               </Text>
             )}
             </View>
+            {onDelete && (
+              <TouchableOpacity
+                style={styles.deleteButton}
+                onPress={handleDeletePress}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="trash-outline" size={20} color="rgba(255, 255, 255, 0.9)" />
+              </TouchableOpacity>
+            )}
           </View>
         </LinearGradient>
       ) : (
@@ -72,6 +89,15 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
               </Text>
             )}
           </View>
+          {onDelete && (
+            <TouchableOpacity
+              style={styles.deleteButton}
+              onPress={handleDeletePress}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={20} color={colors.text.secondary} />
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </TouchableOpacity>
@@ -158,6 +184,15 @@ const styles = StyleSheet.create({
   timestampSelected: {
     fontSize: typography.sizes.xs,
     color: 'rgba(255, 255, 255, 0.8)',
+  },
+  deleteButton: {
+    padding: spacing.sm,
+    marginLeft: spacing.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: borderRadius.sm,
+    minWidth: 36,
+    minHeight: 36,
   },
 });
 

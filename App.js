@@ -1,15 +1,18 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaView, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
+import { WebSocketProvider } from './context/WebSocketContext';
 import ClientsScreen from './screens/ClientsScreen';
 import { colors } from './constants/theme';
 
 export default function App() {
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar style="light" />
-      <ClientsScreen />
-    </SafeAreaView>
+    <WebSocketProvider>
+      <View style={styles.container}>
+        <StatusBar style="light" />
+        <ClientsScreen />
+      </View>
+    </WebSocketProvider>
   );
 }
 

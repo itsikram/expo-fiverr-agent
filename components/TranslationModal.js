@@ -57,6 +57,7 @@ const TranslationModal = ({
   const [showLanguagePicker, setShowLanguagePicker] = useState(false);
   const [recognizedTextBuffer, setRecognizedTextBuffer] = useState('');
   const [lastTranslationText, setLastTranslationText] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
   
   const autoTranslateTimerRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -65,6 +66,13 @@ const TranslationModal = ({
     if (visible && initialText) {
       setInputText(initialText);
       setLastTranslationText(initialText);
+    }
+    if (!visible) {
+      setInputText('');
+      setTranslatedText('');
+      setVoiceStatus('');
+      setIsListening(false);
+      setShowLanguagePicker(false);
     }
     return () => {
       if (autoTranslateTimerRef.current) {
@@ -156,7 +164,6 @@ const TranslationModal = ({
 
   const startVoiceRecognition = async () => {
     try {
-      // Check if voice recognition is available
       if (Platform.OS === 'web') {
         Alert.alert(
           'Not Available',
@@ -172,17 +179,14 @@ const TranslationModal = ({
       setRecognizedTextBuffer('');
       setLastTranslationText('');
 
-      // Try to use @react-native-voice/voice if available
       let Voice = null;
       try {
         Voice = require('@react-native-voice/voice').default;
       } catch (e) {
-        // Package not installed, use fallback
         console.log('Voice recognition package not installed');
       }
 
       if (Voice) {
-        // Setup voice recognition event handlers
         Voice.onSpeechStart = () => {
           setVoiceStatus('🎤 Listening continuously... Speak now!');
         };
@@ -197,7 +201,7 @@ const TranslationModal = ({
 
         Voice.onSpeechError = (e) => {
           console.error('Speech recognition error:', e);
-          if (e.error?.code !== '7') { // Ignore "no match" errors
+          if (e.error?.code !== '7') {
             setVoiceStatus(`⚠️ ${e.error?.message || 'Error'} (continuing)`);
             setTimeout(() => {
               if (isListening) {
@@ -208,13 +212,11 @@ const TranslationModal = ({
         };
 
         Voice.onSpeechEnd = () => {
-          // Continue listening if still active
           if (isListening) {
             setVoiceStatus('🎤 Listening... (waiting for speech)');
           }
         };
 
-        // Start recognition with Bengali and English support
         try {
           await Voice.start(['bn-BD', 'en']);
           setVoiceStatus('🎤 Listening continuously... Speak now!');
@@ -222,7 +224,6 @@ const TranslationModal = ({
           throw new Error(`Failed to start voice recognition: ${startError.message}`);
         }
       } else {
-        // Fallback: Show instructions
         Alert.alert(
           'Voice Recognition Setup Required',
           'To use voice recognition, please install @react-native-voice/voice:\n\n' +
@@ -250,12 +251,10 @@ const TranslationModal = ({
     const newPhrase = text.trim();
     const currentText = inputText;
     
-    // Avoid duplicate phrases
     if (currentText && currentText.trim().endsWith(newPhrase)) {
       return;
     }
 
-    // Append new phrase to existing text
     const newText = currentText
       ? currentText.trim() + ' ' + newPhrase
       : newPhrase;
@@ -269,7 +268,6 @@ const TranslationModal = ({
     setVoiceStatus('⏹️ Stopped');
     setTimeout(() => setVoiceStatus(''), 2000);
 
-    // Stop actual voice recognition if implemented
     try {
       const Voice = require('@react-native-voice/voice').default;
       if (Voice) {
@@ -324,178 +322,212 @@ const TranslationModal = ({
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType="fade"
       transparent={true}
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
-        <View style={styles.modalContainer}>
-          <LinearGradient
-            colors={[colors.background.card, colors.background.cardLight]}
-            style={styles.modalContent}
-          >
-            {/* Header */}
-            <View style={styles.header}>
-              <Text style={styles.headerTitle}>🌐 Translate & Voice Input</Text>
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <Ionicons name="close" size={24} color={colors.text.primary} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-              {/* Language Selection */}
-              <View style={styles.section}>
-                <Text style={styles.label}>Target Language:</Text>
-                <TouchableOpacity
-                  style={styles.languageButton}
-                  onPress={() => setShowLanguagePicker(!showLanguagePicker)}
-                >
-                  <Text style={styles.languageButtonText}>{selectedLanguageName}</Text>
-                  <Ionicons
-                    name={showLanguagePicker ? 'chevron-up' : 'chevron-down'}
-                    size={20}
-                    color={colors.text.primary}
-                  />
+      <TouchableOpacity
+        style={styles.modalOverlay}
+        activeOpacity={1}
+        onPress={onClose}
+      >
+        <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              {/* Header */}
+              <View style={styles.header}>
+                <Text style={styles.headerTitle}>🌐 Translate & Voice Input</Text>
+                <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+                  <Ionicons name="close" size={22} color={colors.text.secondary} />
                 </TouchableOpacity>
-                {showLanguagePicker && (
-                  <View style={styles.languagePicker}>
-                    <ScrollView style={styles.languageList} nestedScrollEnabled>
-                      {LANGUAGES.map((lang) => (
-                        <TouchableOpacity
-                          key={lang.code}
-                          style={[
-                            styles.languageItem,
-                            selectedLanguage === lang.code && styles.languageItemSelected,
-                          ]}
-                          onPress={() => {
-                            setSelectedLanguage(lang.code);
-                            setShowLanguagePicker(false);
-                          }}
-                        >
-                          <Text
-                            style={[
-                              styles.languageItemText,
-                              selectedLanguage === lang.code && styles.languageItemTextSelected,
-                            ]}
-                          >
-                            {lang.name}
-                          </Text>
-                          {selectedLanguage === lang.code && (
-                            <Ionicons name="checkmark" size={20} color={colors.accent.success} />
-                          )}
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                )}
               </View>
 
-              {/* Voice Input Button */}
-              <View style={styles.section}>
+              <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {/* Language Selection */}
+                <View style={styles.section}>
+                  <View style={styles.languageContainer}>
+                    <Text style={styles.label}>Target Language:</Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.languageButton,
+                        showLanguagePicker && styles.languageButtonActive,
+                      ]}
+                      onPress={() => setShowLanguagePicker(!showLanguagePicker)}
+                    >
+                      <Text style={styles.languageButtonText}>{selectedLanguageName}</Text>
+                      <Ionicons
+                        name={showLanguagePicker ? 'chevron-up' : 'chevron-down'}
+                        size={18}
+                        color={colors.text.primary}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  {showLanguagePicker && (
+                    <View style={styles.languagePicker}>
+                      <ScrollView
+                        style={styles.languageList}
+                        nestedScrollEnabled
+                        showsVerticalScrollIndicator={true}
+                      >
+                        {LANGUAGES.map((lang) => (
+                          <TouchableOpacity
+                            key={lang.code}
+                            style={[
+                              styles.languageItem,
+                              selectedLanguage === lang.code && styles.languageItemSelected,
+                            ]}
+                            onPress={() => {
+                              setSelectedLanguage(lang.code);
+                              setShowLanguagePicker(false);
+                            }}
+                          >
+                            <Text
+                              style={[
+                                styles.languageItemText,
+                                selectedLanguage === lang.code && styles.languageItemTextSelected,
+                              ]}
+                            >
+                              {lang.name}
+                            </Text>
+                            {selectedLanguage === lang.code && (
+                              <Ionicons name="checkmark" size={18} color={colors.accent.success} />
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+
+                {/* Voice Input Button */}
+                <View style={styles.section}>
+                  <View style={styles.voiceContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.voiceButton,
+                        isListening && styles.voiceButtonActive,
+                        isTranslating && styles.buttonDisabled,
+                      ]}
+                      onPress={handleVoiceInput}
+                      disabled={isTranslating}
+                    >
+                      <Ionicons
+                        name={isListening ? 'stop-circle' : 'mic'}
+                        size={18}
+                        color={colors.text.white}
+                      />
+                      <Text style={styles.voiceButtonText}>
+                        {isListening ? '⏹️ Stop Listening' : '🎤 Voice Input (Bangla & English)'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  {voiceStatus ? (
+                    <Text style={styles.voiceStatus}>{voiceStatus}</Text>
+                  ) : null}
+                </View>
+
+                {/* Input Text */}
+                <View style={styles.section}>
+                  <Text style={styles.label}>Your Message:</Text>
+                  <View
+                    style={[
+                      styles.textInputContainer,
+                      inputFocused && styles.textInputContainerFocused,
+                    ]}
+                  >
+                    <TextInput
+                      style={styles.textInput}
+                      multiline
+                      numberOfLines={4}
+                      placeholder="Type your message here or use voice input..."
+                      placeholderTextColor={colors.text.secondary}
+                      value={inputText}
+                      onChangeText={setInputText}
+                      onFocus={() => setInputFocused(true)}
+                      onBlur={() => setInputFocused(false)}
+                      editable={!isListening}
+                    />
+                  </View>
+                </View>
+
+                {/* Translate Button */}
                 <TouchableOpacity
                   style={[
-                    styles.voiceButton,
-                    isListening && styles.voiceButtonActive,
+                    styles.translateButton,
+                    (isTranslating || !inputText.trim()) && styles.buttonDisabled,
                   ]}
-                  onPress={handleVoiceInput}
-                  disabled={isTranslating}
+                  onPress={handleTranslate}
+                  disabled={isTranslating || !inputText.trim()}
                 >
-                  <Ionicons
-                    name={isListening ? 'stop' : 'mic'}
-                    size={20}
-                    color={colors.text.white}
-                  />
-                  <Text style={styles.voiceButtonText}>
-                    {isListening ? '⏹️ Stop Listening' : '🎤 Voice Input (Bangla & English)'}
+                  {isTranslating ? (
+                    <ActivityIndicator size="small" color={colors.text.white} />
+                  ) : (
+                    <Text style={styles.translateButtonIcon}>🔄</Text>
+                  )}
+                  <Text style={styles.translateButtonText}>
+                    {isTranslating ? 'Translating...' : 'Translate'}
                   </Text>
                 </TouchableOpacity>
-                {voiceStatus ? (
-                  <Text style={styles.voiceStatus}>{voiceStatus}</Text>
-                ) : null}
-              </View>
 
-              {/* Input Text */}
-              <View style={styles.section}>
-                <Text style={styles.label}>Your Message:</Text>
-                <TextInput
-                  style={styles.textInput}
-                  multiline
-                  numberOfLines={4}
-                  placeholder="Type your message here or use voice input..."
-                  placeholderTextColor={colors.text.secondary}
-                  value={inputText}
-                  onChangeText={setInputText}
-                  editable={!isListening}
-                />
-              </View>
+                {/* Translated Text */}
+                <View style={styles.section}>
+                  <Text style={styles.label}>Translated Message:</Text>
+                  <View style={styles.textInputContainer}>
+                    <TextInput
+                      style={[styles.textInput, styles.translatedInput]}
+                      multiline
+                      numberOfLines={4}
+                      placeholder="Translated message will appear here..."
+                      placeholderTextColor={colors.text.secondary}
+                      value={translatedText}
+                      editable={false}
+                    />
+                  </View>
+                </View>
 
-              {/* Translate Button */}
-              <TouchableOpacity
-                style={[styles.translateButton, isTranslating && styles.buttonDisabled]}
-                onPress={handleTranslate}
-                disabled={isTranslating || !inputText.trim()}
-              >
-                {isTranslating ? (
-                  <ActivityIndicator color={colors.text.white} />
-                ) : (
-                  <Ionicons name="refresh" size={20} color={colors.text.white} />
-                )}
-                <Text style={styles.translateButtonText}>
-                  {isTranslating ? '⏳ Translating...' : '🔄 Translate'}
-                </Text>
-              </TouchableOpacity>
+                {/* Action Buttons */}
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity
+                    style={[
+                      styles.actionButton,
+                      styles.useInputButton,
+                      !inputText.trim() && styles.buttonDisabled,
+                    ]}
+                    onPress={handleUseInputText}
+                    disabled={!inputText.trim()}
+                  >
+                    <Text style={styles.actionButtonIcon}>📝</Text>
+                    <Text style={styles.actionButtonText}>Use Input Text</Text>
+                  </TouchableOpacity>
 
-              {/* Translated Text */}
-              <View style={styles.section}>
-                <Text style={styles.label}>Translated Message:</Text>
-                <TextInput
-                  style={[styles.textInput, styles.translatedInput]}
-                  multiline
-                  numberOfLines={4}
-                  placeholder="Translated message will appear here..."
-                  placeholderTextColor={colors.text.secondary}
-                  value={translatedText}
-                  editable={false}
-                />
-              </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.actionButton,
+                      styles.useTranslatedButton,
+                      !translatedText.trim() && styles.buttonDisabled,
+                    ]}
+                    onPress={handleUseTranslatedText}
+                    disabled={!translatedText.trim()}
+                  >
+                    <Text style={styles.actionButtonIcon}>✓</Text>
+                    <Text style={styles.actionButtonText}>Use Translated Text</Text>
+                  </TouchableOpacity>
+                </View>
 
-              {/* Action Buttons */}
-              <View style={styles.actionButtons}>
-                <TouchableOpacity
-                  style={[
-                    styles.actionButton,
-                    styles.useInputButton,
-                    !inputText.trim() && styles.buttonDisabled,
-                  ]}
-                  onPress={handleUseInputText}
-                  disabled={!inputText.trim()}
-                >
-                  <Ionicons name="document-text" size={18} color={colors.text.white} />
-                  <Text style={styles.actionButtonText}>📝 Use Input Text</Text>
+                {/* Cancel Button */}
+                <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
+                  <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.actionButton,
-                    styles.useTranslatedButton,
-                    !translatedText.trim() && styles.buttonDisabled,
-                  ]}
-                  onPress={handleUseTranslatedText}
-                  disabled={!translatedText.trim()}
-                >
-                  <Ionicons name="checkmark-circle" size={18} color={colors.text.white} />
-                  <Text style={styles.actionButtonText}>✓ Use Translated Text</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Cancel Button */}
-              <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </LinearGradient>
-        </View>
-      </View>
+              </ScrollView>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </TouchableOpacity>
     </Modal>
   );
 };
@@ -503,58 +535,67 @@ const TranslationModal = ({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContainer: {
     width: '90%',
     maxWidth: 600,
-    maxHeight: '85%',
-    justifyContent: 'center',
+    height: '90%',
   },
   modalContent: {
+    backgroundColor: colors.background.primary,
     borderRadius: borderRadius.xl,
-    paddingTop: spacing.xl,
-    paddingBottom: spacing.xxl,
-    backgroundColor: colors.background.card,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowRadius: 16,
+    elevation: 16,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.lg,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 20,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.dark,
   },
   headerTitle: {
-    fontSize: typography.sizes['2xl'],
+    fontSize: 20,
     fontWeight: typography.weights.bold,
     color: colors.text.primary,
   },
   closeButton: {
-    padding: spacing.sm,
+    padding: 4,
+    borderRadius: borderRadius.sm,
   },
   scrollView: {
     flex: 1,
-    paddingHorizontal: spacing.xl,
+  },
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 24,
   },
   section: {
-    marginBottom: spacing.lg,
+    marginBottom: 20,
   },
   label: {
-    fontSize: typography.sizes.base,
+    fontSize: 14,
     fontWeight: typography.weights.semibold,
     color: colors.text.primary,
-    marginBottom: spacing.sm,
+    marginBottom: 8,
+  },
+  languageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   languageButton: {
+    flex: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -562,20 +603,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border.dark,
     borderRadius: borderRadius.sm,
-    padding: spacing.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     minHeight: 44,
   },
+  languageButtonActive: {
+    borderColor: colors.accent.success,
+    borderWidth: 2,
+  },
   languageButtonText: {
-    fontSize: typography.sizes.base,
+    fontSize: 14,
     color: colors.text.primary,
   },
   languagePicker: {
-    marginTop: spacing.sm,
+    marginTop: 8,
     backgroundColor: colors.background.secondary,
     borderWidth: 1,
     borderColor: colors.border.dark,
     borderRadius: borderRadius.sm,
     maxHeight: 200,
+    overflow: 'hidden',
   },
   languageList: {
     maxHeight: 200,
@@ -584,7 +631,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: spacing.md,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.dark,
   },
@@ -592,51 +640,65 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.cardLight,
   },
   languageItemText: {
-    fontSize: typography.sizes.base,
+    fontSize: 14,
     color: colors.text.primary,
   },
   languageItemTextSelected: {
     color: colors.accent.success,
     fontWeight: typography.weights.semibold,
   },
+  voiceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   voiceButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#ec4899',
     borderRadius: borderRadius.sm,
-    padding: spacing.md,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
     minHeight: 44,
+    gap: 8,
   },
   voiceButtonActive: {
     backgroundColor: '#db2777',
   },
   voiceButtonText: {
-    fontSize: typography.sizes.base,
+    fontSize: 14,
     fontWeight: typography.weights.semibold,
     color: colors.text.white,
-    marginLeft: spacing.sm,
   },
   voiceStatus: {
-    fontSize: typography.sizes.sm,
+    fontSize: 13,
     color: colors.text.secondary,
-    marginTop: spacing.xs,
+    marginTop: 6,
     fontStyle: 'italic',
   },
-  textInput: {
+  textInputContainer: {
     backgroundColor: colors.background.secondary,
     borderWidth: 1,
     borderColor: colors.border.dark,
     borderRadius: borderRadius.sm,
-    padding: spacing.md,
-    fontSize: typography.sizes.base,
-    color: colors.text.primary,
     minHeight: 100,
+  },
+  textInputContainerFocused: {
+    borderColor: colors.accent.success,
+    borderWidth: 2,
+  },
+  textInput: {
+    padding: 12,
+    fontSize: 14,
+    color: colors.text.primary,
     textAlignVertical: 'top',
+    minHeight: 100,
   },
   translatedInput: {
     backgroundColor: colors.background.secondary,
-    opacity: 0.9,
+    opacity: 0.95,
   },
   translateButton: {
     flexDirection: 'row',
@@ -644,20 +706,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.accent.primary,
     borderRadius: borderRadius.sm,
-    padding: spacing.md,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
     minHeight: 44,
-    marginBottom: spacing.lg,
+    gap: 8,
+    marginBottom: 20,
+  },
+  translateButtonIcon: {
+    fontSize: 16,
   },
   translateButtonText: {
-    fontSize: typography.sizes.base,
+    fontSize: 14,
     fontWeight: typography.weights.semibold,
     color: colors.text.white,
-    marginLeft: spacing.sm,
   },
   actionButtons: {
     flexDirection: 'row',
-    gap: spacing.md,
-    marginBottom: spacing.lg,
+    gap: 12,
+    marginBottom: 12,
   },
   actionButton: {
     flex: 1,
@@ -665,8 +731,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: borderRadius.sm,
-    padding: spacing.md,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     minHeight: 44,
+    gap: 6,
   },
   useInputButton: {
     backgroundColor: colors.accent.primary,
@@ -674,11 +742,13 @@ const styles = StyleSheet.create({
   useTranslatedButton: {
     backgroundColor: colors.accent.success,
   },
+  actionButtonIcon: {
+    fontSize: 15,
+  },
   actionButtonText: {
-    fontSize: typography.sizes.base,
+    fontSize: 15,
     fontWeight: typography.weights.semibold,
     color: colors.text.white,
-    marginLeft: spacing.xs,
   },
   buttonDisabled: {
     opacity: 0.5,
@@ -686,13 +756,14 @@ const styles = StyleSheet.create({
   cancelButton: {
     backgroundColor: '#6c757d',
     borderRadius: borderRadius.sm,
-    padding: spacing.md,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cancelButtonText: {
-    fontSize: typography.sizes.base,
+    fontSize: 15,
     fontWeight: typography.weights.semibold,
     color: colors.text.white,
   },

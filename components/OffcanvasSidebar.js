@@ -6,14 +6,16 @@ import {
   Modal,
   Animated,
   Dimensions,
+  Text,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors, spacing } from '../constants/theme';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SIDEBAR_WIDTH = 300;
 
-const OffcanvasSidebar = ({ isOpen, onClose, children }) => {
+const OffcanvasSidebar = ({ isOpen, onClose, children, onRefetch }) => {
   const slideAnim = React.useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
   const overlayOpacity = React.useRef(new Animated.Value(0)).current;
   const [modalVisible, setModalVisible] = React.useState(false);
@@ -90,7 +92,21 @@ const OffcanvasSidebar = ({ isOpen, onClose, children }) => {
             end={{ x: 1, y: 0 }}
             style={styles.sidebarGradient}
           >
-            {children}
+            <View style={styles.contentContainer}>
+              {children}
+            </View>
+            {onRefetch && (
+              <View style={styles.refetchButtonContainer}>
+                <TouchableOpacity
+                  style={styles.refetchButton}
+                  onPress={onRefetch}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="refresh" size={20} color={colors.text.white} />
+                  <Text style={styles.refetchButtonText}>Refetch Clients</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </LinearGradient>
         </Animated.View>
       </View>
@@ -102,7 +118,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     flexDirection: 'row',
-    paddingTop: 70,
   },
   overlay: {
     flex: 1,
@@ -122,6 +137,29 @@ const styles = StyleSheet.create({
   },
   sidebarGradient: {
     flex: 1,
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  refetchButtonContainer: {
+    padding: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  refetchButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent.primary,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    gap: spacing.sm,
+  },
+  refetchButtonText: {
+    color: colors.text.white,
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
   },
 });
 
