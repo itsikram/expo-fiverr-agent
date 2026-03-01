@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "fiverr-expo",
+    "slug": "fiverr-expo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#ffffff",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fiverr.expo"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.fiverr.expo"
+    },
+    "web": {}
+  }
+}
