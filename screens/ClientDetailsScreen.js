@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import TabButton from '../components/TabButton';
 import MessageBubble from '../components/MessageBubble';
 import TranslationModal from '../components/TranslationModal';
+import AIChatTab from '../components/AIChatTab';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
 const ClientDetailsScreen = ({ client, messages = [], analysis = {} }) => {
@@ -70,6 +71,12 @@ const ClientDetailsScreen = ({ client, messages = [], analysis = {} }) => {
         icon="💬"
         isActive={activeTab === 'messages'}
         onPress={() => setActiveTab('messages')}
+      />
+      <TabButton
+        label="AI Chat"
+        icon="💡"
+        isActive={activeTab === 'aichat'}
+        onPress={() => setActiveTab('aichat')}
       />
       <TabButton
         label="AI Analysis"
@@ -197,6 +204,8 @@ const ClientDetailsScreen = ({ client, messages = [], analysis = {} }) => {
     switch (activeTab) {
       case 'messages':
         return renderMessagesTab();
+      case 'aichat':
+        return <AIChatTab client={client} messages={messages} />;
       case 'analysis':
         return renderAnalysisTab();
       case 'info':
