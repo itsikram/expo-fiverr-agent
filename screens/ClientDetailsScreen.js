@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,56 +15,106 @@ import TabButton from '../components/TabButton';
 import TranslationModal from '../components/TranslationModal';
 import AIChatTab from '../components/AIChatTab';
 import MessagesTab from '../components/MessagesTab';
+import { useWebSocket } from '../context/WebSocketContext';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
 const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMessage }) => {
+  const { isConnected, fetchClientDetails, clientData } = useWebSocket();
   const [activeTab, setActiveTab] = useState('messages');
   const [messageText, setMessageText] = useState('');
   const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
   const [isFetchingMessages, setIsFetchingMessages] = useState(false);
+  const [isFetchingDetails, setIsFetchingDetails] = useState(false);
+  const fetchTimeoutRef = useRef(null);
 
-  const renderHeader = () => (
-    <LinearGradient
-      colors={[colors.background.card, colors.background.cardLight]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 0 }}
-      style={styles.header}
-    >
-      <View style={styles.headerContent}>
-        <View style={styles.avatarContainer}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {client?.name ? client.name.substring(0, 2).toUpperCase() : '?'}
-            </Text>
+  // Merge fetched client data with client prop
+  const mergedClient = React.useMemo(() => {
+    if (!client) return null;
+    
+    const conversationId = client.conversationId || client.username || client.id;
+    const key = client.username || conversationId;
+    const fetchedData = clientData[key];
+    
+    if (fetchedData) {
+      // Merge fetched data with existing client data, prioritizing fetched data
+      return {
+        ...client,
+        ...fetchedData,
+        // Preserve some original values if fetched data doesn't have them
+        name: fetchedData.name || client.name,
+        username: fetchedData.username || client.username,
+        email: fetchedData.email || client.email,
+        company: fetchedData.company || client.company,
+        project_name: fetchedData.project_name || client.project_name,
+        status: fetchedData.status || client.status,
+        budget: fetchedData.budget || client.budget,
+        country: fetchedData.country || client.country,
+        language: fetchedData.language || client.language,
+        review_avg_rating: fetchedData.review_avg_rating !== undefined ? fetchedData.review_avg_rating : client.review_avg_rating,
+        review_count: fetchedData.review_count !== undefined ? fetchedData.review_count : client.review_count,
+        avatar_url: fetchedData.avatar_url || fetchedData.avatarUrl || client.avatar_url,
+      };
+    }
+    
+    return client;
+  }, [client, clientData]);
+
+  const renderHeader = () => {
+    const displayClient = mergedClient || client;
+    
+    return (
+      <LinearGradient
+        colors={[colors.background.card, colors.background.cardLight]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.header}
+      >
+        <View style={styles.headerContent}>
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>
+                {displayClient?.name ? displayClient.name.substring(0, 2).toUpperCase() : '?'}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.headerText}>
+            <Text style={styles.clientName}>{displayClient?.name || 'Unknown Client'}</Text>
+            {displayClient?.username && (
+              <Text style={styles.clientUsername}>@{displayClient.username}</Text>
+            )}
+            <View style={styles.infoRow}>
+              {displayClient?.country && (
+                <View style={styles.infoBadge}>
+                  <Text style={styles.infoIcon}>🌍</Text>
+                  <Text style={styles.infoText}>{displayClient.country}</Text>
+                </View>
+              )}
+
+              {displayClient?.language && (
+                <View style={styles.infoBadge}>
+                  <Text style={styles.infoIcon}>🗣️</Text>
+                  <Text style={styles.infoText}>{displayClient.language}</Text>
+                </View>
+              )}
+
+              {displayClient?.review_avg_rating && (
+                <View style={styles.infoBadge}>
+                  <Text style={styles.infoIcon}>⭐</Text>
+                  <Text style={styles.infoText}>{parseFloat(displayClient.review_avg_rating).toFixed(1)}</Text>
+                </View>
+              )}
+              {displayClient?.review_count && (
+                <View style={styles.infoBadge}>
+                  <Text style={styles.infoIcon}>📝</Text>
+                  <Text style={styles.infoText}>{displayClient.review_count} reviews</Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
-        <View style={styles.headerText}>
-          <Text style={styles.clientName}>{client?.name || 'Unknown Client'}</Text>
-          <View style={styles.infoRow}>
-            {client?.country && (
-              <View style={styles.infoBadge}>
-                <Text style={styles.infoIcon}>🌍</Text>
-                <Text style={styles.infoText}>{client.country}</Text>
-              </View>
-            )}
-
-            {client?.review_avg_rating && (
-              <View style={styles.infoBadge}>
-                <Text style={styles.infoIcon}>⭐</Text>
-                <Text style={styles.infoText}>{parseFloat(client.review_avg_rating).toFixed(1)}</Text>
-              </View>
-            )}
-            {client?.review_count && (
-              <View style={styles.infoBadge}>
-                <Text style={styles.infoIcon}>📝</Text>
-                <Text style={styles.infoText}>{client.review_count} reviews</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </View>
-    </LinearGradient>
-  );
+      </LinearGradient>
+    );
+  };
 
   const renderTabs = () => (
     <View style={styles.tabsContainer}>
@@ -79,7 +131,7 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
         onPress={() => setActiveTab('aichat')}
       />
       <TabButton
-        label="Information"
+        label="Info"
         icon="ℹ️"
         isActive={activeTab === 'info'}
         onPress={() => setActiveTab('info')}
@@ -125,6 +177,91 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
     }
   }, [messages.length, isFetchingMessages]);
 
+  // Reset fetching details state when client data is received
+  useEffect(() => {
+    if (isFetchingDetails && client) {
+      const conversationId = client.conversationId || client.username || client.id;
+      const key = client.username || conversationId;
+      if (clientData[key]) {
+        // Clear timeout if data is received
+        if (fetchTimeoutRef.current) {
+          clearTimeout(fetchTimeoutRef.current);
+          fetchTimeoutRef.current = null;
+        }
+        setIsFetchingDetails(false);
+        Alert.alert(
+          'Success',
+          `Client details for ${client.name || client.username} have been successfully fetched and saved!`,
+          [{ text: 'OK' }]
+        );
+      }
+    }
+  }, [clientData, client, isFetchingDetails]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handleFetchDetails = () => {
+    if (!client) {
+      Alert.alert('Error', 'No client selected');
+      return;
+    }
+
+    const username = client.username;
+    if (!username) {
+      Alert.alert('Error', 'This client does not have a username. Cannot fetch details.');
+      return;
+    }
+
+    if (!isConnected) {
+      Alert.alert('Not Connected', 'Please wait for connection to server.');
+      return;
+    }
+
+    // Clear any existing timeout
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+      fetchTimeoutRef.current = null;
+    }
+
+    setIsFetchingDetails(true);
+    
+    // Handle error callback
+    const handleError = (errorMessage) => {
+      setIsFetchingDetails(false);
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+        fetchTimeoutRef.current = null;
+      }
+      Alert.alert('Error', errorMessage || 'Failed to fetch client details. Please try again.');
+    };
+    
+    const success = fetchClientDetails(username, handleError);
+    
+    if (!success) {
+      setIsFetchingDetails(false);
+      Alert.alert('Error', 'Failed to send fetch request. Please try again.');
+      return;
+    }
+
+    // Set timeout in case the fetch takes too long or fails
+    fetchTimeoutRef.current = setTimeout(() => {
+      setIsFetchingDetails(false);
+      fetchTimeoutRef.current = null;
+      Alert.alert(
+        'Timeout',
+        'Fetching client details is taking longer than expected. Please check if the browser extension is connected and try again.',
+        [{ text: 'OK' }]
+      );
+    }, 30000); // 30 second timeout
+  };
+
   const renderMessagesTab = () => (
     <MessagesTab
       messages={messages}
@@ -137,25 +274,54 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
     />
   );
 
-  const renderInfoTab = () => (
-    <ScrollView style={styles.tabContent} contentContainerStyle={styles.infoContent}>
-      <View style={styles.infoCard}>
-        <InfoField label="Full Name" value={client?.name} />
-        <InfoField label="Username" value={client?.username} />
-        <InfoField label="Email" value={client?.email} />
-        <InfoField label="Company" value={client?.company} />
-        <InfoField label="Country" value={client?.country} />
-        <InfoField label="Language" value={client?.language} />
-      </View>
-      <View style={styles.infoCard}>
-        <InfoField label="Project Name" value={client?.project_name} />
-        <InfoField label="Status" value={client?.status} />
-        <InfoField label="Budget" value={client?.budget} />
-        <InfoField label="Rating" value={client?.review_avg_rating ? `${parseFloat(client.review_avg_rating).toFixed(1)} ⭐` : null} />
-        <InfoField label="Review Count" value={client?.review_count ? `${client.review_count} reviews` : null} />
-      </View>
-    </ScrollView>
-  );
+  const renderInfoTab = () => {
+    const displayClient = mergedClient || client;
+    
+    return (
+      <ScrollView style={styles.tabContent} contentContainerStyle={styles.infoContent}>
+        {/* Fetch Details Button */}
+        <TouchableOpacity
+          style={[styles.fetchButton, isFetchingDetails && styles.fetchButtonDisabled]}
+          onPress={handleFetchDetails}
+          disabled={isFetchingDetails || !isConnected}
+        >
+          {isFetchingDetails ? (
+            <View style={styles.fetchButtonContent}>
+              <ActivityIndicator size="small" color={colors.text.white} style={styles.fetchButtonLoader} />
+              <Text style={styles.fetchButtonText}>Fetching Details...</Text>
+            </View>
+          ) : (
+            <View style={styles.fetchButtonContent}>
+              <Ionicons name="refresh" size={20} color={colors.text.white} style={styles.fetchButtonIcon} />
+              <Text style={styles.fetchButtonText}>Fetch Details</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.infoCard}>
+          <InfoField label="Full Name" value={displayClient?.name} />
+          <InfoField label="Username" value={displayClient?.username} />
+          <InfoField label="Email" value={displayClient?.email} />
+          <InfoField label="Company" value={displayClient?.company} />
+          <InfoField label="Country" value={displayClient?.country} />
+          <InfoField label="Language" value={displayClient?.language} />
+        </View>
+        <View style={styles.infoCard}>
+          <InfoField label="Project Name" value={displayClient?.project_name} />
+          <InfoField label="Status" value={displayClient?.status} />
+          <InfoField label="Budget" value={displayClient?.budget} />
+          <InfoField label="Rating" value={displayClient?.review_avg_rating ? `${parseFloat(displayClient.review_avg_rating).toFixed(1)} ⭐` : null} />
+          <InfoField label="Review Count" value={displayClient?.review_count ? `${displayClient.review_count} reviews` : null} />
+          {displayClient?.url && (
+            <InfoField label="Profile URL" value={displayClient.url} />
+          )}
+          {displayClient?.title && (
+            <InfoField label="Title" value={displayClient.title} />
+          )}
+        </View>
+      </ScrollView>
+    );
+  };
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -189,9 +355,9 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
         onClose={() => setIsTranslationModalVisible(false)}
         initialText={messageText}
         targetLanguage={
-          client?.language === 'English'
+          (mergedClient || client)?.language === 'English'
             ? 'en'
-            : client?.language?.toLowerCase() || 'en'
+            : (mergedClient || client)?.language?.toLowerCase() || 'en'
         }
         onTextReady={(translatedText) => {
           setMessageText(translatedText);
@@ -255,6 +421,12 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xl,
     fontWeight: typography.weights.bold,
     color: colors.text.primary,
+    marginBottom: spacing.xs,
+  },
+  clientUsername: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+    color: colors.text.secondary,
     marginBottom: spacing.sm,
   },
   infoRow: {
@@ -343,6 +515,39 @@ const styles = StyleSheet.create({
   infoValue: {
     fontSize: typography.sizes.lg,
     color: colors.text.primary,
+    fontWeight: typography.weights.semibold,
+  },
+  fetchButton: {
+    backgroundColor: colors.accent.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  fetchButtonDisabled: {
+    opacity: 0.6,
+  },
+  fetchButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fetchButtonIcon: {
+    marginRight: spacing.sm,
+  },
+  fetchButtonLoader: {
+    marginRight: spacing.sm,
+  },
+  fetchButtonText: {
+    color: colors.text.white,
+    fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
   },
 });

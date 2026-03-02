@@ -1,4 +1,5 @@
 import { AI_CONFIG } from '../config/ai';
+import { loadSettings } from './storage';
 
 // Build context string similar to desktop _get_ai_chat_response
 const buildContextText = (client, messages = [], userProfile = {}) => {
@@ -37,12 +38,28 @@ const buildContextText = (client, messages = [], userProfile = {}) => {
   contextParts.push(
     `- Name: ${sellerName} (THIS IS THE SELLER'S ACTUAL NAME - USE THIS NAME WHEN REFERRING TO THE SELLER)`
   );
-  if (userProfile.skills && Array.isArray(userProfile.skills) && userProfile.skills.length > 0) {
-    contextParts.push(`- Skills: ${userProfile.skills.join(', ')}`);
+  
+  // Handle skills - can be array or string
+  let skillsArray = [];
+  if (userProfile.skills) {
+    if (Array.isArray(userProfile.skills)) {
+      skillsArray = userProfile.skills;
+    } else if (typeof userProfile.skills === 'string') {
+      // Convert comma-separated string to array
+      skillsArray = userProfile.skills.split(',').map(s => s.trim()).filter(s => s.length > 0);
+    }
   }
-  if (userProfile.experience) {
+  if (skillsArray.length > 0) {
+    contextParts.push(`- Skills: ${skillsArray.join(', ')}`);
+  }
+  
+  // Use aboutMe as experience if provided
+  if (userProfile.aboutMe) {
+    contextParts.push(`- About Me / Experience: ${userProfile.aboutMe}`);
+  } else if (userProfile.experience) {
     contextParts.push(`- Experience Description: ${userProfile.experience}`);
   }
+  
   if (userProfile.specialization) {
     contextParts.push(`- Specialization: ${userProfile.specialization}`);
   }

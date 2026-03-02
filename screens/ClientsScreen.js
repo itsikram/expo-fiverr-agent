@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions, Modal } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useWebSocket } from '../context/WebSocketContext';
@@ -8,15 +8,17 @@ import ClientDetailsScreen from './ClientDetailsScreen';
 import OffcanvasSidebar from '../components/OffcanvasSidebar';
 import BottomBar from '../components/BottomBar';
 import TranslationModal from '../components/TranslationModal';
-import { colors } from '../constants/theme';
+import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
-const ClientsScreen = () => {
+const ClientsScreen = ({ onNavigateToSettings }) => {
   const {
     isConnected,
     connectionStatus,
     clients,
     messages,
     clientData,
+    newClientData,
+    setNewClientData,
     selectedConversationId,
     setSelectedConversationId,
     requestAllData,
@@ -34,6 +36,7 @@ const ClientsScreen = () => {
   const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
   const [translationInitialText, setTranslationInitialText] = useState('');
   const [isRefetching, setIsRefetching] = useState(false);
+  const [isNewClientModalVisible, setIsNewClientModalVisible] = useState(false);
 
   // Request data when connected
   useEffect(() => {
@@ -53,6 +56,48 @@ const ClientsScreen = () => {
       return () => clearTimeout(timer);
     }
   }, [clients, isRefetching]);
+
+  // Show modal when new client data is received
+  useEffect(() => {
+    if (newClientData) {
+      setIsNewClientModalVisible(true);
+    }
+  }, [newClientData]);
+
+  const handleAddNewClient = () => {
+    if (newClientData) {
+      // Add the new client to the clients list
+      const newClient = {
+        id: newClientData.username || newClientData.conversationId || Date.now(),
+        name: newClientData.name || newClientData.username || 'Unknown',
+        username: newClientData.username,
+        country: newClientData.country || '',
+        language: newClientData.language || '',
+        review_avg_rating: newClientData.review_avg_rating || 0,
+        review_count: newClientData.review_count || 0,
+        conversationId: newClientData.conversationId || newClientData.username,
+        avatar_url: newClientData.avatar_url || newClientData.avatarUrl || '',
+        ...newClientData,
+      };
+      
+      // The client will be added via the WebSocketContext when we trigger client list extraction
+      // For now, we'll just close the modal and clear the new client data
+      setNewClientData(null);
+      setIsNewClientModalVisible(false);
+      
+      // Optionally trigger client list extraction to refresh the list
+      if (isConnected) {
+        triggerClientListExtraction();
+      }
+      
+      Alert.alert('Client Added', `Client ${newClientData.name || newClientData.username} has been added to your list.`);
+    }
+  };
+
+  const handleDismissNewClient = () => {
+    setNewClientData(null);
+    setIsNewClientModalVisible(false);
+  };
 
   // Find selected client
   const selectedClient = clients.find((c) => {
@@ -276,6 +321,7 @@ const ClientsScreen = () => {
         onRefetch={handleRefetch}
         isRefetching={isRefetching}
         showRefetch={!!selectedClient}
+        onNavigateToSettings={onNavigateToSettings}
       />
 
       {/* Translation Modal */}
@@ -288,6 +334,76 @@ const ClientsScreen = () => {
         onUseInputText={handleUseInputText}
       />
 
+      {/* New Client Modal */}
+      <Modal
+        visible={isNewClientModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleDismissNewClient}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <LinearGradient
+              colors={[colors.background.card, colors.background.cardLight]}
+              style={styles.modalGradient}
+            >
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>🆕 New Client Detected</Text>
+                <TouchableOpacity onPress={handleDismissNewClient} style={styles.modalCloseButton}>
+                  <Ionicons name="close" size={24} color={colors.text.primary} />
+                </TouchableOpacity>
+              </View>
+              
+              {newClientData && (
+                <View style={styles.modalBody}>
+                  <View style={styles.modalClientInfo}>
+                    <Text style={styles.modalClientName}>{newClientData.name || 'Unknown Client'}</Text>
+                    {newClientData.username && (
+                      <Text style={styles.modalClientUsername}>@{newClientData.username}</Text>
+                    )}
+                  </View>
+                  
+                  {(newClientData.country || newClientData.language) && (
+                    <View style={styles.modalBadges}>
+                      {newClientData.country && (
+                        <View style={styles.modalBadge}>
+                          <Text style={styles.modalBadgeIcon}>🌍</Text>
+                          <Text style={styles.modalBadgeText}>{newClientData.country}</Text>
+                        </View>
+                      )}
+                      {newClientData.language && (
+                        <View style={styles.modalBadge}>
+                          <Text style={styles.modalBadgeIcon}>🗣️</Text>
+                          <Text style={styles.modalBadgeText}>{newClientData.language}</Text>
+                        </View>
+                      )}
+                    </View>
+                  )}
+                  
+                  <Text style={styles.modalMessage}>
+                    This client was found but is not in your current client list. Would you like to add them?
+                  </Text>
+                </View>
+              )}
+              
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonSecondary]}
+                  onPress={handleDismissNewClient}
+                >
+                  <Text style={styles.modalButtonTextSecondary}>Dismiss</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonPrimary]}
+                  onPress={handleAddNewClient}
+                >
+                  <Text style={styles.modalButtonTextPrimary}>Add Client</Text>
+                </TouchableOpacity>
+              </View>
+            </LinearGradient>
+          </View>
+        </View>
+      </Modal>
 
     </View>
   );

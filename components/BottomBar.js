@@ -3,7 +3,7 @@ import { View, TouchableOpacity, StyleSheet, SafeAreaView, ActivityIndicator } f
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, shadows } from '../constants/theme';
 
-const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefetch }) => {
+const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefetch, onNavigateToSettings }) => {
   return (
     <SafeAreaView style={styles.safeArea} edges={['bottom']}>
       <View style={styles.container}>
@@ -19,24 +19,38 @@ const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefe
           />
         </TouchableOpacity>
         
-        {showRefetch && (
+        <View style={styles.rightButtons}>
+          {showRefetch && (
+            <TouchableOpacity
+              style={[styles.refetchButton, isRefetching && styles.refetchButtonActive]}
+              onPress={onRefetch}
+              activeOpacity={0.7}
+              disabled={isRefetching}
+            >
+              {isRefetching ? (
+                <ActivityIndicator size="small" color={colors.text.white} />
+              ) : (
+                <Ionicons
+                  name="refresh"
+                  size={24}
+                  color={colors.text.white}
+                />
+              )}
+            </TouchableOpacity>
+          )}
+          
           <TouchableOpacity
-            style={[styles.refetchButton, isRefetching && styles.refetchButtonActive]}
-            onPress={onRefetch}
+            style={styles.settingsButton}
+            onPress={onNavigateToSettings}
             activeOpacity={0.7}
-            disabled={isRefetching}
           >
-            {isRefetching ? (
-              <ActivityIndicator size="small" color={colors.text.white} />
-            ) : (
-              <Ionicons
-                name="refresh"
-                size={24}
-                color={colors.text.white}
-              />
-            )}
+            <Ionicons
+              name="settings"
+              size={24}
+              color={colors.text.white}
+            />
           </TouchableOpacity>
-        )}
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -57,6 +71,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border.light,
     ...shadows.md,
+  },
+  rightButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   menuButton: {
     width: 48,
@@ -81,6 +100,15 @@ const styles = StyleSheet.create({
   },
   refetchButtonActive: {
     opacity: 0.7,
+  },
+  settingsButton: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.accent.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...shadows.sm,
   },
 });
 

@@ -28,6 +28,8 @@ export const WebSocketProvider = ({ children }) => {
   const [messages, setMessages] = useState({}); // Keyed by conversationId or username
   const [clientData, setClientData] = useState({}); // Keyed by username/conversationId
   const [selectedConversationId, setSelectedConversationId] = useState(null);
+  const [newClientData, setNewClientData] = useState(null); // New client data that doesn't exist in clients list
+  const fetchDetailsCallbacksRef = useRef({}); // Track callbacks for fetch_details requests
   
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
@@ -37,7 +39,7 @@ export const WebSocketProvider = ({ children }) => {
   const isInitialLoadRef = useRef(true);
   const saveTimeoutRef = useRef(null);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       console.log('[WebSocket] Already connected');
       return;
@@ -49,6 +51,9 @@ export const WebSocketProvider = ({ children }) => {
     }
 
     try {
+      // Reload server settings before connecting
+      await SERVER_CONFIG.loadSettings();
+      
       const url = SERVER_CONFIG.getWebSocketUrl(Platform.OS);
       console.log('[WebSocket] Connecting to:', url);
       console.log('[WebSocket] Platform:', Platform.OS);
@@ -217,6 +222,25 @@ export const WebSocketProvider = ({ children }) => {
     });
   }, [sendMessage]);
 
+  const fetchClientDetails = useCallback((username, onError) => {
+    // Send command to server to fetch client details by username
+    if (!username) {
+      console.warn('[WebSocket] fetchClientDetails: username is required');
+      return false;
+    }
+    console.log('[WebSocket] Fetching client details for username:', username);
+    
+    // Store callback for error handling
+    if (onError) {
+      fetchDetailsCallbacksRef.current[username] = onError;
+    }
+    
+    return sendMessage({
+      type: 'fetch_client_details',
+      username: username,
+    });
+  }, [sendMessage]);
+
   const clickClientInFiverr = useCallback((username) => {
     // Send command to browser extension to click/activate a client in Fiverr
     if (!username) {
@@ -333,6 +357,56 @@ export const WebSocketProvider = ({ children }) => {
             ...prev,
             [key]: data.data,
           }));
+          
+          // Check if this client exists in the clients list
+          setClients((prevClients) => {
+            const clientExists = prevClients.some((client) => {
+              const clientKey = client.username || client.conversationId || client.id;
+              return clientKey === key || client.username === data.data.username;
+            });
+            
+            if (!clientExists && data.data.username) {
+              // New client detected - set it for modal display
+              console.log('[WebSocket] New client detected:', data.data.username);
+              setNewClientData({
+                name: data.data.name || data.data.username || 'Unknown',
+                username: data.data.username,
+                country: data.data.country,
+                language: data.data.language,
+                review_avg_rating: data.data.review_avg_rating,
+                review_count: data.data.review_count,
+                ...data.data,
+              });
+            }
+            
+            // Update the client in the clients list with the fetched data
+            return prevClients.map((client) => {
+              const clientKey = client.username || client.conversationId || client.id;
+              if (clientKey === key || client.username === data.data.username) {
+                // Merge fetched data with existing client data
+                return {
+                  ...client,
+                  ...data.data,
+                  // Preserve important fields
+                  id: client.id,
+                  conversationId: client.conversationId || data.data.conversationId,
+                  name: data.data.name || client.name,
+                  username: data.data.username || client.username,
+                  country: data.data.country || client.country,
+                  language: data.data.language || client.language,
+                  review_avg_rating: data.data.review_avg_rating !== undefined ? data.data.review_avg_rating : client.review_avg_rating,
+                  review_count: data.data.review_count !== undefined ? data.data.review_count : client.review_count,
+                  avatar_url: data.data.avatar_url || data.data.avatarUrl || client.avatar_url,
+                };
+              }
+              return client;
+            });
+          });
+          
+          // Clear any pending fetch callback for this username
+          if (data.data.username && fetchDetailsCallbacksRef.current[data.data.username]) {
+            delete fetchDetailsCallbacksRef.current[data.data.username];
+          }
         }
         break;
 
@@ -379,6 +453,33 @@ export const WebSocketProvider = ({ children }) => {
 
       case 'ack':
         console.log('[WebSocket] Acknowledgment:', data.message);
+        // Handle error acks for fetch_client_details
+        if (data.status === 'error' && data.message) {
+          // Check if this is related to fetch_client_details
+          const usernameMatch = data.message.match(/for\s+(\w+)/);
+          if (usernameMatch) {
+            const username = usernameMatch[1];
+            const callback = fetchDetailsCallbacksRef.current[username];
+            if (callback) {
+              callback(data.message);
+              delete fetchDetailsCallbacksRef.current[username];
+            }
+          }
+          // Also check for general fetch_client_details errors
+          if (data.message.includes('fetch_client_details') || data.message.includes('Failed to') || data.message.includes('Browser extension')) {
+            console.error('[WebSocket] Fetch client details error:', data.message);
+            // Try to find any pending callback
+            const pendingUsernames = Object.keys(fetchDetailsCallbacksRef.current);
+            if (pendingUsernames.length > 0) {
+              const username = pendingUsernames[0];
+              const callback = fetchDetailsCallbacksRef.current[username];
+              if (callback) {
+                callback(data.message);
+                delete fetchDetailsCallbacksRef.current[username];
+              }
+            }
+          }
+        }
         break;
 
       default:
@@ -492,6 +593,8 @@ export const WebSocketProvider = ({ children }) => {
     clients,
     messages,
     clientData,
+    newClientData,
+    setNewClientData,
     selectedConversationId,
     setSelectedConversationId,
     connect,
@@ -504,6 +607,7 @@ export const WebSocketProvider = ({ children }) => {
     triggerClientListExtraction,
     triggerMessageExtraction,
     triggerClientDataExtraction,
+    fetchClientDetails,
     clickClientInFiverr,
     sendMessageToClient,
     addOptimisticMessage,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,20 +19,88 @@ import TranslationModal from './TranslationModal';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 import { getAiChatResponse } from '../utils/aiChatService';
 import { formatTime } from '../utils/formatTime';
+import { USER_PROFILE } from '../config/ai';
+import { loadAIChatHistory, saveAIChatHistory } from '../utils/storage';
 
 const AIChatTab = ({ client, messages = [], onSendMessage }) => {
-  const [chatMessages, setChatMessages] = useState([
-
-  ]);
+  const [chatMessages, setChatMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
   const [editingMessageIndex, setEditingMessageIndex] = useState(null);
   const [editedText, setEditedText] = useState('');
   const [suggestedPrompts, setSuggestedPrompts] = useState({}); // { messageIndex: [prompts] }
+  const [previousClientId, setPreviousClientId] = useState(null); // Track previous client ID to avoid saving when switching clients
 
-  // Check if there's only the initial greeting (no real chat history)
-  const hasNoChatHistory = chatMessages.length === 1 && chatMessages[0].sender === 'ai';
+  // Get client ID for storage key
+  const getClientId = () => {
+    return client?.conversationId || client?.username || client?.id || 'unknown';
+  };
+
+  // Load chat history when client changes
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (!client) {
+        setChatMessages([]);
+        setPreviousClientId(null);
+        return;
+      }
+
+      const clientId = getClientId();
+      setPreviousClientId(clientId); // Update previous client ID
+      
+      try {
+        const savedHistory = await loadAIChatHistory(clientId);
+        if (savedHistory && savedHistory.length > 0) {
+          setChatMessages(savedHistory);
+          console.log('[AIChatTab] Loaded chat history for client:', clientId, '-', savedHistory.length, 'messages');
+        } else {
+          setChatMessages([]);
+          console.log('[AIChatTab] No saved chat history for client:', clientId);
+        }
+      } catch (error) {
+        console.error('[AIChatTab] Error loading chat history:', error);
+        setChatMessages([]);
+      }
+    };
+
+    loadHistory();
+  }, [client?.id, client?.conversationId, client?.username]);
+
+  // Save chat history whenever messages change (but not when loading from storage)
+  useEffect(() => {
+    const currentClientId = getClientId();
+    
+    // Don't save if client changed (we just loaded history) or if no client
+    if (!client || currentClientId !== previousClientId) {
+      setPreviousClientId(currentClientId);
+      return;
+    }
+
+    // Don't save if messages are empty
+    if (chatMessages.length === 0) {
+      return;
+    }
+
+    const saveHistory = async () => {
+      try {
+        await saveAIChatHistory(currentClientId, chatMessages);
+        console.log('[AIChatTab] Saved chat history for client:', currentClientId, '-', chatMessages.length, 'messages');
+      } catch (error) {
+        console.error('[AIChatTab] Error saving chat history:', error);
+      }
+    };
+
+    // Debounce saving to avoid too frequent writes
+    const timeoutId = setTimeout(() => {
+      saveHistory();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [chatMessages, client, previousClientId]);
+
+  // Check if there's no chat history
+  const hasNoChatHistory = chatMessages.length === 0;
 
   // Generate suggested prompts based on context
   const generateSuggestedPrompts = (lastAIMessage, messageIndex) => {
@@ -74,7 +142,17 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
   };
 
   const handleSendMessage = async (customText = null) => {
-    const textToSend = customText || inputText.trim();
+    // Handle case where event object might be passed (from onPress)
+    let textToSend;
+    if (customText === null || customText === undefined) {
+      textToSend = inputText.trim();
+    } else if (typeof customText === 'string') {
+      textToSend = customText.trim();
+    } else {
+      // If it's an event object or something else, use inputText
+      textToSend = inputText.trim();
+    }
+    
     if (!textToSend || isLoading) {
       return;
     }
@@ -101,12 +179,21 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
     }));
 
     try {
+      // Ensure userMessage.text is a string
+      const messageText = typeof userMessage?.text === 'string' ? userMessage.text : String(userMessage?.text || textToSend || '');
+      
+      if (!messageText || !messageText.trim()) {
+        console.error('Invalid message text:', messageText);
+        setIsLoading(false);
+        return;
+      }
+      
       const aiText = await getAiChatResponse({
-        userMessage: userMessage.text,
+        userMessage: messageText,
         client,
         messages,
         chatHistory: historyForApi,
-        userProfile: {}, // Expo app does not yet expose full user profile like desktop
+        userProfile: USER_PROFILE,
       });
 
       const aiResponse = {
@@ -161,21 +248,22 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
     setIsLoading(true);
 
     // Build chat history for context
-    const historyForApi = chatMessages
-      .filter((m) => m.sender !== 'ai' || !m.text.includes("I'm your AI assistant"))
-      .map((m) => ({
-        sender: m.sender === 'ai' ? 'assistant' : 'user',
-        text: m.text,
-        time: m.time,
-      }));
+    const historyForApi = chatMessages.map((m) => ({
+      sender: m.sender === 'ai' ? 'assistant' : 'user',
+      text: m.text,
+      time: m.time,
+    }));
 
     try {
+      // Ensure prompt is a string
+      const messageText = typeof prompt === 'string' ? prompt : String(prompt || '');
+      
       const aiText = await getAiChatResponse({
-        userMessage: prompt,
+        userMessage: messageText,
         client,
         messages,
         chatHistory: historyForApi,
-        userProfile: {},
+        userProfile: USER_PROFILE,
       });
 
       const aiResponse = {
@@ -400,6 +488,36 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
             <Text style={styles.emptyText}>
               Ask me anything about {client?.name || 'this client'} or get help with your tasks.
             </Text>
+            {/* Default buttons when no messages */}
+            {!isLoading && (
+              <View style={styles.quickActionsContainer}>
+                <Text style={styles.quickActionsTitle}>Quick Actions</Text>
+                <TouchableOpacity
+                  style={[styles.quickActionButton, styles.nextMessageButton]}
+                  onPress={handleGenerateNextMessage}
+                  disabled={isLoading}
+                >
+                  <Ionicons name="chatbubble-ellipses" size={20} color={colors.text.white} />
+                  <Text style={styles.quickActionText}>Generate Next Message</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.quickActionButton, styles.explainTaskButton]}
+                  onPress={handleExplainTask}
+                  disabled={isLoading}
+                >
+                  <Ionicons name="information-circle" size={20} color={colors.text.white} />
+                  <Text style={styles.quickActionText}>Explain Task</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.quickActionButton, styles.generateOfferButton]}
+                  onPress={handleGenerateOffer}
+                  disabled={isLoading}
+                >
+                  <Ionicons name="briefcase" size={20} color={colors.text.white} />
+                  <Text style={styles.quickActionText}>Generate Offer</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         ) : (
           <>
@@ -456,8 +574,8 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
         )}
       </ScrollView>
 
-      {/* Custom Offer Button - Always Visible */}
-      {!hasNoChatHistory && (
+      {/* Custom Offer Button - Only show when no chat history */}
+      {hasNoChatHistory && !isLoading && (
         <View style={styles.customOfferContainer}>
           <TouchableOpacity
             style={[styles.customOfferButton, isLoading && styles.customOfferButtonDisabled]}
@@ -488,7 +606,7 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
         />
         <TouchableOpacity
           style={[styles.sendButton, (!inputText.trim() || isLoading) && styles.sendButtonDisabled]}
-          onPress={handleSendMessage}
+          onPress={() => handleSendMessage()}
           disabled={!inputText.trim() || isLoading}
         >
           {isLoading ? (
