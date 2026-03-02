@@ -29,6 +29,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     triggerMessageExtraction,
     clickClientInFiverr,
     sendMessageToClient,
+    deleteClient,
   } = useWebSocket();
 
   const [selectedClientId, setSelectedClientId] = useState(null);
@@ -37,6 +38,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   const [translationInitialText, setTranslationInitialText] = useState('');
   const [isRefetching, setIsRefetching] = useState(false);
   const [isNewClientModalVisible, setIsNewClientModalVisible] = useState(false);
+  const [hasInitialDataLoaded, setHasInitialDataLoaded] = useState(false);
 
   // Request data when connected
   useEffect(() => {
@@ -57,12 +59,23 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
   }, [clients, isRefetching]);
 
-  // Show modal when new client data is received
+  // Mark initial data as loaded after first client list is received
   useEffect(() => {
-    if (newClientData) {
+    if (clients.length > 0 && !hasInitialDataLoaded) {
+      // Small delay to ensure initial fetch is complete
+      const timer = setTimeout(() => {
+        setHasInitialDataLoaded(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [clients.length, hasInitialDataLoaded]);
+
+  // Show modal when new client data is received (only after initial data is loaded)
+  useEffect(() => {
+    if (newClientData && hasInitialDataLoaded) {
       setIsNewClientModalVisible(true);
     }
-  }, [newClientData]);
+  }, [newClientData, hasInitialDataLoaded]);
 
   const handleAddNewClient = () => {
     if (newClientData) {
@@ -143,18 +156,38 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   };
 
   const handleDeleteClient = (clientId) => {
+    // Find the client to show its name in the confirmation
+    const clientToDelete = clients.find((c) => {
+      return c.id === clientId || c.conversationId === clientId || c.username === clientId;
+    });
+
+    const clientName = clientToDelete?.name || clientToDelete?.username || 'this client';
+
     // Handle delete logic
     Alert.alert(
       'Delete Client',
-      'Are you sure you want to remove this client?',
+      `Are you sure you want to remove ${clientName}? This action cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: () => {
-            console.log('Delete client:', clientId);
-            // TODO: Implement actual delete logic
+            console.log('[ClientsScreen] Deleting client:', clientId);
+            
+            // Delete the client using the context function
+            const deleted = deleteClient(clientId);
+            
+            if (deleted) {
+              // Clear selected client if it's the one being deleted
+              if (selectedClientId === clientId) {
+                setSelectedClientId(null);
+              }
+              
+              Alert.alert('Success', 'Client has been removed.');
+            } else {
+              Alert.alert('Error', 'Failed to delete client. Please try again.');
+            }
           },
         },
       ]

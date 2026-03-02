@@ -9,6 +9,7 @@ import {
   saveClientData,
   loadClientData,
   saveLastSync,
+  clearAIChatHistory,
 } from '../utils/storage';
 
 const WebSocketContext = createContext(null);
@@ -311,6 +312,65 @@ export const WebSocketProvider = ({ children }) => {
       conversationId: conversationId,
     });
   }, [sendMessage, addOptimisticMessage]);
+
+  const deleteClient = useCallback((clientId) => {
+    // Find the client to get its identifiers
+    const clientToDelete = clients.find((c) => {
+      return c.id === clientId || c.conversationId === clientId || c.username === clientId;
+    });
+
+    if (!clientToDelete) {
+      console.warn('[WebSocket] deleteClient: Client not found:', clientId);
+      return false;
+    }
+
+    const conversationId = clientToDelete.conversationId || clientToDelete.username || clientToDelete.id;
+    const username = clientToDelete.username;
+
+    console.log('[WebSocket] Deleting client:', clientId, conversationId, username);
+
+    // Remove client from clients array
+    setClients((prevClients) => {
+      return prevClients.filter((c) => {
+        return c.id !== clientId && c.conversationId !== clientId && c.username !== clientId;
+      });
+    });
+
+    // Remove messages for this client
+    setMessages((prevMessages) => {
+      const updatedMessages = { ...prevMessages };
+      delete updatedMessages[conversationId];
+      // Also delete by username if different
+      if (username && username !== conversationId) {
+        delete updatedMessages[username];
+      }
+      return updatedMessages;
+    });
+
+    // Remove client data
+    setClientData((prevClientData) => {
+      const updatedClientData = { ...prevClientData };
+      if (conversationId) delete updatedClientData[conversationId];
+      if (username && username !== conversationId) delete updatedClientData[username];
+      return updatedClientData;
+    });
+
+    // Clear selected conversation if it's the deleted one
+    if (selectedConversationId === conversationId || selectedConversationId === username) {
+      setSelectedConversationId(null);
+    }
+
+    // Clear AI chat history for this client
+    const clientKey = conversationId || username || clientId;
+    if (clientKey) {
+      clearAIChatHistory(clientKey).catch((error) => {
+        console.error('[WebSocket] Error clearing AI chat history:', error);
+      });
+    }
+
+    console.log('[WebSocket] Client deleted successfully');
+    return true;
+  }, [clients, selectedConversationId]);
 
   const handleMessage = useCallback((data) => {
     const { type } = data;
@@ -638,6 +698,7 @@ export const WebSocketProvider = ({ children }) => {
     clickClientInFiverr,
     sendMessageToClient,
     addOptimisticMessage,
+    deleteClient,
   };
 
   return (
