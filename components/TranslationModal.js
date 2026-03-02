@@ -13,11 +13,14 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
 // Languages list matching pyagent app
+// Bengali (bn) is supported for both voice input (auto-detected) and translation
 const LANGUAGES = [
   { name: 'English', code: 'en' },
+  { name: 'Bengali (Bangla)', code: 'bn' }, // Bengali supported for translation
   { name: 'Spanish', code: 'es' },
   { name: 'French', code: 'fr' },
   { name: 'German', code: 'de' },
@@ -37,7 +40,6 @@ const LANGUAGES = [
   { name: 'Hebrew', code: 'he' },
   { name: 'Thai', code: 'th' },
   { name: 'Vietnamese', code: 'vi' },
-  { name: 'Bengali (Bangla)', code: 'bn' },
 ];
 
 const TranslationModal = ({
@@ -58,9 +60,33 @@ const TranslationModal = ({
   const [recognizedTextBuffer, setRecognizedTextBuffer] = useState('');
   const [lastTranslationText, setLastTranslationText] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
+  const [recognitionCount, setRecognitionCount] = useState(0);
+  const [voiceRecognitionAvailable, setVoiceRecognitionAvailable] = useState(false);
   
   const autoTranslateTimerRef = useRef(null);
   const recognitionRef = useRef(null);
+  const translationInProgressRef = useRef(false);
+  
+  // Check if voice recognition is available on mount
+  useEffect(() => {
+    const checkAvailability = () => {
+      if (Platform.OS === 'web') {
+        // Web Speech API is available in browsers
+        const isAvailable = typeof window !== 'undefined' && 
+          ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
+        setVoiceRecognitionAvailable(isAvailable);
+      } else {
+        // For native platforms in Expo Go, voice recognition requires a development build
+        // Check if we're in Expo Go
+        const isExpoGo = Constants.executionEnvironment === 'storeClient';
+        // Voice recognition is not available in Expo Go for native platforms
+        // It requires a development build with native modules
+        setVoiceRecognitionAvailable(false);
+      }
+    };
+    
+    checkAvailability();
+  }, []);
 
   useEffect(() => {
     if (visible && initialText) {
@@ -73,6 +99,8 @@ const TranslationModal = ({
       setVoiceStatus('');
       setIsListening(false);
       setShowLanguagePicker(false);
+      setRecognitionCount(0);
+      translationInProgressRef.current = false;
     }
     return () => {
       if (autoTranslateTimerRef.current) {
@@ -82,7 +110,7 @@ const TranslationModal = ({
     };
   }, [visible, initialText]);
 
-  // Auto-translate during voice input
+  // Auto-translate during voice input (matches desktop app behavior)
   useEffect(() => {
     if (isListening) {
       autoTranslateTimerRef.current = setInterval(() => {
@@ -90,7 +118,8 @@ const TranslationModal = ({
         if (
           currentText &&
           currentText !== lastTranslationText &&
-          currentText.length >= 3
+          currentText.length >= 3 &&
+          !translationInProgressRef.current
         ) {
           setLastTranslationText(currentText);
           translateText(currentText, true);
@@ -113,8 +142,15 @@ const TranslationModal = ({
       return;
     }
 
+    // Prevent multiple simultaneous translations
+    if (translationInProgressRef.current) {
+      return;
+    }
+
     if (!isAuto) {
       setIsTranslating(true);
+    } else {
+      translationInProgressRef.current = true;
     }
 
     try {
@@ -145,7 +181,12 @@ const TranslationModal = ({
           .map((item) => item[0])
           .filter(Boolean)
           .join('');
-        setTranslatedText(translated);
+        
+        // Only update if the input text hasn't changed during translation
+        const currentInput = inputText.trim();
+        if (currentInput === text.trim()) {
+          setTranslatedText(translated);
+        }
       } else {
         throw new Error('Translation failed: Empty response');
       }
@@ -153,56 +194,96 @@ const TranslationModal = ({
       console.error('Translation error:', error);
       if (!isAuto) {
         Alert.alert('Translation Error', error.message || 'Failed to translate text');
+        setTranslatedText(`Error: ${error.message || 'Translation failed'}`);
       }
-      setTranslatedText(`Error: ${error.message || 'Translation failed'}`);
+      // Silent fail for auto-translate (matches desktop behavior)
     } finally {
       if (!isAuto) {
         setIsTranslating(false);
       }
+      translationInProgressRef.current = false;
     }
   };
 
   const startVoiceRecognition = async () => {
     try {
-      if (Platform.OS === 'web') {
-        Alert.alert(
-          'Not Available',
-          'Voice recognition is not available on web. Please use a mobile device.'
-        );
-        return;
+      // Check if we're in Expo Go on native platforms
+      if (Platform.OS !== 'web') {
+        const isExpoGo = Constants.executionEnvironment === 'storeClient';
+        if (isExpoGo) {
+          Alert.alert(
+            'Development Build Required',
+            'Voice recognition on mobile devices requires a development build.\n\n' +
+            'Expo Go does not support native speech recognition modules.\n\n' +
+            'To use voice recognition:\n' +
+            '• Create a dev build: npx expo run:android or npx expo run:ios\n' +
+            '• Or use EAS Build: eas build --profile development\n\n' +
+            'For now, you can type your message manually or use the web version.',
+            [{ text: 'OK', onPress: () => setIsListening(false) }]
+          );
+          setIsListening(false);
+          setVoiceStatus('');
+          return;
+        }
       }
 
       setIsListening(true);
-      setVoiceStatus('Initializing...');
+      setVoiceStatus('Initializing microphone... Auto-detecting language...');
       setInputText('');
       setTranslatedText('');
       setRecognizedTextBuffer('');
       setLastTranslationText('');
+      setRecognitionCount(0);
 
-      let Voice = null;
-      try {
-        Voice = require('@react-native-voice/voice').default;
-      } catch (e) {
-        console.log('Voice recognition package not installed');
-      }
+      if (Platform.OS === 'web') {
+        // Use Web Speech API for web
+        const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognitionAPI) {
+          throw new Error('Speech recognition not supported in this browser');
+        }
 
-      if (Voice) {
-        Voice.onSpeechStart = () => {
-          setVoiceStatus('🎤 Listening continuously... Speak now!');
+        const recognition = new SpeechRecognitionAPI();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        // Auto-detect language by not setting lang property
+        recognition.lang = ''; // Empty string enables auto-detection
+
+        recognition.onstart = () => {
+          setVoiceStatus('🎤 Listening continuously... Auto-detecting language... Speak now!');
         };
 
-        Voice.onSpeechResults = (e) => {
-          if (e.value && e.value.length > 0) {
-            const text = e.value[0];
-            handleVoiceRecognitionResult(text);
+        recognition.onresult = (event) => {
+          let interimTranscript = '';
+          let finalTranscript = '';
+
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript + ' ';
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+
+          if (finalTranscript) {
+            handleVoiceRecognitionResult(finalTranscript.trim());
+            setRecognitionCount(prev => prev + 1);
             setVoiceStatus('✓ Detected! Continue speaking...');
+          } else if (interimTranscript) {
+            setVoiceStatus('🔄 Processing...');
           }
         };
 
-        Voice.onSpeechError = (e) => {
-          console.error('Speech recognition error:', e);
-          if (e.error?.code !== '7') {
-            setVoiceStatus(`⚠️ ${e.error?.message || 'Error'} (continuing)`);
+        recognition.onerror = (event) => {
+          console.error('Speech recognition error:', event);
+          const errorMessage = event.error || 'Error';
+          
+          if (errorMessage === 'no-speech' || errorMessage === 'aborted') {
+            if (isListening) {
+              setVoiceStatus('🎤 Listening... (speak clearly)');
+            }
+          } else {
+            setVoiceStatus(`⚠️ ${errorMessage.substring(0, 50)}${errorMessage.length > 50 ? '...' : ''} (continuing)`);
             setTimeout(() => {
               if (isListening) {
                 setVoiceStatus('🎤 Listening...');
@@ -211,33 +292,49 @@ const TranslationModal = ({
           }
         };
 
-        Voice.onSpeechEnd = () => {
+        recognition.onend = () => {
           if (isListening) {
-            setVoiceStatus('🎤 Listening... (waiting for speech)');
+            // Restart recognition for continuous listening
+            try {
+              recognition.start();
+            } catch (e) {
+              // Already started or error, ignore
+            }
+            if (recognitionCount % 10 === 0 && recognitionCount > 0) {
+              setVoiceStatus('🎤 Listening... (waiting for speech)');
+            } else {
+              setVoiceStatus('🎤 Listening...');
+            }
           }
         };
 
-        try {
-          await Voice.start(['bn-BD', 'en']);
-          setVoiceStatus('🎤 Listening continuously... Speak now!');
-        } catch (startError) {
-          throw new Error(`Failed to start voice recognition: ${startError.message}`);
-        }
+        recognitionRef.current = recognition;
+        recognition.start();
+        setVoiceStatus('🎤 Listening continuously... Auto-detecting language... Speak now!');
       } else {
+        // For native platforms (not Expo Go), voice recognition requires a development build
+        // This code path is for when a development build is used
         Alert.alert(
-          'Voice Recognition Setup Required',
-          'To use voice recognition, please install @react-native-voice/voice:\n\n' +
-          'npm install @react-native-voice/voice\n\n' +
-          'For Expo projects, you may need to use a development build or eject.\n\n' +
+          'Development Build Required',
+          'Voice recognition on mobile requires a development build with native modules.\n\n' +
+          'Please create a development build:\n' +
+          '• npx expo run:android (for Android)\n' +
+          '• npx expo run:ios (for iOS)\n\n' +
+          'Or use EAS Build: eas build --profile development\n\n' +
           'For now, you can type your message manually.',
           [{ text: 'OK', onPress: () => setIsListening(false) }]
         );
         setIsListening(false);
         setVoiceStatus('');
+        return;
       }
+
     } catch (error) {
       console.error('Voice recognition error:', error);
-      Alert.alert('Voice Recognition Error', error.message || 'Failed to start voice recognition');
+      Alert.alert(
+        'Voice Recognition Error',
+        error.message || 'Failed to start voice recognition. Please try again.'
+      );
       setIsListening(false);
       setVoiceStatus('');
     }
@@ -251,32 +348,58 @@ const TranslationModal = ({
     const newPhrase = text.trim();
     const currentText = inputText;
     
-    if (currentText && currentText.trim().endsWith(newPhrase)) {
-      return;
+    // Better duplicate detection (matches desktop app behavior)
+    if (currentText) {
+      const currentStripped = currentText.trim();
+      // Check if the new phrase is already at the end (avoid duplicates)
+      if (currentStripped.endsWith(newPhrase)) {
+        return;
+      }
+      // Check if the new phrase is already in the text (avoid repetition)
+      if (currentStripped.includes(newPhrase) && currentStripped.length > newPhrase.length * 2) {
+        // Only add if it's not a recent addition
+        const words = currentStripped.split(' ');
+        const lastWords = words.slice(-3).join(' ');
+        if (lastWords.includes(newPhrase)) {
+          return;
+        }
+      }
+      // Accumulate text with space separator
+      const newText = currentStripped + ' ' + newPhrase;
+      setInputText(newText);
+      setRecognizedTextBuffer(newText);
+    } else {
+      // First phrase
+      setInputText(newPhrase);
+      setRecognizedTextBuffer(newPhrase);
     }
-
-    const newText = currentText
-      ? currentText.trim() + ' ' + newPhrase
-      : newPhrase;
-
-    setInputText(newText);
-    setRecognizedTextBuffer(newText);
   };
 
-  const stopVoiceRecognition = () => {
+  const stopVoiceRecognition = async () => {
     setIsListening(false);
     setVoiceStatus('⏹️ Stopped');
-    setTimeout(() => setVoiceStatus(''), 2000);
+    
+    // Clear auto-translate timer
+    if (autoTranslateTimerRef.current) {
+      clearInterval(autoTranslateTimerRef.current);
+      autoTranslateTimerRef.current = null;
+    }
 
     try {
-      const Voice = require('@react-native-voice/voice').default;
-      if (Voice) {
-        Voice.stop();
-        Voice.removeAllListeners();
+      if (Platform.OS === 'web' && recognitionRef.current) {
+        // Stop Web Speech API
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
       }
     } catch (e) {
-      // Package not installed, ignore
+      // Ignore errors when stopping
+      console.log('Could not stop voice recognition:', e.message);
     }
+    
+    // Clear status after delay (matches desktop behavior)
+    setTimeout(() => {
+      setVoiceStatus('');
+    }, 2000);
   };
 
   const handleVoiceInput = () => {
@@ -288,11 +411,20 @@ const TranslationModal = ({
   };
 
   const handleTranslate = () => {
-    if (!inputText.trim()) {
+    const text = inputText.trim();
+    if (!text) {
       Alert.alert('No Input', 'Please enter a message to translate.');
       return;
     }
-    translateText(inputText, false);
+    
+    if (!selectedLanguage) {
+      Alert.alert('No Language', 'Please select a target language.');
+      return;
+    }
+    
+    // Update last translation text to prevent auto-translate during manual translation
+    setLastTranslationText(text);
+    translateText(text, false);
   };
 
   const handleUseInputText = () => {
@@ -422,7 +554,9 @@ const TranslationModal = ({
                         color={colors.text.white}
                       />
                       <Text style={styles.voiceButtonText}>
-                        {isListening ? '⏹️ Stop Listening' : '🎤 Voice Input (Bangla & English)'}
+                        {isListening 
+                          ? '⏹️ Stop Listening' 
+                          : '🎤 Voice Input (Auto-Detect Language)'}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -465,13 +599,16 @@ const TranslationModal = ({
                   disabled={isTranslating || !inputText.trim()}
                 >
                   {isTranslating ? (
-                    <ActivityIndicator size="small" color={colors.text.white} />
+                    <>
+                      <ActivityIndicator size="small" color={colors.text.white} />
+                      <Text style={styles.translateButtonText}>⏳ Translating...</Text>
+                    </>
                   ) : (
-                    <Text style={styles.translateButtonIcon}>🔄</Text>
+                    <>
+                      <Text style={styles.translateButtonIcon}>🔄</Text>
+                      <Text style={styles.translateButtonText}>Translate</Text>
+                    </>
                   )}
-                  <Text style={styles.translateButtonText}>
-                    {isTranslating ? 'Translating...' : 'Translate'}
-                  </Text>
                 </TouchableOpacity>
 
                 {/* Translated Text */}
@@ -482,7 +619,7 @@ const TranslationModal = ({
                       style={[styles.textInput, styles.translatedInput]}
                       multiline
                       numberOfLines={4}
-                      placeholder="Translated message will appear here..."
+                      placeholder={isTranslating ? "Translating..." : "Translated message will appear here..."}
                       placeholderTextColor={colors.text.secondary}
                       value={translatedText}
                       editable={false}
@@ -502,7 +639,7 @@ const TranslationModal = ({
                     disabled={!inputText.trim()}
                   >
                     <Text style={styles.actionButtonIcon}>📝</Text>
-                    <Text style={styles.actionButtonText}>Use Input Text</Text>
+                    <Text style={styles.actionButtonText}>Use Input</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -515,7 +652,7 @@ const TranslationModal = ({
                     disabled={!translatedText.trim()}
                   >
                     <Text style={styles.actionButtonIcon}>✓</Text>
-                    <Text style={styles.actionButtonText}>Use Translated Text</Text>
+                    <Text style={styles.actionButtonText}>Use Translation</Text>
                   </TouchableOpacity>
                 </View>
 
@@ -604,8 +741,8 @@ const styles = StyleSheet.create({
     borderColor: colors.border.dark,
     borderRadius: borderRadius.sm,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    minHeight: 44,
+    paddingVertical: 0,
+    minHeight: 30,
   },
   languageButtonActive: {
     borderColor: colors.accent.success,
@@ -732,7 +869,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: borderRadius.sm,
     paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 12,
     minHeight: 44,
     gap: 6,
   },

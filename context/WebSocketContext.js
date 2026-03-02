@@ -1,6 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { Platform } from 'react-native';
 import { SERVER_CONFIG } from '../config/server';
+import {
+  saveClients,
+  loadClients,
+  saveMessages,
+  loadMessages,
+  saveClientData,
+  loadClientData,
+  saveLastSync,
+} from '../utils/storage';
 
 const WebSocketContext = createContext(null);
 
@@ -25,6 +34,8 @@ export const WebSocketProvider = ({ children }) => {
   const reconnectAttemptsRef = useRef(0);
   const pingIntervalRef = useRef(null);
   const sessionIdRef = useRef(null);
+  const isInitialLoadRef = useRef(true);
+  const saveTimeoutRef = useRef(null);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -182,6 +193,101 @@ export const WebSocketProvider = ({ children }) => {
     });
   }, [sendMessage]);
 
+  const triggerClientListExtraction = useCallback(() => {
+    // Send command to trigger browser extension to fetch client list
+    sendMessage({
+      type: 'trigger',
+      action: 'extract_client_list',
+    });
+  }, [sendMessage]);
+
+  const triggerMessageExtraction = useCallback(() => {
+    // Send command to trigger browser extension to fetch messages
+    sendMessage({
+      type: 'trigger',
+      action: 'extract_messages',
+    });
+  }, [sendMessage]);
+
+  const triggerClientDataExtraction = useCallback(() => {
+    // Send command to trigger browser extension to fetch client data
+    sendMessage({
+      type: 'trigger',
+      action: 'extract_client_data',
+    });
+  }, [sendMessage]);
+
+  const clickClientInFiverr = useCallback((username) => {
+    // Send command to browser extension to click/activate a client in Fiverr
+    if (!username) {
+      console.warn('[WebSocket] clickClientInFiverr: username is required');
+      return false;
+    }
+    console.log('[WebSocket] Clicking client in Fiverr:', username);
+    
+    // Send click_client command to browser extension
+    sendMessage({
+      type: 'click_client',
+      username: username,
+      useFirstClient: false,
+    });
+    
+    // Also notify desktop app to select this client
+    sendMessage({
+      type: 'client_activated',
+      data: {
+        username: username,
+      },
+    });
+    
+    return true;
+  }, [sendMessage]);
+
+  const addOptimisticMessage = useCallback((messageText, conversationId) => {
+    // Add message optimistically to local state before sending
+    if (!messageText || !messageText.trim() || !conversationId) {
+      return;
+    }
+    
+    const now = new Date().toISOString();
+    const optimisticMessage = {
+      text: messageText.trim(),
+      sender: 'me',
+      isFromMe: true,
+      time: now,
+      timestamp: now,
+      optimistic: true, // Flag to identify optimistic messages
+    };
+    
+    setMessages((prev) => {
+      const existingMessages = prev[conversationId] || [];
+      return {
+        ...prev,
+        [conversationId]: [...existingMessages, optimisticMessage],
+      };
+    });
+    
+    console.log('[WebSocket] Added optimistic message to conversation:', conversationId);
+  }, []);
+
+  const sendMessageToClient = useCallback((messageText, conversationId) => {
+    // Send message to client via browser extension
+    if (!messageText || !messageText.trim()) {
+      console.warn('[WebSocket] sendMessageToClient: message text is required');
+      return false;
+    }
+    
+    // Add message optimistically to show it immediately
+    addOptimisticMessage(messageText, conversationId);
+    
+    console.log('[WebSocket] Sending message to client:', conversationId, messageText.substring(0, 50));
+    return sendMessage({
+      type: 'send_message',
+      message: messageText.trim(),
+      conversationId: conversationId,
+    });
+  }, [sendMessage, addOptimisticMessage]);
+
   const handleMessage = useCallback((data) => {
     const { type } = data;
 
@@ -214,6 +320,8 @@ export const WebSocketProvider = ({ children }) => {
             ...client, // Include all other properties
           }));
           setClients(transformedClients);
+          // Save to storage (will be handled by useEffect, but save sync timestamp)
+          saveLastSync();
         }
         break;
 
@@ -245,6 +353,8 @@ export const WebSocketProvider = ({ children }) => {
             ...prev,
             [conversationId]: transformedMessages,
           }));
+          // Save to storage (will be handled by useEffect, but save sync timestamp)
+          saveLastSync();
         }
         break;
 
@@ -276,6 +386,97 @@ export const WebSocketProvider = ({ children }) => {
     }
   }, [requestClientData, requestMessages, requestClientList]);
 
+  // Load stored data on mount
+  useEffect(() => {
+    const loadStoredData = async () => {
+      console.log('[WebSocket] Loading stored data...');
+      const [storedClients, storedMessages, storedClientData] = await Promise.all([
+        loadClients(),
+        loadMessages(),
+        loadClientData(),
+      ]);
+      
+      if (storedClients.length > 0) {
+        setClients(storedClients);
+        console.log('[WebSocket] Loaded', storedClients.length, 'clients from storage');
+      }
+      
+      if (Object.keys(storedMessages).length > 0) {
+        setMessages(storedMessages);
+        console.log('[WebSocket] Loaded messages for', Object.keys(storedMessages).length, 'conversations from storage');
+      }
+      
+      if (Object.keys(storedClientData).length > 0) {
+        setClientData(storedClientData);
+        console.log('[WebSocket] Loaded client data for', Object.keys(storedClientData).length, 'clients from storage');
+      }
+      
+      isInitialLoadRef.current = false;
+    };
+    
+    loadStoredData();
+  }, []);
+
+  // Save clients to storage whenever they change
+  useEffect(() => {
+    if (isInitialLoadRef.current) return; // Don't save on initial load
+    
+    // Debounce saves to avoid too many writes
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    saveTimeoutRef.current = setTimeout(() => {
+      saveClients(clients);
+    }, 500);
+    
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [clients]);
+
+  // Save messages to storage whenever they change
+  useEffect(() => {
+    if (isInitialLoadRef.current) return; // Don't save on initial load
+    
+    // Debounce saves to avoid too many writes
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    saveTimeoutRef.current = setTimeout(() => {
+      saveMessages(messages);
+    }, 500);
+    
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [messages]);
+
+  // Save client data to storage whenever it changes
+  useEffect(() => {
+    if (isInitialLoadRef.current) return; // Don't save on initial load
+    
+    // Debounce saves to avoid too many writes
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    saveTimeoutRef.current = setTimeout(() => {
+      saveClientData(clientData);
+    }, 500);
+    
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [clientData]);
+
   // Connect on mount
   useEffect(() => {
     connect();
@@ -300,6 +501,12 @@ export const WebSocketProvider = ({ children }) => {
     requestClientList,
     requestMessages,
     requestClientData,
+    triggerClientListExtraction,
+    triggerMessageExtraction,
+    triggerClientDataExtraction,
+    clickClientInFiverr,
+    sendMessageToClient,
+    addOptimisticMessage,
   };
 
   return (

@@ -22,6 +22,9 @@
       },
       "package": "com.fiverr.expo"
     },
-    "web": {}
+    "web": {},
+    "plugins": [
+      "expo-speech-recognition"
+    ]
   }
 }

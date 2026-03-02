@@ -23,12 +23,17 @@ const ClientsScreen = () => {
     requestClientList,
     requestMessages,
     requestClientData,
+    triggerClientListExtraction,
+    triggerMessageExtraction,
+    clickClientInFiverr,
+    sendMessageToClient,
   } = useWebSocket();
 
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
   const [translationInitialText, setTranslationInitialText] = useState('');
+  const [isRefetching, setIsRefetching] = useState(false);
 
   // Request data when connected
   useEffect(() => {
@@ -37,6 +42,17 @@ const ClientsScreen = () => {
       requestAllData();
     }
   }, [isConnected, requestAllData]);
+
+  // Reset refetching state when clients are updated
+  useEffect(() => {
+    if (clients.length > 0 && isRefetching) {
+      // Small delay to show the update
+      const timer = setTimeout(() => {
+        setIsRefetching(false);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [clients, isRefetching]);
 
   // Find selected client
   const selectedClient = clients.find((c) => {
@@ -62,11 +78,22 @@ const ClientsScreen = () => {
     const client = clients.find((c) => c.id === clientId || c.conversationId === clientId || c.username === clientId);
     if (client) {
       const conversationId = client.conversationId || client.username || client.id;
+      const username = client.username;
+      
       setSelectedConversationId(conversationId);
+      
+      // Trigger browser extension to click/activate this client in Fiverr
+      if (username && isConnected) {
+        console.log('[ClientsScreen] Activating client in browser:', username);
+        clickClientInFiverr(username);
+      }
       
       // Request specific client data and messages
       requestClientData(conversationId);
       requestMessages();
+      
+      // Also trigger message extraction for this specific client
+      triggerMessageExtraction();
     }
   };
 
@@ -90,11 +117,46 @@ const ClientsScreen = () => {
   };
 
   const handleRefetch = () => {
-    // Handle refetch logic
-    console.log('Refetching clients...');
+    // Handle refetch logic - trigger browser extension to fetch fresh data
+    console.log('[ClientsScreen] Refetching clients and messages...');
     if (isConnected) {
-      requestAllData();
+      setIsRefetching(true);
+      
+      // Trigger browser extension to extract client list from Fiverr
+      triggerClientListExtraction();
+      
+      // Trigger browser extension to extract messages from Fiverr
+      triggerMessageExtraction();
+      
+      // Request stored data as fallback
       requestClientList();
+      requestMessages();
+      
+      // Request messages for all clients
+      if (clients.length > 0) {
+        console.log('[ClientsScreen] Requesting messages for all clients...');
+        clients.forEach((client) => {
+          const conversationId = client.conversationId || client.username || client.id;
+          if (conversationId) {
+            requestClientData(conversationId);
+          }
+        });
+      }
+      
+      // If a client is selected, also ensure their messages are requested
+      if (selectedClient) {
+        const conversationId = selectedClient.conversationId || selectedClient.username || selectedClient.id;
+        if (conversationId) {
+          requestClientData(conversationId);
+          console.log('[ClientsScreen] Requesting messages for selected client:', conversationId);
+        }
+      }
+      
+      // Reset loading state after a delay (increased to allow messages to be fetched)
+      setTimeout(() => {
+        setIsRefetching(false);
+        console.log('[ClientsScreen] Refetch complete. Messages should be displayed in UI.');
+      }, 4000);
     } else {
       Alert.alert('Not Connected', 'Please wait for connection to server.');
     }
@@ -141,10 +203,10 @@ const ClientsScreen = () => {
       {/* Connection Status Bar */}
       <View style={[styles.connectionBar, { backgroundColor: getConnectionStatusColor() }]}>
         <Text style={styles.connectionText}>
-          {connectionStatus === 'connected' && '🟢 Connected'}
-          {connectionStatus === 'connecting' && '🟡 Connecting...'}
-          {connectionStatus === 'disconnected' && '🔴 Disconnected'}
-          {connectionStatus === 'error' && '🔴 Connection Error'}
+          {connectionStatus === 'connected' && 'Connected'}
+          {connectionStatus === 'connecting' && 'Connecting...'}
+          {connectionStatus === 'disconnected' && 'Disconnected'}
+          {connectionStatus === 'error' && 'Connection Error'}
         </Text>
       </View>
 
@@ -154,6 +216,7 @@ const ClientsScreen = () => {
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
           onRefetch={handleRefetch}
+          isRefetching={isRefetching}
         >
           <ClientList
             clients={clients}
@@ -169,7 +232,8 @@ const ClientsScreen = () => {
             <ClientDetailsScreen
               client={selectedClient}
               messages={selectedMessages}
-              analysis={{}}
+              onFetchMessages={requestMessages}
+              onSendMessage={sendMessageToClient}
             />
           ) : (
             <LinearGradient
@@ -209,6 +273,9 @@ const ClientsScreen = () => {
       <BottomBar
         onMenuToggle={handleMenuToggle}
         isMenuOpen={isSidebarOpen}
+        onRefetch={handleRefetch}
+        isRefetching={isRefetching}
+        showRefetch={!!selectedClient}
       />
 
       {/* Translation Modal */}
@@ -221,13 +288,7 @@ const ClientsScreen = () => {
         onUseInputText={handleUseInputText}
       />
 
-      {/* Floating Translation Button */}
-      <TouchableOpacity
-        style={styles.translateFloatingButton}
-        onPress={() => handleOpenTranslationModal()}
-      >
-        <Ionicons name="language" size={24} color={colors.text.white} />
-      </TouchableOpacity>
+
     </View>
   );
 };

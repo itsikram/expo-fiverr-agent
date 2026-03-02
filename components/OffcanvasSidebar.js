@@ -15,9 +15,10 @@ import { colors, spacing, borderRadius, typography } from '../constants/theme';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SIDEBAR_WIDTH = 300;
 
-const OffcanvasSidebar = ({ isOpen, onClose, children, onRefetch }) => {
+const OffcanvasSidebar = ({ isOpen, onClose, children, onRefetch, isRefetching = false }) => {
   const slideAnim = React.useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
   const overlayOpacity = React.useRef(new Animated.Value(0)).current;
+  const rotateAnim = React.useRef(new Animated.Value(0)).current;
   const [modalVisible, setModalVisible] = React.useState(false);
 
   useEffect(() => {
@@ -52,6 +53,28 @@ const OffcanvasSidebar = ({ isOpen, onClose, children, onRefetch }) => {
       });
     }
   }, [isOpen]);
+
+  // Spinning animation for refresh icon
+  useEffect(() => {
+    if (isRefetching) {
+      const spinAnimation = Animated.loop(
+        Animated.timing(rotateAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        })
+      );
+      spinAnimation.start();
+      return () => spinAnimation.stop();
+    } else {
+      rotateAnim.setValue(0);
+    }
+  }, [isRefetching]);
+
+  const spin = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   return (
     <Modal
@@ -98,12 +121,21 @@ const OffcanvasSidebar = ({ isOpen, onClose, children, onRefetch }) => {
             {onRefetch && (
               <View style={styles.refetchButtonContainer}>
                 <TouchableOpacity
-                  style={styles.refetchButton}
+                  style={[styles.refetchButton, isRefetching && styles.refetchButtonDisabled]}
                   onPress={onRefetch}
                   activeOpacity={0.7}
+                  disabled={isRefetching}
                 >
-                  <Ionicons name="refresh" size={20} color={colors.text.white} />
-                  <Text style={styles.refetchButtonText}>Refetch Clients</Text>
+                  <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                    <Ionicons 
+                      name="refresh" 
+                      size={20} 
+                      color={colors.text.white}
+                    />
+                  </Animated.View>
+                  <Text style={styles.refetchButtonText}>
+                    {isRefetching ? 'Fetching...' : 'Refetch Clients'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -160,6 +192,9 @@ const styles = StyleSheet.create({
     color: colors.text.white,
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
+  },
+  refetchButtonDisabled: {
+    opacity: 0.6,
   },
 });
 

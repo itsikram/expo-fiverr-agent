@@ -1,25 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   ScrollView,
   StyleSheet,
-  TextInput,
   TouchableOpacity,
   SafeAreaView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import TabButton from '../components/TabButton';
-import MessageBubble from '../components/MessageBubble';
 import TranslationModal from '../components/TranslationModal';
 import AIChatTab from '../components/AIChatTab';
+import MessagesTab from '../components/MessagesTab';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
-const ClientDetailsScreen = ({ client, messages = [], analysis = {} }) => {
+const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMessage }) => {
   const [activeTab, setActiveTab] = useState('messages');
   const [messageText, setMessageText] = useState('');
   const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
+  const [isFetchingMessages, setIsFetchingMessages] = useState(false);
 
   const renderHeader = () => (
     <LinearGradient
@@ -79,12 +79,6 @@ const ClientDetailsScreen = ({ client, messages = [], analysis = {} }) => {
         onPress={() => setActiveTab('aichat')}
       />
       <TabButton
-        label="AI Analysis"
-        icon="🤖"
-        isActive={activeTab === 'analysis'}
-        onPress={() => setActiveTab('analysis')}
-      />
-      <TabButton
         label="Information"
         icon="ℹ️"
         isActive={activeTab === 'info'}
@@ -93,91 +87,54 @@ const ClientDetailsScreen = ({ client, messages = [], analysis = {} }) => {
     </View>
   );
 
-  const renderMessagesTab = () => (
-    <View style={styles.tabContent}>
-      <ScrollView
-        style={styles.messagesScroll}
-        contentContainerStyle={styles.messagesContent}
-      >
-        {messages.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>💬</Text>
-            <Text style={styles.emptyTitle}>No Messages Yet</Text>
-            <Text style={styles.emptyText}>
-              Click 'Fetch Messages' to retrieve messages for this client.
-            </Text>
-          </View>
-        ) : (
-          messages.map((message, index) => (
-            <MessageBubble
-              key={index}
-              message={message}
-              isFromMe={message.sender === 'me' || message.isFromMe}
-            />
-          ))
-        )}
-      </ScrollView>
-      <View style={styles.inputContainer}>
-        <TouchableOpacity style={styles.refetchButton}>
-          <Text style={styles.refetchText}>🔄</Text>
-        </TouchableOpacity>
-        <TextInput
-          style={styles.messageInput}
-          placeholder="Type your message here..."
-          placeholderTextColor={colors.text.secondary}
-          value={messageText}
-          onChangeText={setMessageText}
-          multiline
-        />
-        <TouchableOpacity
-          style={styles.translateButton}
-          onPress={() => setIsTranslationModalVisible(true)}
-        >
-          <Text style={styles.translateText}>🌐</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.sendButton}>
-          <Text style={styles.sendText}>Send</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  const handleSendMessage = () => {
+    if (!messageText.trim()) {
+      return;
+    }
+    
+    const conversationId = client?.conversationId || client?.username || client?.id;
+    if (!conversationId) {
+      console.warn('[ClientDetailsScreen] Cannot send message: no conversation ID');
+      return;
+    }
+    
+    if (onSendMessage) {
+      const success = onSendMessage(messageText, conversationId);
+      if (success) {
+        // Clear the input after sending
+        setMessageText('');
+      }
+    }
+  };
 
-  const renderAnalysisTab = () => (
-    <ScrollView style={styles.tabContent} contentContainerStyle={styles.analysisContent}>
-      {!analysis || Object.keys(analysis).length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>🤖</Text>
-          <Text style={styles.emptyTitle}>No Analysis Available</Text>
-          <Text style={styles.emptyText}>
-            Analyze messages to see AI insights here.
-          </Text>
-          <TouchableOpacity style={styles.analyzeButton}>
-            <Text style={styles.analyzeButtonText}>🔍 Analyze Messages with AI</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View>
-          {analysis.summary && (
-            <View style={styles.analysisSection}>
-              <Text style={styles.sectionTitle}>📊 Analysis Summary</Text>
-              <Text style={styles.sectionContent}>{analysis.summary}</Text>
-            </View>
-          )}
-          {analysis.task_understanding && (
-            <View style={styles.analysisSection}>
-              <Text style={styles.sectionTitle}>📋 AI Overview</Text>
-              <Text style={styles.sectionContent}>{analysis.task_understanding}</Text>
-            </View>
-          )}
-          {analysis.next_message && (
-            <View style={[styles.analysisSection, styles.highlightSection]}>
-              <Text style={styles.sectionTitle}>✉️ Next Message to Client</Text>
-              <Text style={styles.sectionContent}>{analysis.next_message}</Text>
-            </View>
-          )}
-        </View>
-      )}
-    </ScrollView>
+  const handleFetchMessages = () => {
+    if (onFetchMessages) {
+      setIsFetchingMessages(true);
+      onFetchMessages();
+      // Reset loading state after a delay (messages will update when received)
+      setTimeout(() => {
+        setIsFetchingMessages(false);
+      }, 5000);
+    }
+  };
+
+  // Reset fetching state when messages are received
+  useEffect(() => {
+    if (messages.length > 0 && isFetchingMessages) {
+      setIsFetchingMessages(false);
+    }
+  }, [messages.length, isFetchingMessages]);
+
+  const renderMessagesTab = () => (
+    <MessagesTab
+      messages={messages}
+      messageText={messageText}
+      setMessageText={setMessageText}
+      onOpenTranslationModal={() => setIsTranslationModalVisible(true)}
+      onSend={handleSendMessage}
+      onFetchMessages={handleFetchMessages}
+      isFetchingMessages={isFetchingMessages}
+    />
   );
 
   const renderInfoTab = () => (
@@ -205,9 +162,7 @@ const ClientDetailsScreen = ({ client, messages = [], analysis = {} }) => {
       case 'messages':
         return renderMessagesTab();
       case 'aichat':
-        return <AIChatTab client={client} messages={messages} />;
-      case 'analysis':
-        return renderAnalysisTab();
+        return <AIChatTab client={client} messages={messages} onSendMessage={onSendMessage} />;
       case 'info':
         return renderInfoTab();
       default:
@@ -269,7 +224,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    padding: spacing.lg,
+    padding: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
   },
@@ -339,71 +294,6 @@ const styles = StyleSheet.create({
     borderTopRightRadius: borderRadius.lg,
     marginTop: -1,
   },
-  tabContent: {
-    flex: 1,
-  },
-  messagesScroll: {
-    flex: 1,
-  },
-  messagesContent: {
-    paddingVertical: spacing.lg,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.lg,
-    backgroundColor: colors.background.card,
-    borderTopWidth: 1,
-    borderTopColor: colors.border.light,
-    gap: spacing.sm,
-  },
-  refetchButton: {
-    padding: spacing.sm,
-    backgroundColor: colors.accent.success,
-    borderRadius: borderRadius.md,
-    minWidth: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  refetchText: {
-    fontSize: typography.sizes.base,
-  },
-  messageInput: {
-    flex: 1,
-    backgroundColor: colors.background.card,
-    borderWidth: 2,
-    borderColor: colors.border.dark,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    color: colors.text.primary,
-    fontSize: typography.sizes.base,
-    maxHeight: 100,
-  },
-  translateButton: {
-    padding: spacing.sm,
-    backgroundColor: colors.accent.primary,
-    borderRadius: borderRadius.md,
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  translateText: {
-    fontSize: typography.sizes.lg,
-    fontWeight: typography.weights.bold,
-  },
-  sendButton: {
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.accent.primary,
-    borderRadius: borderRadius.md,
-  },
-  sendText: {
-    color: colors.text.white,
-    fontSize: typography.sizes.base,
-    fontWeight: typography.weights.bold,
-  },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
@@ -425,45 +315,6 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     color: colors.text.muted,
     textAlign: 'center',
-    lineHeight: 24,
-  },
-  analyzeButton: {
-    marginTop: spacing.xl,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-    backgroundColor: colors.accent.info,
-    borderRadius: borderRadius.md,
-  },
-  analyzeButtonText: {
-    color: colors.text.white,
-    fontSize: typography.sizes.base,
-    fontWeight: typography.weights.semibold,
-  },
-  analysisContent: {
-    padding: spacing.lg,
-  },
-  analysisSection: {
-    backgroundColor: colors.background.card,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border.dark,
-  },
-  highlightSection: {
-    backgroundColor: '#1e3a2e',
-    borderColor: colors.accent.success,
-    borderWidth: 2,
-  },
-  sectionTitle: {
-    fontSize: typography.sizes.lg,
-    fontWeight: typography.weights.bold,
-    color: colors.accent.success,
-    marginBottom: spacing.md,
-  },
-  sectionContent: {
-    fontSize: typography.sizes.base,
-    color: colors.text.primary,
     lineHeight: 24,
   },
   infoContent: {

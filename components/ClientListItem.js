@@ -106,17 +106,18 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: spacing.sm,
-    marginHorizontal: spacing.sm,
+    marginVertical: spacing.sm - 4,
+    marginHorizontal: spacing.sm -4,
     borderRadius: borderRadius.md,
     overflow: 'hidden',
+    padding: 0,
   },
   selected: {
     borderRadius: borderRadius.md,
   },
   gradient: {
     borderRadius: borderRadius.md,
-    padding: spacing.sm,
+    padding: spacing.sm - 10,
   },
   content: {
     flexDirection: 'row',
