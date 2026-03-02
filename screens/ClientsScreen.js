@@ -489,6 +489,123 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '85%',
+    maxWidth: 400,
+    borderRadius: borderRadius.xl || 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 16,
+  },
+  modalGradient: {
+    padding: 0,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border?.dark || 'rgba(255, 255, 255, 0.1)',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: typography.weights?.bold || '700',
+    color: colors.text.primary,
+  },
+  modalCloseButton: {
+    padding: 4,
+    borderRadius: borderRadius.sm || 8,
+  },
+  modalBody: {
+    padding: 20,
+  },
+  modalClientInfo: {
+    marginBottom: 16,
+  },
+  modalClientName: {
+    fontSize: 20,
+    fontWeight: typography.weights?.bold || '700',
+    color: colors.text.primary,
+    marginBottom: 4,
+  },
+  modalClientUsername: {
+    fontSize: 14,
+    color: colors.text.secondary,
+  },
+  modalBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  modalBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background.secondary || 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: borderRadius.md || 12,
+  },
+  modalBadgeIcon: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  modalBadgeText: {
+    fontSize: 12,
+    color: colors.text.secondary,
+    fontWeight: typography.weights?.medium || '500',
+  },
+  modalMessage: {
+    fontSize: 14,
+    color: colors.text.secondary,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.border?.dark || 'rgba(255, 255, 255, 0.1)',
+  },
+  modalButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: borderRadius.md || 12,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  modalButtonPrimary: {
+    backgroundColor: colors.accent.primary,
+  },
+  modalButtonSecondary: {
+    backgroundColor: colors.background.secondary || 'rgba(255, 255, 255, 0.1)',
+  },
+  modalButtonTextPrimary: {
+    color: colors.text.white || '#fff',
+    fontSize: 14,
+    fontWeight: typography.weights?.semibold || '600',
+  },
+  modalButtonTextSecondary: {
+    color: colors.text.secondary,
+    fontSize: 14,
+    fontWeight: typography.weights?.medium || '500',
+  },
 });
 
 export default ClientsScreen;
