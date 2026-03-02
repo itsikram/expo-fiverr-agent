@@ -14,17 +14,29 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.fiverr.expo"
+      "bundleIdentifier": "com.fiverr.expo",
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Allow $(PRODUCT_NAME) to use speech recognition.",
+        "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use the microphone."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       },
-      "package": "com.fiverr.expo"
+      "package": "com.fiverr.expo",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {},
     "plugins": [
       "expo-speech-recognition"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "90332092-5c99-420b-a551-d7696ffcec89"
+      }
+    }
   }
 }
