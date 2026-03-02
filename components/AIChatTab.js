@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,10 +19,9 @@ import TranslationModal from './TranslationModal';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 import { getAiChatResponse } from '../utils/aiChatService';
 import { formatTime } from '../utils/formatTime';
-import { USER_PROFILE } from '../config/ai';
-import { loadAIChatHistory, saveAIChatHistory } from '../utils/storage';
+import { loadAIChatHistory, saveAIChatHistory, clearAIChatHistory, loadSettings } from '../utils/storage';
 
-const AIChatTab = ({ client, messages = [], onSendMessage }) => {
+const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) => {
   const [chatMessages, setChatMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -31,11 +30,39 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
   const [editedText, setEditedText] = useState('');
   const [suggestedPrompts, setSuggestedPrompts] = useState({}); // { messageIndex: [prompts] }
   const [previousClientId, setPreviousClientId] = useState(null); // Track previous client ID to avoid saving when switching clients
+  const [userProfile, setUserProfile] = useState({}); // User profile from settings
+  const scrollViewRef = useRef(null);
 
   // Get client ID for storage key
   const getClientId = () => {
     return client?.conversationId || client?.username || client?.id || 'unknown';
   };
+
+  // Load user profile from settings on mount
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      try {
+        const settings = await loadSettings();
+        if (settings) {
+          // Format settings to match userProfile structure
+          const profile = {
+            name: settings.name || '',
+            skills: settings.skills || '',
+            aboutMe: settings.aboutMe || '',
+          };
+          setUserProfile(profile);
+          console.log('[AIChatTab] Loaded user profile from settings:', profile.name || 'Not set');
+        } else {
+          console.log('[AIChatTab] No settings found, using empty profile');
+          setUserProfile({});
+        }
+      } catch (error) {
+        console.error('[AIChatTab] Error loading user profile:', error);
+        setUserProfile({});
+      }
+    };
+    loadUserProfile();
+  }, []);
 
   // Load chat history when client changes
   useEffect(() => {
@@ -98,6 +125,16 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
 
     return () => clearTimeout(timeoutId);
   }, [chatMessages, client, previousClientId]);
+
+  // Auto-scroll to bottom when tab becomes active or when messages change
+  useEffect(() => {
+    if (isActive && chatMessages.length > 0 && scrollViewRef.current) {
+      // Use a small delay to ensure the messages are rendered
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 150);
+    }
+  }, [isActive, chatMessages.length]);
 
   // Check if there's no chat history
   const hasNoChatHistory = chatMessages.length === 0;
@@ -193,7 +230,7 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
         client,
         messages,
         chatHistory: historyForApi,
-        userProfile: USER_PROFILE,
+        userProfile: userProfile,
       });
 
       const aiResponse = {
@@ -263,7 +300,7 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
         client,
         messages,
         chatHistory: historyForApi,
-        userProfile: USER_PROFILE,
+        userProfile: userProfile,
       });
 
       const aiResponse = {
@@ -382,6 +419,41 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
     }
   };
 
+  const handleClearChatHistory = () => {
+    if (chatMessages.length === 0) {
+      Alert.alert('Info', 'Chat history is already empty');
+      return;
+    }
+
+    Alert.alert(
+      'Clear Chat History',
+      'Are you sure you want to clear all chat history for this client? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const clientId = getClientId();
+              await clearAIChatHistory(clientId);
+              setChatMessages([]);
+              setSuggestedPrompts({});
+              Alert.alert('Success', 'Chat history cleared successfully');
+              console.log('[AIChatTab] Cleared chat history for client:', clientId);
+            } catch (error) {
+              console.error('[AIChatTab] Error clearing chat history:', error);
+              Alert.alert('Error', 'Failed to clear chat history. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const renderAIMessage = (message, index) => {
     const isEditing = editingMessageIndex === index;
 
@@ -473,9 +545,10 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 180 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 215 : 0}
     >
       <ScrollView
+        ref={scrollViewRef}
         style={styles.messagesScroll}
         contentContainerStyle={styles.messagesContent}
         showsVerticalScrollIndicator={false}
@@ -595,6 +668,15 @@ const AIChatTab = ({ client, messages = [], onSendMessage }) => {
         >
           <Ionicons name="language" size={20} color={colors.text.white} />
         </TouchableOpacity>
+        {chatMessages.length > 0 && (
+          <TouchableOpacity
+            style={styles.clearButton}
+            onPress={handleClearChatHistory}
+            disabled={isLoading}
+          >
+            <Ionicons name="trash-outline" size={18} color={colors.text.white} />
+          </TouchableOpacity>
+        )}
         <TextInput
           style={styles.messageInput}
           placeholder="Ask AI anything..."

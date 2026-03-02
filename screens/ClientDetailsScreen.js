@@ -328,7 +328,7 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
       case 'messages':
         return renderMessagesTab();
       case 'aichat':
-        return <AIChatTab client={client} messages={messages} onSendMessage={onSendMessage} />;
+        return <AIChatTab client={client} messages={messages} onSendMessage={onSendMessage} isActive={activeTab === 'aichat'} />;
       case 'info':
         return renderInfoTab();
       default:

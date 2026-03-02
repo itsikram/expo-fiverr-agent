@@ -9,27 +9,69 @@ const buildContextText = (client, messages = [], userProfile = {}) => {
 
   const contextParts = [];
 
-  // Client information
+  // Client information - Comprehensive details
   contextParts.push('CLIENT INFORMATION:');
   contextParts.push(`- Name: ${client.name || 'N/A'}`);
   contextParts.push(`- Username: ${client.username || 'N/A'}`);
-  contextParts.push(`- Company: ${client.company || 'N/A'}`);
-  contextParts.push(`- Project: ${client.project_name || 'N/A'}`);
-  contextParts.push(`- Budget: ${client.budget || 'N/A'}`);
-  contextParts.push(`- Status: ${client.status || 'N/A'}`);
-  contextParts.push(`- Country: ${client.country || 'N/A'}`);
-  contextParts.push(`- Language: ${client.language || 'N/A'}`);
+  
+  // Contact information
+  if (client.email) {
+    contextParts.push(`- Email: ${client.email}`);
+  }
+  if (client.company) {
+    contextParts.push(`- Company: ${client.company}`);
+  }
+  
+  // Project details
+  if (client.project_name) {
+    contextParts.push(`- Project: ${client.project_name}`);
+  }
+  if (client.budget) {
+    contextParts.push(`- Budget: ${client.budget}`);
+  }
+  if (client.status) {
+    contextParts.push(`- Status: ${client.status}`);
+  }
+  
+  // Location and language
+  if (client.country) {
+    contextParts.push(`- Country: ${client.country}`);
+  }
+  if (client.language) {
+    contextParts.push(`- Language: ${client.language}`);
+  }
+  
+  // Professional information
+  if (client.title) {
+    contextParts.push(`- Title/Position: ${client.title}`);
+  }
+  
+  // Reviews and ratings
   if (client.review_avg_rating) {
     contextParts.push(
       `- Review Rating: ${client.review_avg_rating}/5.0 (${client.review_count || 0} reviews)`
     );
+  } else if (client.review_count && client.review_count > 0) {
+    contextParts.push(`- Review Count: ${client.review_count} reviews`);
   }
+  
+  // URLs and identifiers
   if (client.avatar_url || client.avatarUrl) {
     contextParts.push(`- Avatar URL: ${client.avatar_url || client.avatarUrl || ''}`);
   }
   if (client.url) {
-    contextParts.push(`- Client URL: ${client.url}`);
+    contextParts.push(`- Client Profile URL: ${client.url}`);
   }
+  if (client.conversationId || client.conversation_id) {
+    contextParts.push(`- Conversation ID: ${client.conversationId || client.conversation_id}`);
+  }
+  if (client.id) {
+    contextParts.push(`- Client ID: ${client.id}`);
+  }
+  if (client.timestamp) {
+    contextParts.push(`- Timestamp: ${client.timestamp}`);
+  }
+  
   contextParts.push('');
 
   // Seller profile (basic – Expo app doesn't have full settings like desktop)
@@ -112,7 +154,7 @@ CRITICAL - SELLER IDENTITY:
 
 YOUR CAPABILITIES:
 You have access to:
-- Complete client information (name, company, project, budget, status, country, language, reviews, ratings, etc.)
+- Complete client information (name, username, email, company, project, budget, status, country, language, title, reviews, ratings, URLs, conversation ID, etc.)
 - MY profile information (name: ${sellerName}, skills, experience, specialization, portfolio - use this to provide personalized advice)
 - Conversation history with this client (all text messages)
 
@@ -161,11 +203,20 @@ export const getAiChatResponse = async ({
   chatHistory,
   userProfile,
 }) => {
-  const apiKey = AI_CONFIG.OPENAI_API_KEY;
+  // Load API key from settings first, then fallback to config
+  let apiKey = AI_CONFIG.OPENAI_API_KEY;
+  try {
+    const settings = await loadSettings();
+    if (settings && settings.openaiApiKey && !settings.openaiApiKey.startsWith('*')) {
+      apiKey = settings.openaiApiKey;
+    }
+  } catch (error) {
+    console.warn('[aiChatService] Error loading API key from settings:', error);
+  }
 
   if (!apiKey) {
     throw new Error(
-      'OpenAI API key is not configured in config/ai.js. Please set AI_CONFIG.OPENAI_API_KEY.'
+      'OpenAI API key is not configured. Please set it in Settings or in config/ai.js.'
     );
   }
 

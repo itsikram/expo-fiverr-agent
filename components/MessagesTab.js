@@ -39,7 +39,7 @@ const MessagesTab = ({
     <KeyboardAvoidingView
       style={styles.tabContent}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 180 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 215 : 0}
     >
       <ScrollView
         ref={scrollViewRef}
@@ -92,6 +92,7 @@ const MessagesTab = ({
         >
           <Ionicons name="language" size={20} color={colors.text.white} />
         </TouchableOpacity>
+
         <TextInput
           style={styles.messageInput}
           placeholder="Type your message here..."
@@ -141,6 +142,18 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  refetchButton: {
+    padding: spacing.sm,
+    backgroundColor: colors.accent.info || '#3b82f6',
+    borderRadius: borderRadius.md,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refetchButtonDisabled: {
+    opacity: 0.6,
   },
   messageInput: {
     flex: 1,

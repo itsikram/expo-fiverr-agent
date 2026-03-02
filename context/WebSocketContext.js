@@ -438,6 +438,33 @@ export const WebSocketProvider = ({ children }) => {
         if (data.data?.conversationId) {
           requestClientData(data.data.conversationId);
           requestMessages();
+          
+          // Show popup/alert for new message
+          const clientUsername = data.data?.clientUsername || data.data?.username || 'Unknown';
+          const conversationId = data.data?.conversationId;
+          
+          // Find client name from clients list
+          const client = clients.find((c) => {
+            const clientKey = c.username || c.conversationId || c.id;
+            return clientKey === conversationId || c.username === clientUsername || c.conversationId === conversationId;
+          });
+          
+          const clientName = client?.name || clientUsername;
+          const messageCount = data.data?.messageCount || 1;
+          
+          // Emit event for UI to show popup
+          // We'll use a callback system similar to fetchClientDetails
+          if (typeof window !== 'undefined' && window.dispatchEvent) {
+            window.dispatchEvent(new CustomEvent('newMessageDetected', {
+              detail: {
+                clientName,
+                clientUsername,
+                conversationId,
+                messageCount,
+                data: data.data,
+              }
+            }));
+          }
         }
         break;
 
