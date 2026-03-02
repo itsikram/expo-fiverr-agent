@@ -71,11 +71,12 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   }, [clients.length, hasInitialDataLoaded]);
 
   // Show modal when new client data is received (only after initial data is loaded)
-  useEffect(() => {
-    if (newClientData && hasInitialDataLoaded) {
-      setIsNewClientModalVisible(true);
-    }
-  }, [newClientData, hasInitialDataLoaded]);
+  // DISABLED: Modal is disabled for now
+  // useEffect(() => {
+  //   if (newClientData && hasInitialDataLoaded) {
+  //     setIsNewClientModalVisible(true);
+  //   }
+  // }, [newClientData, hasInitialDataLoaded]);
 
   const handleAddNewClient = () => {
     if (newClientData) {
