@@ -17,7 +17,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
 // Deepgram API key – set EXPO_PUBLIC_DEEPGRAM_API_KEY in .env and restart dev server (expo start)
-const DEEPGRAM_CHUNK_SECONDS = 6; // Record chunks of this length for continuous feel
+const DEEPGRAM_LIVE_SAMPLE_RATE = 16000;
+// Native: process when user pauses (silence after speech), not on a fixed timer
+const SILENCE_THRESHOLD_DB = -50; // below this = silence
+const SILENCE_MS = 1800; // pause this long after speech → process chunk
+const METERING_POLL_MS = 400;
+const FALLBACK_CHUNK_MS = 5000; // when metering unavailable, process every 5s
+const MIN_CHUNK_MS = 1200; // don't send chunks shorter than this (avoid empty/silent)
 
 // Languages list matching pyagent app
 // Bengali (bn) is supported for both voice input (auto-detected) and translation
@@ -49,7 +55,7 @@ const TranslationModal = ({
   visible,
   onClose,
   initialText = '',
-  targetLanguage = 'en',
+  targetLanguage = 'bn',
   onTextReady,
   onUseInputText,
 }) => {
@@ -68,9 +74,20 @@ const TranslationModal = ({
   const recordingRef = useRef(null);
   const chunkIntervalRef = useRef(null);
   const translationInProgressRef = useRef(false);
-  const runChunkRef = useRef(null); // so setInterval always calls latest callback
+  const runChunkRef = useRef(null);
+  const recordingPreparingRef = useRef(false);
+  const recordingStartTimeRef = useRef(0);
+  const lastSpeechTimeRef = useRef(0);
+  const hadSpeechInChunkRef = useRef(false);
+  const meteringUnavailableRef = useRef(false);
+  const processingChunkRef = useRef(false);
+  const meteringUndefinedCountRef = useRef(0);
+  // Web-only: Deepgram Live real-time streaming
+  const socketRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const scriptProcessorRef = useRef(null);
   const [permissionResponse, requestPermission] = Audio.usePermissions();
-  // Read at render so env is used after restart (Expo inlines EXPO_PUBLIC_* at build time)
   const deepgramApiKey = (process.env.EXPO_PUBLIC_DEEPGRAM_API_KEY || '').trim();
 
   useEffect(() => {
@@ -86,6 +103,9 @@ const TranslationModal = ({
       setShowLanguagePicker(false);
       setRecognitionCount(0);
       translationInProgressRef.current = false;
+      if (typeof window !== 'undefined' && window.navigator?.mediaDevices) {
+        stopDeepgramLive();
+      }
     }
     return () => {
       if (autoTranslateTimerRef.current) {
@@ -256,55 +276,200 @@ const TranslationModal = ({
     setRecognitionCount((c) => c + 1);
   };
 
-  const runChunkRecordAndTranscribe = async () => {
-    if (!recordingRef.current || !chunkIntervalRef.current) return;
-    const recording = recordingRef.current;
+  // --- Web: Deepgram Live WebSocket for real-time transcription ---
+  const startDeepgramLive = async () => {
+    const isWeb = typeof window !== 'undefined' && window.navigator?.mediaDevices;
+    if (!isWeb) return;
+    const key = deepgramApiKey;
+    if (!key) return;
     try {
-      setVoiceStatus('⏳ Processing chunk...');
-      await recording.stopAndUnloadAsync();
-      recordingRef.current = null;
-      const uri = recording.getURI();
-      if (uri) {
-        const contentType = Platform.OS === 'web' ? 'audio/webm' : 'audio/m4a';
-        const transcript = await transcribeWithDeepgram(uri, contentType);
-        if (transcript) {
-          appendTranscription(transcript);
-          setVoiceStatus('✓ Transcribed. Listening...');
-        } else {
-          setVoiceStatus('No speech in chunk. Listening...');
+      setVoiceStatus('Requesting microphone...');
+      const stream = await window.navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      const sampleRate = DEEPGRAM_LIVE_SAMPLE_RATE;
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioContextClass({ sampleRate });
+      audioContextRef.current = ctx;
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+      const source = ctx.createMediaStreamSource(stream);
+      const bufferLen = 4096;
+      const processor = ctx.createScriptProcessor(bufferLen, 1, 1);
+      scriptProcessorRef.current = processor;
+      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=${sampleRate}&language=multi&smart_format=true&model=nova-2&interim_results=true`;
+      // Sec-WebSocket-Protocol: token, YOUR_API_KEY (array sends as "token, key")
+      const socket = new window.WebSocket(wsUrl, ['token', key]);
+      socketRef.current = socket;
+      socket.binaryType = 'arraybuffer';
+      socket.onopen = () => {
+        setVoiceStatus('🎤 Live transcription... speak now');
+        source.connect(processor);
+        processor.connect(ctx.destination);
+        processor.onaudioprocess = (e) => {
+          if (socket.readyState !== 1) return; // 1 = OPEN
+          const input = e.inputBuffer.getChannelData(0);
+          const int16 = new Int16Array(input.length);
+          for (let i = 0; i < input.length; i++) {
+            const s = Math.max(-1, Math.min(1, input[i]));
+            int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          }
+          socket.send(int16.buffer);
+        };
+      };
+      socket.onmessage = (event) => {
+        if (typeof event.data !== 'string') return;
+        try {
+          const msg = JSON.parse(event.data);
+          const transcript = msg?.channel?.alternatives?.[0]?.transcript?.trim();
+          if (!transcript) return;
+          const isFinal = msg.is_final === true;
+          if (isFinal) {
+            appendTranscription(transcript);
+            setVoiceStatus('✓ Live...');
+          } else {
+            setVoiceStatus(`🔄 ${transcript.slice(-50)}`);
+          }
+        } catch (_) {}
+      };
+      socket.onerror = () => {
+        setVoiceStatus('⚠️ Connection error');
+      };
+      socket.onclose = (ev) => {
+        try {
+          processor.disconnect();
+          source.disconnect();
+        } catch (_) {}
+        if (ev.code !== 1000 && ev.code !== 1005) {
+          setVoiceStatus(`⚠️ Disconnected (${ev.code})`);
+          setIsListening(false);
         }
-      } else {
-        setVoiceStatus('No recording file. Listening...');
+      };
+    } catch (e) {
+      console.error('Deepgram Live error:', e);
+      Alert.alert('Live transcription error', e?.message || 'Could not start microphone or connect to Deepgram.');
+      setIsListening(false);
+      setVoiceStatus('');
+    }
+  };
+
+  const stopDeepgramLive = () => {
+    try {
+      if (socketRef.current) {
+        socketRef.current.close();
+        socketRef.current = null;
+      }
+      if (scriptProcessorRef.current) {
+        try { scriptProcessorRef.current.disconnect(); } catch (_) {}
+        scriptProcessorRef.current = null;
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+      }
+      if (audioContextRef.current) {
+        audioContextRef.current.close();
+        audioContextRef.current = null;
       }
     } catch (e) {
-      console.warn('Chunk transcribe error:', e);
-      setVoiceStatus('⚠️ Transcribe failed');
-      Alert.alert('Transcription error', (e?.message || String(e)) + '\n\nCheck your Deepgram key and connection.');
+      console.warn('Stop Deepgram Live:', e);
     }
-    if (!chunkIntervalRef.current) return;
+  };
+
+  // Process current recording when user pauses (stop → send to Deepgram if long enough → start new).
+  const processCurrentChunkAndRestart = async () => {
+    if (processingChunkRef.current || !recordingRef.current || !chunkIntervalRef.current) return;
+    processingChunkRef.current = true;
+    const recording = recordingRef.current;
+    const startedAt = recordingStartTimeRef.current;
+    let uri = null;
+    try {
+      setVoiceStatus('🎤 Processing your phrase...');
+      await recording.stopAndUnloadAsync();
+      recordingRef.current = null;
+      uri = recording.getURI();
+    } catch (e) {
+      console.warn('Stop recording error:', e);
+      processingChunkRef.current = false;
+      return;
+    }
+    hadSpeechInChunkRef.current = false;
+    const durationMs = Date.now() - startedAt;
+    await new Promise((r) => setTimeout(r, 250));
+    if (!chunkIntervalRef.current) {
+      processingChunkRef.current = false;
+      return;
+    }
     try {
       await startNewRecording();
-      setVoiceStatus('🎤 Listening... (Deepgram + Expo Go)');
+      recordingStartTimeRef.current = Date.now();
+      setVoiceStatus('🎤 Listening... (speak, then pause for next phrase)');
     } catch (e) {
       console.warn('Restart recording error:', e);
       setVoiceStatus('🎤 Tap to start again');
+      processingChunkRef.current = false;
+      return;
+    }
+    processingChunkRef.current = false;
+    if (uri && durationMs >= MIN_CHUNK_MS) {
+      transcribeWithDeepgram(uri, 'audio/m4a')
+        .then((transcript) => {
+          if (transcript) appendTranscription(transcript);
+        })
+        .catch((e) => console.warn('Chunk transcribe error:', e));
     }
   };
-  runChunkRef.current = runChunkRecordAndTranscribe;
+
+  const runMeteringPoll = async () => {
+    if (!chunkIntervalRef.current || processingChunkRef.current) return;
+    const rec = recordingRef.current;
+    if (!rec) return;
+    try {
+      const status = await rec.getStatusAsync();
+      const metering = status?.metering;
+      if (metering === undefined || metering === null) {
+        meteringUndefinedCountRef.current = (meteringUndefinedCountRef.current || 0) + 1;
+        if (meteringUndefinedCountRef.current >= 4) {
+          meteringUnavailableRef.current = true;
+          clearInterval(chunkIntervalRef.current);
+          chunkIntervalRef.current = setInterval(() => processCurrentChunkAndRestart(), FALLBACK_CHUNK_MS);
+        }
+        return;
+      }
+      meteringUndefinedCountRef.current = 0;
+      const now = Date.now();
+      if (metering > SILENCE_THRESHOLD_DB) {
+        lastSpeechTimeRef.current = now;
+        hadSpeechInChunkRef.current = true;
+      }
+      if (hadSpeechInChunkRef.current && (now - lastSpeechTimeRef.current) >= SILENCE_MS) {
+        processCurrentChunkAndRestart();
+      }
+    } catch (_) {}
+  };
+
+  runChunkRef.current = runMeteringPoll;
 
   const startNewRecording = async () => {
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: true,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
-    });
-    const { recording } = await Audio.Recording.createAsync(
-      Audio.RecordingOptionsPresets.HIGH_QUALITY
-    );
-    recordingRef.current = recording;
-    setVoiceStatus('🎤 Listening... (Deepgram + Expo Go)');
+    if (recordingPreparingRef.current) return;
+    recordingPreparingRef.current = true;
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recordingRef.current = recording;
+      recordingStartTimeRef.current = Date.now();
+      setVoiceStatus('🎤 Listening... (speak, then pause for next phrase)');
+    } finally {
+      recordingPreparingRef.current = false;
+    }
   };
 
   const startVoiceRecognition = async () => {
@@ -315,27 +480,38 @@ const TranslationModal = ({
       );
       return;
     }
+    setIsListening(true);
+    setVoiceStatus('Initializing...');
+    setInputText('');
+    setTranslatedText('');
+    setLastTranslationText('');
+    setRecognitionCount(0);
+
+    const useLive = typeof window !== 'undefined' && window.navigator?.mediaDevices;
+    if (useLive) {
+      await startDeepgramLive();
+      return;
+    }
+
     try {
       if (permissionResponse?.status !== 'granted') {
         setVoiceStatus('Requesting microphone permission...');
         const { status } = await requestPermission();
         if (status !== 'granted') {
           Alert.alert('Microphone access is required for voice input.');
+          setIsListening(false);
           return;
         }
       }
-      setIsListening(true);
-      setVoiceStatus('Initializing...');
-      setInputText('');
-      setTranslatedText('');
-      setLastTranslationText('');
-      setRecognitionCount(0);
+      meteringUnavailableRef.current = false;
+      hadSpeechInChunkRef.current = false;
+      meteringUndefinedCountRef.current = 0;
       await startNewRecording();
-      setVoiceStatus('🎤 Listening... (Deepgram + Expo Go)');
-      runChunkRef.current = runChunkRecordAndTranscribe;
+      setVoiceStatus('🎤 Listening... (speak, then pause for next phrase)');
+      runChunkRef.current = runMeteringPoll;
       const id = setInterval(() => {
         if (runChunkRef.current) runChunkRef.current();
-      }, DEEPGRAM_CHUNK_SECONDS * 1000);
+      }, METERING_POLL_MS);
       chunkIntervalRef.current = id;
     } catch (error) {
       console.error('Voice start error:', error);
@@ -347,6 +523,14 @@ const TranslationModal = ({
   };
 
   const stopVoiceRecognition = async () => {
+    const useLive = typeof window !== 'undefined' && window.navigator?.mediaDevices;
+    if (useLive) {
+      stopDeepgramLive();
+      setIsListening(false);
+      setVoiceStatus('⏹️ Stopped');
+      setTimeout(() => setVoiceStatus(''), 2000);
+      return;
+    }
     const intervalId = chunkIntervalRef.current;
     chunkIntervalRef.current = null;
     if (typeof intervalId === 'number') clearInterval(intervalId);
@@ -363,7 +547,7 @@ const TranslationModal = ({
         const uri = rec.getURI();
         if (uri) {
           setVoiceStatus('⏳ Transcribing last chunk...');
-          const contentType = Platform.OS === 'web' ? 'audio/webm' : 'audio/m4a';
+          const contentType = 'audio/m4a';
           const transcript = await transcribeWithDeepgram(uri, contentType);
           if (transcript) {
             appendTranscription(transcript);
@@ -532,7 +716,9 @@ const TranslationModal = ({
                       <Text style={styles.voiceButtonText}>
                         {isListening 
                           ? '⏹️ Stop Listening' 
-                          : '🎤 Voice Input (Deepgram + Expo Go)'}
+                          : Platform.OS === 'web' 
+                            ? '🎤 Voice Input (Real-time)' 
+                            : '🎤 Voice Input (Deepgram + Expo Go)'}
                       </Text>
                     </TouchableOpacity>
                   </View>
@@ -587,7 +773,7 @@ const TranslationModal = ({
                   )}
                 </TouchableOpacity>
 
-                {/* Translated Text */}
+                {/* Translated Message (editable) */}
                 <View style={styles.section}>
                   <Text style={styles.label}>Translated Message:</Text>
                   <View style={styles.textInputContainer}>
@@ -595,10 +781,11 @@ const TranslationModal = ({
                       style={[styles.textInput, styles.translatedInput]}
                       multiline
                       numberOfLines={4}
-                      placeholder={isTranslating ? "Translating..." : "Translated message will appear here..."}
+                      placeholder={isTranslating ? "Translating..." : "Translated message will appear here... (editable)"}
                       placeholderTextColor={colors.text.secondary}
                       value={translatedText}
-                      editable={false}
+                      onChangeText={setTranslatedText}
+                      editable={true}
                     />
                   </View>
                 </View>
@@ -631,6 +818,19 @@ const TranslationModal = ({
                     <Text style={styles.actionButtonText}>Use Translation</Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* Send Message Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.sendMessageButton,
+                    !translatedText.trim() && styles.buttonDisabled,
+                  ]}
+                  onPress={handleUseTranslatedText}
+                  disabled={!translatedText.trim()}
+                >
+                  <Ionicons name="send" size={18} color={colors.text.white} />
+                  <Text style={styles.sendMessageButtonText}>Send Message</Text>
+                </TouchableOpacity>
 
                 {/* Cancel Button */}
                 <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
@@ -865,6 +1065,23 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.5,
+  },
+  sendMessageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent.success,
+    borderRadius: borderRadius.sm,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    minHeight: 44,
+    gap: 8,
+    marginBottom: 12,
+  },
+  sendMessageButtonText: {
+    fontSize: 15,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.white,
   },
   cancelButton: {
     backgroundColor: '#6c757d',
