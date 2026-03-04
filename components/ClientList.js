@@ -14,7 +14,15 @@ import ClientListItem from './ClientListItem';
 import ProfileSelector from './ProfileSelector';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
-const ClientList = ({ clients, selectedClientId, onSelectClient, onDeleteClient, sellerProfile, sellerProfiles = [] }) => {
+const ClientList = ({
+  clients,
+  selectedClientId,
+  onSelectClient,
+  onDeleteClient,
+  sellerProfiles = [],
+  selectedSellerProfile,
+  onSelectProfile,
+}) => {
   const [searchText, setSearchText] = useState('');
 
   const filteredClients = clients.filter((client) => {
@@ -43,7 +51,12 @@ const ClientList = ({ clients, selectedClientId, onSelectClient, onDeleteClient,
       style={styles.container}
     >
       <View style={styles.profileSection}>
-        <ProfileSelector sellerProfile={sellerProfile} variant="sidebar" />
+        <ProfileSelector
+          sellerProfiles={sellerProfiles}
+          selectedSellerProfile={selectedSellerProfile}
+          onSelectProfile={onSelectProfile}
+          variant="sidebar"
+        />
       </View>
       {/* <View style={styles.header}>
         <Text style={styles.title}>Clients</Text>

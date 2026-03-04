@@ -22,6 +22,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     setNewClientData,
     sellerProfile,
     sellerProfiles,
+    selectedSellerProfile,
+    setSelectedSellerProfile,
     selectedConversationId,
     setSelectedConversationId,
     requestAllData,
@@ -327,11 +329,12 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         >
           <ClientList
             sellerProfiles={sellerProfiles}
+            selectedSellerProfile={selectedSellerProfile}
+            onSelectProfile={setSelectedSellerProfile}
             clients={clients}
             selectedClientId={selectedClientId}
             onSelectClient={handleSelectClient}
             onDeleteClient={handleDeleteClient}
-            sellerProfile={sellerProfile}
           />
         </OffcanvasSidebar>
 
@@ -350,7 +353,12 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
               style={styles.emptyState}
             >
               <View style={styles.emptyContent}>
-                <ProfileSelector sellerProfile={sellerProfile} variant="card" />
+                <ProfileSelector
+                  sellerProfiles={sellerProfiles}
+                  selectedSellerProfile={selectedSellerProfile}
+                  onSelectProfile={setSelectedSellerProfile}
+                  variant="card"
+                />
                 <Text style={styles.emptyIcon}>👥</Text>
                 <Text style={styles.emptyTitle}>
                   {clients.length === 0 ? 'No Clients' : 'Select a Client'}

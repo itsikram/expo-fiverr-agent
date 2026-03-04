@@ -30,8 +30,9 @@ export const WebSocketProvider = ({ children }) => {
   const [clientData, setClientData] = useState({}); // Keyed by username/conversationId
   const [selectedConversationId, setSelectedConversationId] = useState(null);
   const [newClientData, setNewClientData] = useState(null); // New client data that doesn't exist in clients list
-  const [sellerProfile, setSellerProfile] = useState(null); // { profileName, username, updated_at } - current Fiverr seller from extension
-  const [sellerProfiles, setSellerProfiles] = useState([]); // all unique profiles by username [{ profileName, username, updated_at }, ...]
+  const [sellerProfile, setSellerProfile] = useState(null); // { profileName, username, updated_at, online } - current from extension
+  const [sellerProfiles, setSellerProfiles] = useState([]); // all unique profiles by username
+  const [selectedSellerProfile, setSelectedSellerProfile] = useState(null); // profile user selected in app (for display/context)
   const fetchDetailsCallbacksRef = useRef({}); // Track callbacks for fetch_details requests
   
   const wsRef = useRef(null);
@@ -592,6 +593,11 @@ export const WebSocketProvider = ({ children }) => {
             if (u) byUsername.set(u, profile);
             return Array.from(byUsername.values());
           });
+          setSelectedSellerProfile((prev) => {
+            const u = profile.username || profile.profileName;
+            if (!prev || (prev.username || prev.profileName) === u) return profile;
+            return prev;
+          });
           const u = profile.username || profile.profileName;
           if (u) {
             console.log('[WebSocket] Seller profile updated:', u, 'online:', profile.online);
@@ -604,16 +610,29 @@ export const WebSocketProvider = ({ children }) => {
         break;
 
       case 'seller_profiles':
-        // Full list of all unique seller profiles with online status - e.g. on connect or when a browser disconnects
+        // Full list of all unique seller profiles with online status - dedupe by username
         if (Array.isArray(data.data)) {
-          setSellerProfiles(data.data);
+          const byUsername = new Map();
+          data.data.forEach((p) => {
+            const u = p.username || p.profileName;
+            if (u) byUsername.set(u, { ...p, online: Boolean(p.online) });
+          });
+          setSellerProfiles(Array.from(byUsername.values()));
           setSellerProfile((current) => {
-            if (!current?.username) return current;
+            if (!current?.username && !current?.profileName) return current;
             const inList = data.data.find((p) => (p.username || p.profileName) === (current.username || current.profileName));
             if (inList) return { ...current, online: Boolean(inList.online) };
             return current;
           });
-          console.log('[WebSocket] seller_profiles updated:', data.data.length, 'profile(s)');
+          setSelectedSellerProfile((prev) => {
+            const arr = Array.from(byUsername.values());
+            const inList = prev && arr.find((p) => (p.username || p.profileName) === (prev.username || prev.profileName));
+            if (inList) return { ...prev, online: Boolean(inList.online) };
+            if (prev) return prev;
+            if (arr.length > 0) return arr[0];
+            return null;
+          });
+          console.log('[WebSocket] seller_profiles updated:', byUsername.size, 'profile(s)');
         }
         break;
 
@@ -794,8 +813,10 @@ export const WebSocketProvider = ({ children }) => {
     clientData,
     newClientData,
     setNewClientData,
-    sellerProfile, // { profileName, username, updated_at } - current Fiverr seller from extension
+    sellerProfile, // current from extension (with online)
     sellerProfiles, // all unique profiles by username
+    selectedSellerProfile, // profile user selected in app
+    setSelectedSellerProfile,
     selectedConversationId,
     setSelectedConversationId,
     connect,

@@ -218,7 +218,7 @@ const TranslationModal = ({
       throw new Error('Recording file is empty. Speak closer to the mic and try again.');
     }
     const dgLang = sourceLanguage === 'auto' ? 'multi' : sourceLanguage;
-    const dgModel = sourceLanguage === 'bn' ? 'general' : 'nova-2';
+    const dgModel = sourceLanguage === 'bn' ? 'nova-3-general' : 'nova-2';
     const url = `https://api.deepgram.com/v1/listen?language=${dgLang}&smart_format=true&model=${dgModel}`;
     const response = await fetch(url, {
       method: 'POST',
@@ -339,7 +339,7 @@ const TranslationModal = ({
       const processor = ctx.createScriptProcessor(bufferLen, 1, 1);
       scriptProcessorRef.current = processor;
       const dgLang = sourceLanguage === 'auto' ? 'multi' : sourceLanguage;
-      const dgModel = sourceLanguage === 'bn' ? 'general' : 'nova-2';
+      const dgModel = sourceLanguage === 'bn' ? 'nova-3-general' : 'nova-2';
       const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=${sampleRate}&language=${dgLang}&smart_format=true&model=${dgModel}&interim_results=true`;
       // Sec-WebSocket-Protocol: token, YOUR_API_KEY (array sends as "token, key")
       const socket = new window.WebSocket(wsUrl, ['token', key]);
