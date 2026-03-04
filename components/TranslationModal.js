@@ -18,18 +18,23 @@ import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
 // Deepgram API key – set EXPO_PUBLIC_DEEPGRAM_API_KEY in .env and restart dev server (expo start)
 const DEEPGRAM_LIVE_SAMPLE_RATE = 16000;
-// Native: process when user pauses (silence after speech), not on a fixed timer
-const SILENCE_THRESHOLD_DB = -50; // below this = silence
-const SILENCE_MS = 1800; // pause this long after speech → process chunk
-const METERING_POLL_MS = 400;
-const FALLBACK_CHUNK_MS = 5000; // when metering unavailable, process every 5s
-const MIN_CHUNK_MS = 1200; // don't send chunks shorter than this (avoid empty/silent)
+// Native: process when user pauses (silence after speech)
+const SILENCE_MS = 1200; // pause this long after speech → process chunk
+const METERING_POLL_MS = 350;
+const FALLBACK_CHUNK_MS = 3000; // when metering unavailable, process every 3s
+const MIN_CHUNK_MS = 800; // don't send chunks shorter than this
 
 // Languages list matching pyagent app
-// Bengali (bn) is supported for both voice input (auto-detected) and translation
+// Source: Bangla and English (and auto-detect between them)
+const SOURCE_LANGUAGES = [
+  { name: 'Auto (Bangla / English)', code: 'auto' },
+  { name: 'Bengali (Bangla)', code: 'bn' },
+  { name: 'English', code: 'en' },
+];
+// Target languages for translation
 const LANGUAGES = [
   { name: 'English', code: 'en' },
-  { name: 'Bengali (Bangla)', code: 'bn' }, // Bengali supported for translation
+  { name: 'Bengali (Bangla)', code: 'bn' },
   { name: 'Spanish', code: 'es' },
   { name: 'French', code: 'fr' },
   { name: 'German', code: 'de' },
@@ -55,17 +60,19 @@ const TranslationModal = ({
   visible,
   onClose,
   initialText = '',
-  targetLanguage = 'bn',
+  targetLanguage = 'en',
   onTextReady,
   onUseInputText,
 }) => {
   const [inputText, setInputText] = useState(initialText);
   const [translatedText, setTranslatedText] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState(targetLanguage);
+  const [sourceLanguage, setSourceLanguage] = useState('auto');
   const [isTranslating, setIsTranslating] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState('');
   const [showLanguagePicker, setShowLanguagePicker] = useState(false);
+  const [showSourcePicker, setShowSourcePicker] = useState(false);
   const [lastTranslationText, setLastTranslationText] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
   const [recognitionCount, setRecognitionCount] = useState(0);
@@ -101,6 +108,7 @@ const TranslationModal = ({
       setVoiceStatus('');
       setIsListening(false);
       setShowLanguagePicker(false);
+      setShowSourcePicker(false);
       setRecognitionCount(0);
       translationInProgressRef.current = false;
       if (typeof window !== 'undefined' && window.navigator?.mediaDevices) {
@@ -178,7 +186,7 @@ const TranslationModal = ({
     if (!body || (body.byteLength !== undefined && body.byteLength === 0)) {
       throw new Error('Recording file is empty. Speak closer to the mic and try again.');
     }
-    const url = 'https://api.deepgram.com/v1/listen?language=multi&smart_format=true&model=nova-2';
+    const url = 'https://api.deepgram.com/v1/listen?language=bn&smart_format=true&model=nova-2';
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -216,7 +224,7 @@ const TranslationModal = ({
       const url = 'https://translate.googleapis.com/translate_a/single';
       const params = {
         client: 'gtx',
-        sl: 'auto',
+        sl: sourceLanguage,
         tl: selectedLanguage,
         dt: 't',
         q: text,
@@ -264,14 +272,14 @@ const TranslationModal = ({
     }
   };
 
-  const appendTranscription = (text) => {
+  const appendTranscription = (text, onDone) => {
     if (!text || !text.trim()) return;
     const newPhrase = text.trim();
     setInputText((prev) => {
       const current = prev.trim();
-      if (!current) return newPhrase;
-      if (current.endsWith(newPhrase)) return prev;
-      return current + ' ' + newPhrase;
+      const newText = !current ? newPhrase : current.endsWith(newPhrase) ? prev : current + ' ' + newPhrase;
+      if (onDone && newText !== prev) onDone(newText);
+      return newText;
     });
     setRecognitionCount((c) => c + 1);
   };
@@ -297,7 +305,7 @@ const TranslationModal = ({
       const bufferLen = 4096;
       const processor = ctx.createScriptProcessor(bufferLen, 1, 1);
       scriptProcessorRef.current = processor;
-      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=${sampleRate}&language=multi&smart_format=true&model=nova-2&interim_results=true`;
+      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=${sampleRate}&language=bn&smart_format=true&model=nova-2&interim_results=true`;
       // Sec-WebSocket-Protocol: token, YOUR_API_KEY (array sends as "token, key")
       const socket = new window.WebSocket(wsUrl, ['token', key]);
       socketRef.current = socket;
@@ -325,7 +333,10 @@ const TranslationModal = ({
           if (!transcript) return;
           const isFinal = msg.is_final === true;
           if (isFinal) {
-            appendTranscription(transcript);
+            appendTranscription(transcript, (newFullText) => {
+              setLastTranslationText(newFullText);
+              translateText(newFullText, true);
+            });
             setVoiceStatus('✓ Live...');
           } else {
             setVoiceStatus(`🔄 ${transcript.slice(-50)}`);
@@ -414,7 +425,12 @@ const TranslationModal = ({
     if (uri && durationMs >= MIN_CHUNK_MS) {
       transcribeWithDeepgram(uri, 'audio/m4a')
         .then((transcript) => {
-          if (transcript) appendTranscription(transcript);
+          if (transcript) {
+            appendTranscription(transcript, (newFullText) => {
+              setLastTranslationText(newFullText);
+              translateText(newFullText, true);
+            });
+          }
         })
         .catch((e) => console.warn('Chunk transcribe error:', e));
     }
@@ -429,7 +445,7 @@ const TranslationModal = ({
       const metering = status?.metering;
       if (metering === undefined || metering === null) {
         meteringUndefinedCountRef.current = (meteringUndefinedCountRef.current || 0) + 1;
-        if (meteringUndefinedCountRef.current >= 4) {
+        if (meteringUndefinedCountRef.current >= 3) {
           meteringUnavailableRef.current = true;
           clearInterval(chunkIntervalRef.current);
           chunkIntervalRef.current = setInterval(() => processCurrentChunkAndRestart(), FALLBACK_CHUNK_MS);
@@ -438,11 +454,18 @@ const TranslationModal = ({
       }
       meteringUndefinedCountRef.current = 0;
       const now = Date.now();
-      if (metering > SILENCE_THRESHOLD_DB) {
+      const isSpeech = typeof metering === 'number' && (
+        (metering >= 0 && metering <= 1 && metering > 0.02) || (metering < 0 && metering > -55)
+      );
+      if (isSpeech) {
         lastSpeechTimeRef.current = now;
         hadSpeechInChunkRef.current = true;
       }
       if (hadSpeechInChunkRef.current && (now - lastSpeechTimeRef.current) >= SILENCE_MS) {
+        processCurrentChunkAndRestart();
+      }
+      const recordingDuration = now - recordingStartTimeRef.current;
+      if (hadSpeechInChunkRef.current && recordingDuration >= 4000 && (now - lastSpeechTimeRef.current) >= 3500) {
         processCurrentChunkAndRestart();
       }
     } catch (_) {}
@@ -461,9 +484,10 @@ const TranslationModal = ({
         shouldDuckAndroid: true,
         playThroughEarpieceAndroid: false,
       });
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
+      const { recording } = await Audio.Recording.createAsync({
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        isMeteringEnabled: true,
+      });
       recordingRef.current = recording;
       recordingStartTimeRef.current = Date.now();
       setVoiceStatus('🎤 Listening... (speak, then pause for next phrase)');
@@ -640,7 +664,60 @@ const TranslationModal = ({
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
               >
-                {/* Language Selection */}
+                {/* Source Language (Bangla / English) */}
+                <View style={styles.section}>
+                  <View style={styles.languageContainer}>
+                    <Text style={styles.label}>Source (your language):</Text>
+                    <TouchableOpacity
+                      style={[
+                        styles.languageButton,
+                        showSourcePicker && styles.languageButtonActive,
+                      ]}
+                      onPress={() => {
+                        setShowSourcePicker(!showSourcePicker);
+                        setShowLanguagePicker(false);
+                      }}
+                    >
+                      <Text style={styles.languageButtonText}>{SOURCE_LANGUAGES.find((l) => l.code === sourceLanguage)?.name ?? 'Auto'}</Text>
+                      <Ionicons
+                        name={showSourcePicker ? 'chevron-up' : 'chevron-down'}
+                        size={18}
+                        color={colors.text.primary}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  {showSourcePicker && (
+                    <View style={styles.languagePicker}>
+                      {SOURCE_LANGUAGES.map((lang) => (
+                        <TouchableOpacity
+                          key={lang.code}
+                          style={[
+                            styles.languageItem,
+                            sourceLanguage === lang.code && styles.languageItemSelected,
+                          ]}
+                          onPress={() => {
+                            setSourceLanguage(lang.code);
+                            setShowSourcePicker(false);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.languageItemText,
+                              sourceLanguage === lang.code && styles.languageItemTextSelected,
+                            ]}
+                          >
+                            {lang.name}
+                          </Text>
+                          {sourceLanguage === lang.code && (
+                            <Ionicons name="checkmark" size={18} color={colors.accent.success} />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
+                {/* Target Language */}
                 <View style={styles.section}>
                   <View style={styles.languageContainer}>
                     <Text style={styles.label}>Target Language:</Text>
@@ -649,7 +726,10 @@ const TranslationModal = ({
                         styles.languageButton,
                         showLanguagePicker && styles.languageButtonActive,
                       ]}
-                      onPress={() => setShowLanguagePicker(!showLanguagePicker)}
+                      onPress={() => {
+                        setShowLanguagePicker(!showLanguagePicker);
+                        setShowSourcePicker(false);
+                      }}
                     >
                       <Text style={styles.languageButtonText}>{selectedLanguageName}</Text>
                       <Ionicons
