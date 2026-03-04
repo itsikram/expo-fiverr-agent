@@ -78,6 +78,7 @@ const TranslationModal = ({
   const [recognitionCount, setRecognitionCount] = useState(0);
   
   const autoTranslateTimerRef = useRef(null);
+  const autoTranslateInputDebounceRef = useRef(null);
   const recordingRef = useRef(null);
   const chunkIntervalRef = useRef(null);
   const translationInProgressRef = useRef(false);
@@ -123,7 +124,37 @@ const TranslationModal = ({
     };
   }, [visible, initialText]);
 
-  // Auto-translate during voice input (matches desktop app behavior)
+  // Auto-translate when "Your Message" input value changes (debounced)
+  useEffect(() => {
+    if (!visible) return;
+    const currentText = inputText.trim();
+    if (autoTranslateInputDebounceRef.current) {
+      clearTimeout(autoTranslateInputDebounceRef.current);
+    }
+    autoTranslateInputDebounceRef.current = setTimeout(() => {
+      autoTranslateInputDebounceRef.current = null;
+      if (!currentText) {
+        setTranslatedText('');
+        setLastTranslationText('');
+        return;
+      }
+      if (
+        currentText !== lastTranslationText &&
+        currentText.length >= 1 &&
+        !translationInProgressRef.current
+      ) {
+        setLastTranslationText(currentText);
+        translateText(currentText, true);
+      }
+    }, 500);
+    return () => {
+      if (autoTranslateInputDebounceRef.current) {
+        clearTimeout(autoTranslateInputDebounceRef.current);
+      }
+    };
+  }, [visible, inputText, selectedLanguage]);
+
+  // Auto-translate during voice input (interval backup)
   useEffect(() => {
     if (isListening) {
       autoTranslateTimerRef.current = setInterval(() => {
@@ -186,7 +217,9 @@ const TranslationModal = ({
     if (!body || (body.byteLength !== undefined && body.byteLength === 0)) {
       throw new Error('Recording file is empty. Speak closer to the mic and try again.');
     }
-    const url = 'https://api.deepgram.com/v1/listen?language=bn&smart_format=true&model=nova-2';
+    const dgLang = sourceLanguage === 'auto' ? 'multi' : sourceLanguage;
+    const dgModel = sourceLanguage === 'bn' ? 'general' : 'nova-2';
+    const url = `https://api.deepgram.com/v1/listen?language=${dgLang}&smart_format=true&model=${dgModel}`;
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -305,7 +338,9 @@ const TranslationModal = ({
       const bufferLen = 4096;
       const processor = ctx.createScriptProcessor(bufferLen, 1, 1);
       scriptProcessorRef.current = processor;
-      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=${sampleRate}&language=bn&smart_format=true&model=nova-2&interim_results=true`;
+      const dgLang = sourceLanguage === 'auto' ? 'multi' : sourceLanguage;
+      const dgModel = sourceLanguage === 'bn' ? 'general' : 'nova-2';
+      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=${sampleRate}&language=${dgLang}&smart_format=true&model=${dgModel}&interim_results=true`;
       // Sec-WebSocket-Protocol: token, YOUR_API_KEY (array sends as "token, key")
       const socket = new window.WebSocket(wsUrl, ['token', key]);
       socketRef.current = socket;
@@ -647,7 +682,7 @@ const TranslationModal = ({
         activeOpacity={1}
         onPress={onClose}
       >
-        <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+        <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()} style={styles.modalWrapper}>
           <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
               {/* Header */}
@@ -932,12 +967,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalContainer: {
+  modalWrapper: {
+    alignSelf: 'center',
     width: '90%',
     maxWidth: '95%',
     height: '90%',
+    maxHeight: '90%',
+  },
+  modalContainer: {
+    width: '100%',
+    height: '100%',
   },
   modalContent: {
+    flex: 1,
     backgroundColor: colors.background.primary,
     borderRadius: borderRadius.xl,
     overflow: 'hidden',
@@ -952,8 +994,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 20,
+    paddingTop: 10,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.dark,
   },
@@ -974,7 +1016,7 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
   },
   section: {
-    marginBottom: 20,
+    marginBottom: 15,
   },
   label: {
     fontSize: 14,
@@ -986,6 +1028,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    marginTop: 10
   },
   languageButton: {
     flex: 1,
