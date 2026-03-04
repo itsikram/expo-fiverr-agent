@@ -38,7 +38,9 @@ export const WebSocketProvider = ({ children }) => {
   const pingIntervalRef = useRef(null);
   const sessionIdRef = useRef(null);
   const isInitialLoadRef = useRef(true);
-  const saveTimeoutRef = useRef(null);
+  const saveClientsTimeoutRef = useRef(null);
+  const saveMessagesTimeoutRef = useRef(null);
+  const saveClientDataTimeoutRef = useRef(null);
 
   const connect = useCallback(async () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -187,8 +189,13 @@ export const WebSocketProvider = ({ children }) => {
     sendMessage({ type: 'request_client_list' });
   }, [sendMessage]);
 
-  const requestMessages = useCallback(() => {
-    sendMessage({ type: 'request_messages' });
+  const requestMessages = useCallback((conversationIdOrUsername) => {
+    const payload = { type: 'request_messages' };
+    if (conversationIdOrUsername) {
+      payload.conversationId = conversationIdOrUsername;
+      payload.username = conversationIdOrUsername;
+    }
+    sendMessage(payload);
   }, [sendMessage]);
 
   const requestClientData = useCallback((usernameOrConversationId) => {
@@ -404,7 +411,13 @@ export const WebSocketProvider = ({ children }) => {
             ...client, // Include all other properties
           }));
           setClients(transformedClients);
-          // Save to storage (will be handled by useEffect, but save sync timestamp)
+          // Save to storage immediately after receiving from server
+          saveClients(transformedClients).then((success) => {
+            if (success) {
+              console.log('[WebSocket] Saved clients to storage:', transformedClients.length);
+            }
+          });
+          // Save sync timestamp
           saveLastSync();
         }
         break;
@@ -474,6 +487,10 @@ export const WebSocketProvider = ({ children }) => {
         console.log('[WebSocket] Received message data:', data.data?.messages?.length || 0, 'messages');
         if (data.data?.messages && data.data?.conversationId) {
           const conversationId = data.data.conversationId;
+          // Username key: client list uses username, message payload has URL UUID - store under both so lookup works
+          const usernameKey = data.data.clients?.[0]?.username ||
+            data.data.messages.find((m) => !m.isFromMe && (m.senderUsername || m.sender))?.senderUsername ||
+            data.data.messages.find((m) => !m.isFromMe && (m.senderUsername || m.sender))?.sender;
           // Transform messages to match app format
           const transformedMessages = data.data.messages.map((msg) => ({
             text: msg.text || msg.content || msg.message,
@@ -482,12 +499,34 @@ export const WebSocketProvider = ({ children }) => {
             time: msg.timestamp || msg.time || msg.date,
             ...msg,
           }));
-          
-          setMessages((prev) => ({
-            ...prev,
-            [conversationId]: transformedMessages,
-          }));
-          // Save to storage (will be handled by useEffect, but save sync timestamp)
+          // Sort by time so latest message is last (Fiverr format: "Mar 04, 12:39 AM")
+          const sortByTime = (a, b) => {
+            const parse = (ts) => {
+              if (!ts) return 0;
+              const d = new Date(ts);
+              return isNaN(d.getTime()) ? 0 : d.getTime();
+            };
+            return parse(a.time) - parse(b.time);
+          };
+          transformedMessages.sort(sortByTime);
+
+          setMessages((prev) => {
+            const updatedMessages = {
+              ...prev,
+              [conversationId]: transformedMessages,
+            };
+            if (usernameKey && usernameKey !== conversationId) {
+              updatedMessages[usernameKey] = transformedMessages;
+            }
+            // Save to storage immediately after receiving from server
+            saveMessages(updatedMessages).then((success) => {
+              if (success) {
+                console.log('[WebSocket] Saved messages to storage for conversation:', conversationId, usernameKey ? `and ${usernameKey}` : '');
+              }
+            });
+            return updatedMessages;
+          });
+          // Save sync timestamp
           saveLastSync();
         }
         break;
@@ -590,7 +629,18 @@ export const WebSocketProvider = ({ children }) => {
       }
       
       if (Object.keys(storedMessages).length > 0) {
-        setMessages(storedMessages);
+        const sortByTime = (a, b) => {
+          const parse = (ts) => {
+            if (!ts) return 0;
+            const d = new Date(ts);
+            return isNaN(d.getTime()) ? 0 : d.getTime();
+          };
+          return parse(a.time) - parse(b.time);
+        };
+        const sorted = Object.fromEntries(
+          Object.entries(storedMessages).map(([k, arr]) => [k, [...(Array.isArray(arr) ? arr : [])].sort(sortByTime)])
+        );
+        setMessages(sorted);
         console.log('[WebSocket] Loaded messages for', Object.keys(storedMessages).length, 'conversations from storage');
       }
       
@@ -610,17 +660,23 @@ export const WebSocketProvider = ({ children }) => {
     if (isInitialLoadRef.current) return; // Don't save on initial load
     
     // Debounce saves to avoid too many writes
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
+    if (saveClientsTimeoutRef.current) {
+      clearTimeout(saveClientsTimeoutRef.current);
     }
     
-    saveTimeoutRef.current = setTimeout(() => {
-      saveClients(clients);
+    saveClientsTimeoutRef.current = setTimeout(() => {
+      saveClients(clients).then((success) => {
+        if (success) {
+          console.log('[WebSocket] Auto-saved clients to storage:', clients.length);
+        } else {
+          console.error('[WebSocket] Failed to save clients to storage');
+        }
+      });
     }, 500);
     
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
+      if (saveClientsTimeoutRef.current) {
+        clearTimeout(saveClientsTimeoutRef.current);
       }
     };
   }, [clients]);
@@ -630,17 +686,23 @@ export const WebSocketProvider = ({ children }) => {
     if (isInitialLoadRef.current) return; // Don't save on initial load
     
     // Debounce saves to avoid too many writes
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
+    if (saveMessagesTimeoutRef.current) {
+      clearTimeout(saveMessagesTimeoutRef.current);
     }
     
-    saveTimeoutRef.current = setTimeout(() => {
-      saveMessages(messages);
+    saveMessagesTimeoutRef.current = setTimeout(() => {
+      saveMessages(messages).then((success) => {
+        if (success) {
+          console.log('[WebSocket] Auto-saved messages to storage');
+        } else {
+          console.error('[WebSocket] Failed to save messages to storage');
+        }
+      });
     }, 500);
     
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
+      if (saveMessagesTimeoutRef.current) {
+        clearTimeout(saveMessagesTimeoutRef.current);
       }
     };
   }, [messages]);
@@ -650,17 +712,23 @@ export const WebSocketProvider = ({ children }) => {
     if (isInitialLoadRef.current) return; // Don't save on initial load
     
     // Debounce saves to avoid too many writes
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
+    if (saveClientDataTimeoutRef.current) {
+      clearTimeout(saveClientDataTimeoutRef.current);
     }
     
-    saveTimeoutRef.current = setTimeout(() => {
-      saveClientData(clientData);
+    saveClientDataTimeoutRef.current = setTimeout(() => {
+      saveClientData(clientData).then((success) => {
+        if (success) {
+          console.log('[WebSocket] Auto-saved client data to storage');
+        } else {
+          console.error('[WebSocket] Failed to save client data to storage');
+        }
+      });
     }, 500);
     
     return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
+      if (saveClientDataTimeoutRef.current) {
+        clearTimeout(saveClientDataTimeoutRef.current);
       }
     };
   }, [clientData]);

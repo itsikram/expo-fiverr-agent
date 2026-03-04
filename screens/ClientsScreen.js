@@ -129,6 +129,27 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     return messages[conversationId] || [];
   }, [selectedClient, messages]);
 
+  // Same flow as selecting a client: activate in browser, then extract after delay.
+  const EXTRACTION_DELAY_MS = 2800;
+
+  const handleFetchMessages = () => {
+    if (!selectedClient || !isConnected) {
+      if (selectedClient) requestMessages(selectedClient.conversationId || selectedClient.username || selectedClient.id);
+      return;
+    }
+    const conversationId = selectedClient.conversationId || selectedClient.username || selectedClient.id;
+    const username = selectedClient.username;
+    requestMessages(conversationId);
+    if (username) {
+      clickClientInFiverr(username);
+      setTimeout(() => {
+        triggerMessageExtraction();
+      }, EXTRACTION_DELAY_MS);
+    } else {
+      triggerMessageExtraction();
+    }
+  };
+
   const handleSelectClient = (clientId) => {
     setSelectedClientId(clientId);
     setIsSidebarOpen(false); // Close sidebar when client is selected
@@ -141,18 +162,22 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       
       setSelectedConversationId(conversationId);
       
-      // Trigger browser extension to click/activate this client in Fiverr
+      // Request client data immediately
+      requestClientData(conversationId);
+      requestMessages(conversationId);
+
+      // Trigger browser extension to click/activate this client in Fiverr first
       if (username && isConnected) {
         console.log('[ClientsScreen] Activating client in browser:', username);
         clickClientInFiverr(username);
+        // Delay message extraction so Fiverr has time to switch to this conversation.
+        setTimeout(() => {
+          console.log('[ClientsScreen] Triggering message extraction for:', username);
+          triggerMessageExtraction();
+        }, EXTRACTION_DELAY_MS);
+      } else {
+        triggerMessageExtraction();
       }
-      
-      // Request specific client data and messages
-      requestClientData(conversationId);
-      requestMessages();
-      
-      // Also trigger message extraction for this specific client
-      triggerMessageExtraction();
     }
   };
 
@@ -311,7 +336,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
             <ClientDetailsScreen
               client={selectedClient}
               messages={selectedMessages}
-              onFetchMessages={requestMessages}
+              onFetchMessages={handleFetchMessages}
               onSendMessage={sendMessageToClient}
             />
           ) : (

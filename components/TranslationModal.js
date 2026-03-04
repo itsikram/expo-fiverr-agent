@@ -11,10 +11,13 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 import { Ionicons } from '@expo/vector-icons';
-import Constants from 'expo-constants';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
+
+// Deepgram API key – set EXPO_PUBLIC_DEEPGRAM_API_KEY in .env and restart dev server (expo start)
+const DEEPGRAM_CHUNK_SECONDS = 6; // Record chunks of this length for continuous feel
 
 // Languages list matching pyagent app
 // Bengali (bn) is supported for both voice input (auto-detected) and translation
@@ -57,36 +60,18 @@ const TranslationModal = ({
   const [isListening, setIsListening] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState('');
   const [showLanguagePicker, setShowLanguagePicker] = useState(false);
-  const [recognizedTextBuffer, setRecognizedTextBuffer] = useState('');
   const [lastTranslationText, setLastTranslationText] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
   const [recognitionCount, setRecognitionCount] = useState(0);
-  const [voiceRecognitionAvailable, setVoiceRecognitionAvailable] = useState(false);
   
   const autoTranslateTimerRef = useRef(null);
-  const recognitionRef = useRef(null);
+  const recordingRef = useRef(null);
+  const chunkIntervalRef = useRef(null);
   const translationInProgressRef = useRef(false);
-  
-  // Check if voice recognition is available on mount
-  useEffect(() => {
-    const checkAvailability = () => {
-      if (Platform.OS === 'web') {
-        // Web Speech API is available in browsers
-        const isAvailable = typeof window !== 'undefined' && 
-          ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window);
-        setVoiceRecognitionAvailable(isAvailable);
-      } else {
-        // For native platforms in Expo Go, voice recognition requires a development build
-        // Check if we're in Expo Go
-        const isExpoGo = Constants.executionEnvironment === 'storeClient';
-        // Voice recognition is not available in Expo Go for native platforms
-        // It requires a development build with native modules
-        setVoiceRecognitionAvailable(false);
-      }
-    };
-    
-    checkAvailability();
-  }, []);
+  const runChunkRef = useRef(null); // so setInterval always calls latest callback
+  const [permissionResponse, requestPermission] = Audio.usePermissions();
+  // Read at render so env is used after restart (Expo inlines EXPO_PUBLIC_* at build time)
+  const deepgramApiKey = (process.env.EXPO_PUBLIC_DEEPGRAM_API_KEY || '').trim();
 
   useEffect(() => {
     if (visible && initialText) {
@@ -136,6 +121,60 @@ const TranslationModal = ({
       }
     };
   }, [isListening, inputText, lastTranslationText]);
+
+  // Transcribe audio file with Deepgram (works in Expo Go via expo-av + this API)
+  const transcribeWithDeepgram = async (audioUri, contentType = 'audio/m4a', apiKey) => {
+    const key = (apiKey || deepgramApiKey || '').trim();
+    if (!key) {
+      throw new Error('Deepgram API key missing. Add EXPO_PUBLIC_DEEPGRAM_API_KEY to .env and restart the app (expo start).');
+    }
+    let body;
+    const isWebBlobOrUrl = Platform.OS === 'web' && (audioUri.startsWith('blob:') || audioUri.startsWith('http'));
+    if (isWebBlobOrUrl) {
+      const res = await fetch(audioUri);
+      body = await res.arrayBuffer();
+    } else {
+      // Native: expo-av usually returns file:// URI; try fetch first (RN may support file://), then FileSystem
+      try {
+        if (typeof fetch === 'function') {
+          const res = await fetch(audioUri, { method: 'GET' });
+          if (res.ok) body = await res.arrayBuffer();
+        }
+      } catch (_) {}
+      if (body === undefined) {
+        try {
+          const base64 = await FileSystem.readAsStringAsync(audioUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          body = bytes.buffer;
+        } catch (fsErr) {
+          throw new Error(`Could not read recording: ${fsErr?.message || fsErr}. Restart and try again.`);
+        }
+      }
+    }
+    if (!body || (body.byteLength !== undefined && body.byteLength === 0)) {
+      throw new Error('Recording file is empty. Speak closer to the mic and try again.');
+    }
+    const url = 'https://api.deepgram.com/v1/listen?language=multi&smart_format=true&model=nova-2';
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Token ${key}`,
+        'Content-Type': contentType,
+      },
+      body,
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Deepgram ${response.status}: ${errText || response.statusText}`);
+    }
+    const data = await response.json();
+    const transcript = (data?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? '').trim();
+    return transcript;
+  };
 
   const translateText = async (text, isAuto = false) => {
     if (!text || !text.trim()) {
@@ -205,201 +244,138 @@ const TranslationModal = ({
     }
   };
 
-  const startVoiceRecognition = async () => {
-    try {
-      // Check if we're in Expo Go on native platforms
-      if (Platform.OS !== 'web') {
-        const isExpoGo = Constants.executionEnvironment === 'storeClient';
-        if (isExpoGo) {
-          Alert.alert(
-            'Development Build Required',
-            'Voice recognition on mobile devices requires a development build.\n\n' +
-            'Expo Go does not support native speech recognition modules.\n\n' +
-            'To use voice recognition:\n' +
-            '• Create a dev build: npx expo run:android or npx expo run:ios\n' +
-            '• Or use EAS Build: eas build --profile development\n\n' +
-            'For now, you can type your message manually or use the web version.',
-            [{ text: 'OK', onPress: () => setIsListening(false) }]
-          );
-          setIsListening(false);
-          setVoiceStatus('');
-          return;
-        }
-      }
-
-      setIsListening(true);
-      setVoiceStatus('Initializing microphone... Auto-detecting language...');
-      setInputText('');
-      setTranslatedText('');
-      setRecognizedTextBuffer('');
-      setLastTranslationText('');
-      setRecognitionCount(0);
-
-      if (Platform.OS === 'web') {
-        // Use Web Speech API for web
-        const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognitionAPI) {
-          throw new Error('Speech recognition not supported in this browser');
-        }
-
-        const recognition = new SpeechRecognitionAPI();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        // Auto-detect language by not setting lang property
-        recognition.lang = ''; // Empty string enables auto-detection
-
-        recognition.onstart = () => {
-          setVoiceStatus('🎤 Listening continuously... Auto-detecting language... Speak now!');
-        };
-
-        recognition.onresult = (event) => {
-          let interimTranscript = '';
-          let finalTranscript = '';
-
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-              finalTranscript += transcript + ' ';
-            } else {
-              interimTranscript += transcript;
-            }
-          }
-
-          if (finalTranscript) {
-            handleVoiceRecognitionResult(finalTranscript.trim());
-            setRecognitionCount(prev => prev + 1);
-            setVoiceStatus('✓ Detected! Continue speaking...');
-          } else if (interimTranscript) {
-            setVoiceStatus('🔄 Processing...');
-          }
-        };
-
-        recognition.onerror = (event) => {
-          console.error('Speech recognition error:', event);
-          const errorMessage = event.error || 'Error';
-          
-          if (errorMessage === 'no-speech' || errorMessage === 'aborted') {
-            if (isListening) {
-              setVoiceStatus('🎤 Listening... (speak clearly)');
-            }
-          } else {
-            setVoiceStatus(`⚠️ ${errorMessage.substring(0, 50)}${errorMessage.length > 50 ? '...' : ''} (continuing)`);
-            setTimeout(() => {
-              if (isListening) {
-                setVoiceStatus('🎤 Listening...');
-              }
-            }, 3000);
-          }
-        };
-
-        recognition.onend = () => {
-          if (isListening) {
-            // Restart recognition for continuous listening
-            try {
-              recognition.start();
-            } catch (e) {
-              // Already started or error, ignore
-            }
-            if (recognitionCount % 10 === 0 && recognitionCount > 0) {
-              setVoiceStatus('🎤 Listening... (waiting for speech)');
-            } else {
-              setVoiceStatus('🎤 Listening...');
-            }
-          }
-        };
-
-        recognitionRef.current = recognition;
-        recognition.start();
-        setVoiceStatus('🎤 Listening continuously... Auto-detecting language... Speak now!');
-      } else {
-        // For native platforms (not Expo Go), voice recognition requires a development build
-        // This code path is for when a development build is used
-        Alert.alert(
-          'Development Build Required',
-          'Voice recognition on mobile requires a development build with native modules.\n\n' +
-          'Please create a development build:\n' +
-          '• npx expo run:android (for Android)\n' +
-          '• npx expo run:ios (for iOS)\n\n' +
-          'Or use EAS Build: eas build --profile development\n\n' +
-          'For now, you can type your message manually.',
-          [{ text: 'OK', onPress: () => setIsListening(false) }]
-        );
-        setIsListening(false);
-        setVoiceStatus('');
-        return;
-      }
-
-    } catch (error) {
-      console.error('Voice recognition error:', error);
-      Alert.alert(
-        'Voice Recognition Error',
-        error.message || 'Failed to start voice recognition. Please try again.'
-      );
-      setIsListening(false);
-      setVoiceStatus('');
-    }
+  const appendTranscription = (text) => {
+    if (!text || !text.trim()) return;
+    const newPhrase = text.trim();
+    setInputText((prev) => {
+      const current = prev.trim();
+      if (!current) return newPhrase;
+      if (current.endsWith(newPhrase)) return prev;
+      return current + ' ' + newPhrase;
+    });
+    setRecognitionCount((c) => c + 1);
   };
 
-  const handleVoiceRecognitionResult = (text) => {
-    if (!text || !text.trim()) {
+  const runChunkRecordAndTranscribe = async () => {
+    if (!recordingRef.current || !chunkIntervalRef.current) return;
+    const recording = recordingRef.current;
+    try {
+      setVoiceStatus('⏳ Processing chunk...');
+      await recording.stopAndUnloadAsync();
+      recordingRef.current = null;
+      const uri = recording.getURI();
+      if (uri) {
+        const contentType = Platform.OS === 'web' ? 'audio/webm' : 'audio/m4a';
+        const transcript = await transcribeWithDeepgram(uri, contentType);
+        if (transcript) {
+          appendTranscription(transcript);
+          setVoiceStatus('✓ Transcribed. Listening...');
+        } else {
+          setVoiceStatus('No speech in chunk. Listening...');
+        }
+      } else {
+        setVoiceStatus('No recording file. Listening...');
+      }
+    } catch (e) {
+      console.warn('Chunk transcribe error:', e);
+      setVoiceStatus('⚠️ Transcribe failed');
+      Alert.alert('Transcription error', (e?.message || String(e)) + '\n\nCheck your Deepgram key and connection.');
+    }
+    if (!chunkIntervalRef.current) return;
+    try {
+      await startNewRecording();
+      setVoiceStatus('🎤 Listening... (Deepgram + Expo Go)');
+    } catch (e) {
+      console.warn('Restart recording error:', e);
+      setVoiceStatus('🎤 Tap to start again');
+    }
+  };
+  runChunkRef.current = runChunkRecordAndTranscribe;
+
+  const startNewRecording = async () => {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+      playThroughEarpieceAndroid: false,
+    });
+    const { recording } = await Audio.Recording.createAsync(
+      Audio.RecordingOptionsPresets.HIGH_QUALITY
+    );
+    recordingRef.current = recording;
+    setVoiceStatus('🎤 Listening... (Deepgram + Expo Go)');
+  };
+
+  const startVoiceRecognition = async () => {
+    if (!deepgramApiKey) {
+      Alert.alert(
+        'Deepgram API Key Required',
+        'Add EXPO_PUBLIC_DEEPGRAM_API_KEY to your .env file, then restart the app (stop and run "expo start" again).\n\nGet a key at https://deepgram.com'
+      );
       return;
     }
-
-    const newPhrase = text.trim();
-    const currentText = inputText;
-    
-    // Better duplicate detection (matches desktop app behavior)
-    if (currentText) {
-      const currentStripped = currentText.trim();
-      // Check if the new phrase is already at the end (avoid duplicates)
-      if (currentStripped.endsWith(newPhrase)) {
-        return;
-      }
-      // Check if the new phrase is already in the text (avoid repetition)
-      if (currentStripped.includes(newPhrase) && currentStripped.length > newPhrase.length * 2) {
-        // Only add if it's not a recent addition
-        const words = currentStripped.split(' ');
-        const lastWords = words.slice(-3).join(' ');
-        if (lastWords.includes(newPhrase)) {
+    try {
+      if (permissionResponse?.status !== 'granted') {
+        setVoiceStatus('Requesting microphone permission...');
+        const { status } = await requestPermission();
+        if (status !== 'granted') {
+          Alert.alert('Microphone access is required for voice input.');
           return;
         }
       }
-      // Accumulate text with space separator
-      const newText = currentStripped + ' ' + newPhrase;
-      setInputText(newText);
-      setRecognizedTextBuffer(newText);
-    } else {
-      // First phrase
-      setInputText(newPhrase);
-      setRecognizedTextBuffer(newPhrase);
+      setIsListening(true);
+      setVoiceStatus('Initializing...');
+      setInputText('');
+      setTranslatedText('');
+      setLastTranslationText('');
+      setRecognitionCount(0);
+      await startNewRecording();
+      setVoiceStatus('🎤 Listening... (Deepgram + Expo Go)');
+      runChunkRef.current = runChunkRecordAndTranscribe;
+      const id = setInterval(() => {
+        if (runChunkRef.current) runChunkRef.current();
+      }, DEEPGRAM_CHUNK_SECONDS * 1000);
+      chunkIntervalRef.current = id;
+    } catch (error) {
+      console.error('Voice start error:', error);
+      Alert.alert('Voice Input Error', error.message || 'Failed to start recording.');
+      setIsListening(false);
+      setVoiceStatus('');
+      chunkIntervalRef.current = null;
     }
   };
 
   const stopVoiceRecognition = async () => {
-    setIsListening(false);
-    setVoiceStatus('⏹️ Stopped');
-    
-    // Clear auto-translate timer
+    const intervalId = chunkIntervalRef.current;
+    chunkIntervalRef.current = null;
+    if (typeof intervalId === 'number') clearInterval(intervalId);
     if (autoTranslateTimerRef.current) {
       clearInterval(autoTranslateTimerRef.current);
       autoTranslateTimerRef.current = null;
     }
-
+    setIsListening(false);
+    setVoiceStatus('⏹️ Stopped');
     try {
-      if (Platform.OS === 'web' && recognitionRef.current) {
-        // Stop Web Speech API
-        recognitionRef.current.stop();
-        recognitionRef.current = null;
+      const rec = recordingRef.current;
+      if (rec) {
+        await rec.stopAndUnloadAsync();
+        const uri = rec.getURI();
+        if (uri) {
+          setVoiceStatus('⏳ Transcribing last chunk...');
+          const contentType = Platform.OS === 'web' ? 'audio/webm' : 'audio/m4a';
+          const transcript = await transcribeWithDeepgram(uri, contentType);
+          if (transcript) {
+            appendTranscription(transcript);
+          }
+        }
       }
     } catch (e) {
-      // Ignore errors when stopping
-      console.log('Could not stop voice recognition:', e.message);
+      console.warn('Stop/transcribe:', e);
+      Alert.alert('Transcription error', (e?.message || String(e)) + '\n\nYour recording was not transcribed.');
     }
-    
-    // Clear status after delay (matches desktop behavior)
-    setTimeout(() => {
-      setVoiceStatus('');
-    }, 2000);
+    recordingRef.current = null;
+    setTimeout(() => setVoiceStatus(''), 2000);
   };
 
   const handleVoiceInput = () => {
@@ -556,7 +532,7 @@ const TranslationModal = ({
                       <Text style={styles.voiceButtonText}>
                         {isListening 
                           ? '⏹️ Stop Listening' 
-                          : '🎤 Voice Input (Auto-Detect Language)'}
+                          : '🎤 Voice Input (Deepgram + Expo Go)'}
                       </Text>
                     </TouchableOpacity>
                   </View>
