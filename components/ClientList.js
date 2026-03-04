@@ -6,13 +6,15 @@ import {
   FlatList,
   StyleSheet,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import ClientListItem from './ClientListItem';
+import ProfileSelector from './ProfileSelector';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
-const ClientList = ({ clients, selectedClientId, onSelectClient, onDeleteClient }) => {
+const ClientList = ({ clients, selectedClientId, onSelectClient, onDeleteClient, sellerProfile, sellerProfiles = [] }) => {
   const [searchText, setSearchText] = useState('');
 
   const filteredClients = clients.filter((client) => {
@@ -40,10 +42,12 @@ const ClientList = ({ clients, selectedClientId, onSelectClient, onDeleteClient 
       end={{ x: 1, y: 0 }}
       style={styles.container}
     >
-      <View style={styles.header}>
-        <Text style={styles.emoji}>👥</Text>
-        <Text style={styles.title}>Clients</Text>
+      <View style={styles.profileSection}>
+        <ProfileSelector sellerProfile={sellerProfile} variant="sidebar" />
       </View>
+      {/* <View style={styles.header}>
+        <Text style={styles.title}>Clients</Text>
+      </View> */}
 
       <View style={styles.searchContainer}>
         <Text style={styles.searchLabel}>🔍 Search Clients</Text>
@@ -87,8 +91,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: spacing.xl,
-    paddingTop: spacing.xxl + 50,
-    
+    paddingTop: Platform.OS === 'android' ? spacing.xxl + 20 : spacing.xxl + 50,
+  },
+  profileSection: {
+    marginBottom: spacing.lg,
+    paddingBottom: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.12)',
   },
   header: {
     flexDirection: 'row',
@@ -111,7 +120,7 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.md,
     fontWeight: typography.weights.bold,
     color: 'rgba(255, 255, 255, 0.9)',
-    marginBottom: spacing.sm,
+    marginBottom: 5,
   },
   searchInputContainer: {
     flexDirection: 'row',
@@ -138,7 +147,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: spacing.xxxl,
+    paddingVertical: 5,
   },
   emptyText: {
     fontSize: typography.sizes.base,

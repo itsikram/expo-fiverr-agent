@@ -41,5 +41,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background.primary,
+    maxHeight: '100vh',
+    maxWidth: '100vw',
   },
 });

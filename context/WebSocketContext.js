@@ -30,6 +30,8 @@ export const WebSocketProvider = ({ children }) => {
   const [clientData, setClientData] = useState({}); // Keyed by username/conversationId
   const [selectedConversationId, setSelectedConversationId] = useState(null);
   const [newClientData, setNewClientData] = useState(null); // New client data that doesn't exist in clients list
+  const [sellerProfile, setSellerProfile] = useState(null); // { profileName, username, updated_at } - current Fiverr seller from extension
+  const [sellerProfiles, setSellerProfiles] = useState([]); // all unique profiles by username [{ profileName, username, updated_at }, ...]
   const fetchDetailsCallbacksRef = useRef({}); // Track callbacks for fetch_details requests
   
   const wsRef = useRef(null);
@@ -573,6 +575,48 @@ export const WebSocketProvider = ({ children }) => {
         requestClientList();
         break;
 
+      case 'seller_profile':
+        // Current seller profile from extension - update current and merge into sellerProfiles (preserve online)
+        console.log('[WebSocket] seller_profile message received', data);
+        if (data.data != null) {
+          const profile = {
+            profileName: data.data.profileName || '',
+            username: data.data.username || '',
+            updated_at: data.data.updated_at || null,
+            online: Boolean(data.data.online),
+          };
+          setSellerProfile(profile);
+          setSellerProfiles((prev) => {
+            const byUsername = new Map(prev.map((p) => [p.username || p.profileName, p]));
+            const u = profile.username || profile.profileName;
+            if (u) byUsername.set(u, profile);
+            return Array.from(byUsername.values());
+          });
+          const u = profile.username || profile.profileName;
+          if (u) {
+            console.log('[WebSocket] Seller profile updated:', u, 'online:', profile.online);
+          } else {
+            console.log('[WebSocket] Seller profile set to empty (No seller found)');
+          }
+        } else {
+          console.warn('[WebSocket] seller_profile had no data payload', data);
+        }
+        break;
+
+      case 'seller_profiles':
+        // Full list of all unique seller profiles with online status - e.g. on connect or when a browser disconnects
+        if (Array.isArray(data.data)) {
+          setSellerProfiles(data.data);
+          setSellerProfile((current) => {
+            if (!current?.username) return current;
+            const inList = data.data.find((p) => (p.username || p.profileName) === (current.username || current.profileName));
+            if (inList) return { ...current, online: Boolean(inList.online) };
+            return current;
+          });
+          console.log('[WebSocket] seller_profiles updated:', data.data.length, 'profile(s)');
+        }
+        break;
+
       case 'pong':
         // Heartbeat response
         break;
@@ -750,6 +794,8 @@ export const WebSocketProvider = ({ children }) => {
     clientData,
     newClientData,
     setNewClientData,
+    sellerProfile, // { profileName, username, updated_at } - current Fiverr seller from extension
+    sellerProfiles, // all unique profiles by username
     selectedConversationId,
     setSelectedConversationId,
     connect,

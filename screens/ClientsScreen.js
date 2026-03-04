@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions, Modal, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useWebSocket } from '../context/WebSocketContext';
 import ClientList from '../components/ClientList';
+import ProfileSelector from '../components/ProfileSelector';
 import ClientDetailsScreen from './ClientDetailsScreen';
 import OffcanvasSidebar from '../components/OffcanvasSidebar';
 import BottomBar from '../components/BottomBar';
@@ -19,6 +20,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     clientData,
     newClientData,
     setNewClientData,
+    sellerProfile,
+    sellerProfiles,
     selectedConversationId,
     setSelectedConversationId,
     requestAllData,
@@ -303,7 +306,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, Platform.OS === 'web' && styles.containerWeb]}>
       {/* Connection Status Bar */}
       <View style={[styles.connectionBar, { backgroundColor: getConnectionStatusColor() }]}>
         <Text style={styles.connectionText}>
@@ -323,10 +326,12 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
           isRefetching={isRefetching}
         >
           <ClientList
+            sellerProfiles={sellerProfiles}
             clients={clients}
             selectedClientId={selectedClientId}
             onSelectClient={handleSelectClient}
             onDeleteClient={handleDeleteClient}
+            sellerProfile={sellerProfile}
           />
         </OffcanvasSidebar>
 
@@ -345,6 +350,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
               style={styles.emptyState}
             >
               <View style={styles.emptyContent}>
+                <ProfileSelector sellerProfile={sellerProfile} variant="card" />
                 <Text style={styles.emptyIcon}>👥</Text>
                 <Text style={styles.emptyTitle}>
                   {clients.length === 0 ? 'No Clients' : 'Select a Client'}
@@ -476,6 +482,9 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT,
     backgroundColor: colors.background.primary,
     paddingTop: 40,
+  },
+  containerWeb: {
+    paddingTop: 0,
   },
   connectionBar: {
     height: 16,

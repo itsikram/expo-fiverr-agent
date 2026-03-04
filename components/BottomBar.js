@@ -1,12 +1,12 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet, SafeAreaView, ActivityIndicator } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, SafeAreaView, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, shadows } from '../constants/theme';
 
 const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefetch, onNavigateToSettings }) => {
   return (
-    <SafeAreaView style={styles.safeArea} edges={['bottom']}>
-      <View style={styles.container}>
+    <SafeAreaView style={[styles.safeArea, Platform.OS === 'web' && styles.safeAreaWeb]} edges={['bottom']}>
+      <View style={[styles.container, Platform.OS === 'web' && styles.containerWeb]}>
         <TouchableOpacity
           style={[styles.menuButton, isMenuOpen && styles.menuButtonActive]}
           onPress={onMenuToggle}
@@ -59,7 +59,10 @@ const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefe
 const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: colors.background.card,
-    marginBottom: -35,
+    marginBottom: Platform.OS === 'android' ? -65 : -35,
+  },
+  safeAreaWeb: {
+    marginBottom: 0,
   },
   container: {
     flexDirection: 'row',
@@ -71,6 +74,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border.light,
     ...shadows.md,
+  },
+  containerWeb: {
+    paddingTop: 10,
   },
   rightButtons: {
     flexDirection: 'row',
