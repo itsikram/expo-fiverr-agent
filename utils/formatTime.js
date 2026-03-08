@@ -4,8 +4,23 @@
 export const formatTime = (timestamp) => {
   if (!timestamp) return '';
   
+  // If timestamp is already a formatted string (like "Mar 08, 9:47 PM"), return it as-is
+  if (typeof timestamp === 'string' && isNaN(Date.parse(timestamp)) && !timestamp.match(/^\d+$/)) {
+    // Check if it looks like a formatted date string (contains month name or common date patterns)
+    if (timestamp.match(/[A-Za-z]{3}\s+\d{1,2}/) || timestamp.includes('PM') || timestamp.includes('AM')) {
+      return timestamp;
+    }
+  }
+  
   try {
     const date = new Date(timestamp);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      // If invalid date, return the original timestamp if it's a string
+      return typeof timestamp === 'string' ? timestamp : '';
+    }
+    
     const now = new Date();
     const diff = now - date;
     
@@ -46,8 +61,23 @@ export const formatTime = (timestamp) => {
 export const formatFullTime = (timestamp) => {
   if (!timestamp) return '';
   
+  // If timestamp is already a formatted string, return it as-is
+  if (typeof timestamp === 'string' && isNaN(Date.parse(timestamp)) && !timestamp.match(/^\d+$/)) {
+    // Check if it looks like a formatted date string
+    if (timestamp.match(/[A-Za-z]{3}\s+\d{1,2}/) || timestamp.includes('PM') || timestamp.includes('AM')) {
+      return timestamp;
+    }
+  }
+  
   try {
     const date = new Date(timestamp);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      // If invalid date, return the original timestamp if it's a string
+      return typeof timestamp === 'string' ? timestamp : '';
+    }
+    
     return date.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',

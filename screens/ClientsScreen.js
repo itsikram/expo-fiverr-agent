@@ -178,7 +178,6 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         clickClientInFiverr(username);
         // Delay message extraction so Fiverr has time to switch to this conversation.
         setTimeout(() => {
-          console.log('[ClientsScreen] Triggering message extraction for:', username);
           triggerMessageExtraction();
         }, EXTRACTION_DELAY_MS);
       } else {

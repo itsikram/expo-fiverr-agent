@@ -2,8 +2,6 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { Platform } from 'react-native';
 import { SERVER_CONFIG } from '../config/server';
 import {
-  saveClients,
-  loadClients,
   saveMessages,
   loadMessages,
   saveClientData,
@@ -20,6 +18,101 @@ export const useWebSocket = () => {
     throw new Error('useWebSocket must be used within WebSocketProvider');
   }
   return context;
+};
+
+// Helper function to get time unit priority for sorting
+// Returns: { priority: number, timestamp: number }
+// Priority: 1=minutes, 2=hours, 3=days, 4=weeks, 5=months, 6=years, 7=dates, 8=unparseable
+const getTimeUnitPriority = (timeString) => {
+  if (!timeString) return { priority: 8, timestamp: 0 };
+  
+  const now = Date.now();
+  
+  // If it's already an ISO date string, parse it directly
+  if (timeString.includes('T') || (timeString.includes('-') && timeString.length > 10)) {
+    const date = new Date(timeString);
+    if (!isNaN(date.getTime())) {
+      return { priority: 7, timestamp: date.getTime() };
+    }
+  }
+  
+  // Try parsing as a standard date string (handles most date formats)
+  const dateAttempt = new Date(timeString);
+  if (!isNaN(dateAttempt.getTime())) {
+    return { priority: 7, timestamp: dateAttempt.getTime() };
+  }
+  
+  // Parse relative time strings like "26 minutes", "2 hours", "2 months ago", etc.
+  const lowerTime = timeString.toLowerCase().trim();
+  
+  // Handle "just now" or "now" - treat as minutes (most recent)
+  if (lowerTime.includes('just now') || (lowerTime.includes('now') && !lowerTime.includes('ago'))) {
+    return { priority: 1, timestamp: now };
+  }
+  
+  // Handle minutes (e.g., "46 minutes ago", "46m ago", "46 min ago")
+  const minutesMatch = lowerTime.match(/(\d+)\s*(?:minute|min|m)(?:\s+ago)?/);
+  if (minutesMatch) {
+    return { priority: 1, timestamp: now - parseInt(minutesMatch[1]) * 60 * 1000 };
+  }
+  
+  // Handle hours (e.g., "2 hours ago", "2h ago", "2 hr ago")
+  const hoursMatch = lowerTime.match(/(\d+)\s*(?:hour|hr|h)(?:\s+ago)?/);
+  if (hoursMatch) {
+    return { priority: 2, timestamp: now - parseInt(hoursMatch[1]) * 60 * 60 * 1000 };
+  }
+  
+  // Handle days (e.g., "3 days ago", "3d ago")
+  const daysMatch = lowerTime.match(/(\d+)\s*(?:day|d)(?:\s+ago)?/);
+  if (daysMatch) {
+    return { priority: 3, timestamp: now - parseInt(daysMatch[1]) * 24 * 60 * 60 * 1000 };
+  }
+  
+  // Handle weeks (e.g., "2 weeks ago", "2w ago")
+  const weeksMatch = lowerTime.match(/(\d+)\s*(?:week|wk|w)(?:\s+ago)?/);
+  if (weeksMatch) {
+    return { priority: 4, timestamp: now - parseInt(weeksMatch[1]) * 7 * 24 * 60 * 60 * 1000 };
+  }
+  
+  // Handle months (e.g., "2 months ago", "2mo ago", "2 month ago")
+  const monthsMatch = lowerTime.match(/(\d+)\s*(?:month|mo|mon)(?:\s+ago)?/);
+  if (monthsMatch) {
+    return { priority: 5, timestamp: now - parseInt(monthsMatch[1]) * 30 * 24 * 60 * 60 * 1000 };
+  }
+  
+  // Handle years (e.g., "1 year ago", "1y ago")
+  const yearsMatch = lowerTime.match(/(\d+)\s*(?:year|yr|y)(?:\s+ago)?/);
+  if (yearsMatch) {
+    return { priority: 6, timestamp: now - parseInt(yearsMatch[1]) * 365 * 24 * 60 * 60 * 1000 };
+  }
+  
+  // Handle "yesterday" - treat as days
+  if (lowerTime.includes('yesterday')) {
+    return { priority: 3, timestamp: now - 24 * 60 * 60 * 1000 };
+  }
+  
+  // Handle "today" - treat as minutes (most recent)
+  if (lowerTime.includes('today')) {
+    return { priority: 1, timestamp: now };
+  }
+  
+  // Try to parse date strings like "Mar 08" or "Mar 08, 2024"
+  const dateStringMatch = timeString.match(/([A-Za-z]{3})\s+(\d{1,2})(?:,\s+(\d{4}))?/);
+  if (dateStringMatch) {
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthIndex = monthNames.findIndex(m => m.toLowerCase() === dateStringMatch[1].toLowerCase());
+    if (monthIndex !== -1) {
+      const day = parseInt(dateStringMatch[2]);
+      const year = dateStringMatch[3] ? parseInt(dateStringMatch[3]) : new Date().getFullYear();
+      const date = new Date(year, monthIndex, day);
+      if (!isNaN(date.getTime())) {
+        return { priority: 7, timestamp: date.getTime() };
+      }
+    }
+  }
+  
+  // If we can't parse it, return lowest priority
+  return { priority: 8, timestamp: 0 };
 };
 
 export const WebSocketProvider = ({ children }) => {
@@ -41,7 +134,6 @@ export const WebSocketProvider = ({ children }) => {
   const pingIntervalRef = useRef(null);
   const sessionIdRef = useRef(null);
   const isInitialLoadRef = useRef(true);
-  const saveClientsTimeoutRef = useRef(null);
   const saveMessagesTimeoutRef = useRef(null);
   const saveClientDataTimeoutRef = useRef(null);
 
@@ -394,28 +486,67 @@ export const WebSocketProvider = ({ children }) => {
 
       case 'client_list_data':
         console.log('[WebSocket] Received client list:', data.data?.clients?.length || 0, 'clients');
+        // Log raw data to see what we're receiving
+        if (data.data?.clients && data.data.clients.length > 0) {
+          console.log('[WebSocket] Sample raw client data:', JSON.stringify(data.data.clients[0], null, 2));
+        }
         if (data.data?.clients) {
           // Transform client list to match app format
-          const transformedClients = data.data.clients.map((client, index) => ({
-            id: client.conversationId || client.username || index,
-            name: client.name || client.username || 'Unknown',
-            username: client.username,
-            company: client.company,
-            country: client.country,
-            language: client.language,
-            review_avg_rating: client.review_avg_rating,
-            review_count: client.review_count,
-            last_message_timestamp: client.last_message_timestamp,
-            conversationId: client.conversationId,
-            ...client, // Include all other properties
-          }));
-          setClients(transformedClients);
-          // Save to storage immediately after receiving from server
-          saveClients(transformedClients).then((success) => {
-            if (success) {
-              console.log('[WebSocket] Saved clients to storage:', transformedClients.length);
+          const transformedClients = data.data.clients.map((client, index) => {
+            // Build the transformed client object, ensuring last_message_timestamp is always included
+            const transformed = {
+              id: client.conversationId || client.username || index,
+              name: client.name || client.username || 'Unknown',
+              username: client.username,
+              company: client.company,
+              country: client.country,
+              language: client.language,
+              review_avg_rating: client.review_avg_rating,
+              review_count: client.review_count,
+              conversationId: client.conversationId,
+              avatarUrl: client.avatarUrl || client.avatar_url || null,
+              // Explicitly preserve last_message_timestamp from original client data
+              last_message_timestamp: client.last_message_timestamp !== undefined ? client.last_message_timestamp : null,
+              ...client, // Include all other properties (this should preserve last_message_timestamp)
+            };
+            // Ensure last_message_timestamp is set (spread might override with undefined)
+            if (client.last_message_timestamp !== undefined) {
+              transformed.last_message_timestamp = client.last_message_timestamp;
             }
+            return transformed;
           });
+          
+          // Log transformed clients to verify timestamp is included
+          if (transformedClients.length > 0) {
+            console.log('[WebSocket] Sample transformed client:', JSON.stringify(transformedClients[0], null, 2));
+            console.log('[WebSocket] Clients with timestamps:', transformedClients.filter(c => c.last_message_timestamp).length, 'out of', transformedClients.length);
+          }
+          
+          // Sort extracted clients by time unit priority (minutes > hours > days > weeks > months)
+          const sortedClients = transformedClients.sort((a, b) => {
+            // Sort by time unit priority (minutes > hours > days > weeks > months)
+            const timeA = getTimeUnitPriority(a.last_message_timestamp);
+            const timeB = getTimeUnitPriority(b.last_message_timestamp);
+            
+            // Sort by priority (lower number = higher priority)
+            if (timeA.priority !== timeB.priority) {
+              return timeA.priority - timeB.priority;
+            }
+            
+            // If same priority, sort by timestamp (most recent first)
+            if (timeA.timestamp > 0 && timeB.timestamp > 0) {
+              return timeB.timestamp - timeA.timestamp; // Descending order (newest first)
+            }
+            
+            // If only one has a valid timestamp, prioritize it
+            if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
+            if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
+            
+            // If neither has a timestamp, maintain original order
+            return 0;
+          });
+          
+          setClients(sortedClients);
           // Save sync timestamp
           saveLastSync();
         }
@@ -452,7 +583,7 @@ export const WebSocketProvider = ({ children }) => {
             }
             
             // Update the client in the clients list with the fetched data
-            return prevClients.map((client) => {
+            const updatedClients = prevClients.map((client) => {
               const clientKey = client.username || client.conversationId || client.id;
               if (clientKey === key || client.username === data.data.username) {
                 // Merge fetched data with existing client data
@@ -469,9 +600,34 @@ export const WebSocketProvider = ({ children }) => {
                   review_avg_rating: data.data.review_avg_rating !== undefined ? data.data.review_avg_rating : client.review_avg_rating,
                   review_count: data.data.review_count !== undefined ? data.data.review_count : client.review_count,
                   avatar_url: data.data.avatar_url || data.data.avatarUrl || client.avatar_url,
+                  // Preserve last_message_timestamp if not provided in new data
+                  last_message_timestamp: data.data.last_message_timestamp !== undefined ? data.data.last_message_timestamp : client.last_message_timestamp,
                 };
               }
               return client;
+            });
+            
+            // Re-sort clients by time unit priority (minutes > hours > days > weeks > months)
+            return updatedClients.sort((a, b) => {
+              const timeA = getTimeUnitPriority(a.last_message_timestamp);
+              const timeB = getTimeUnitPriority(b.last_message_timestamp);
+              
+              // First, sort by priority (lower number = higher priority)
+              if (timeA.priority !== timeB.priority) {
+                return timeA.priority - timeB.priority;
+              }
+              
+              // If same priority, sort by timestamp (most recent first)
+              if (timeA.timestamp > 0 && timeB.timestamp > 0) {
+                return timeB.timestamp - timeA.timestamp; // Descending order (newest first)
+              }
+              
+              // If only one has a valid timestamp, prioritize it
+              if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
+              if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
+              
+              // If neither has a timestamp, maintain original order
+              return 0;
             });
           });
           
@@ -483,7 +639,6 @@ export const WebSocketProvider = ({ children }) => {
         break;
 
       case 'message_data':
-        console.log('[WebSocket] Received message data:', data.data?.messages?.length || 0, 'messages');
         if (data.data?.messages && data.data?.conversationId) {
           const conversationId = data.data.conversationId;
           // Username key: client list uses username, message payload has URL UUID - store under both so lookup works
@@ -672,20 +827,14 @@ export const WebSocketProvider = ({ children }) => {
     }
   }, [requestClientData, requestMessages, requestClientList]);
 
-  // Load stored data on mount
+  // Load stored data on mount (messages and client data only, not clients)
   useEffect(() => {
     const loadStoredData = async () => {
       console.log('[WebSocket] Loading stored data...');
-      const [storedClients, storedMessages, storedClientData] = await Promise.all([
-        loadClients(),
+      const [storedMessages, storedClientData] = await Promise.all([
         loadMessages(),
         loadClientData(),
       ]);
-      
-      if (storedClients.length > 0) {
-        setClients(storedClients);
-        console.log('[WebSocket] Loaded', storedClients.length, 'clients from storage');
-      }
       
       if (Object.keys(storedMessages).length > 0) {
         const sortByTime = (a, b) => {
@@ -715,30 +864,6 @@ export const WebSocketProvider = ({ children }) => {
   }, []);
 
   // Save clients to storage whenever they change
-  useEffect(() => {
-    if (isInitialLoadRef.current) return; // Don't save on initial load
-    
-    // Debounce saves to avoid too many writes
-    if (saveClientsTimeoutRef.current) {
-      clearTimeout(saveClientsTimeoutRef.current);
-    }
-    
-    saveClientsTimeoutRef.current = setTimeout(() => {
-      saveClients(clients).then((success) => {
-        if (success) {
-          console.log('[WebSocket] Auto-saved clients to storage:', clients.length);
-        } else {
-          console.error('[WebSocket] Failed to save clients to storage');
-        }
-      });
-    }, 500);
-    
-    return () => {
-      if (saveClientsTimeoutRef.current) {
-        clearTimeout(saveClientsTimeoutRef.current);
-      }
-    };
-  }, [clients]);
 
   // Save messages to storage whenever they change
   useEffect(() => {
