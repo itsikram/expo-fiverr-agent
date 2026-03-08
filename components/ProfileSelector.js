@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
@@ -20,6 +20,24 @@ const ProfileSelector = ({
   const isCard = variant === 'card';
   const hasOptions = sellerProfiles.length > 0;
   const canSelect = hasOptions && typeof onSelectProfile === 'function';
+
+  console.log('sellerProfiles', sellerProfiles);
+  
+  // Helper function to get profile image URL from various possible field names
+  const getProfileImageUrl = (profile) => {
+    if (!profile) return null;
+    return (
+      profile.avatarUrl ||
+      profile.avatar_url ||
+      profile.imageUrl ||
+      profile.image_url ||
+      profile.profileImage ||
+      profile.profile_image ||
+      profile.avatar ||
+      profile.image ||
+      null
+    );
+  };
 
   const isSelected = (p) => {
     const u = p.username || p.profileName;
@@ -58,11 +76,18 @@ const ProfileSelector = ({
               isCard && !hasProfile && styles.profileIconWrapEmptyCard,
             ]}
           >
-            <Ionicons
-              name="person"
-              size={20}
-              color={hasProfile ? colors.text.white : colors.text.secondary}
-            />
+            {hasProfile && getProfileImageUrl(displayProfile) ? (
+              <Image
+                source={{ uri: getProfileImageUrl(displayProfile) }}
+                style={styles.profileImage}
+              />
+            ) : (
+              <Ionicons
+                name="person"
+                size={20}
+                color={hasProfile ? colors.text.white : colors.text.secondary}
+              />
+            )}
           </View>
           <View style={styles.triggerTextWrap}>
             {hasProfile ? (
@@ -114,6 +139,7 @@ const ProfileSelector = ({
                 const u = p.username || p.profileName;
                 if (!u) return null;
                 const selected = isSelected(p);
+                const profileImageUrl = getProfileImageUrl(p);
                 return (
                   <TouchableOpacity
                     key={u}
@@ -121,6 +147,20 @@ const ProfileSelector = ({
                     onPress={() => handleSelectOption(p)}
                     activeOpacity={0.7}
                   >
+                    <View style={styles.optionIconWrap}>
+                      {profileImageUrl ? (
+                        <Image
+                          source={{ uri: profileImageUrl }}
+                          style={styles.optionImage}
+                        />
+                      ) : (
+                        <Ionicons
+                          name="person"
+                          size={18}
+                          color="rgba(255, 255, 255, 0.7)"
+                        />
+                      )}
+                    </View>
                     <View style={styles.optionLeft}>
                       <Text style={[styles.optionName, selected && styles.optionNameSelected]} numberOfLines={1}>
                         {p.profileName || p.username || '—'}
@@ -154,6 +194,7 @@ const ProfileSelector = ({
 const styles = StyleSheet.create({
   wrapper: {
     marginBottom: 5,
+    zIndex: 99999,
   },
   wrapperCard: {
     marginBottom: 10,
@@ -172,6 +213,7 @@ const styles = StyleSheet.create({
   },
   selectContainer: {
     position: 'relative',
+    zIndex: 99999,
   },
   triggerRow: {
     flexDirection: 'row',
@@ -209,6 +251,11 @@ const styles = StyleSheet.create({
   },
   profileIconWrapEmptyCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  profileImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
   },
   triggerTextWrap: {
     flex: 1,
@@ -281,8 +328,8 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: borderRadius.md,
     borderBottomRightRadius: borderRadius.md,
     maxHeight: 220,
-    zIndex: 1000,
-    elevation: 8,
+    zIndex: 99999,
+    elevation: 9999,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -303,6 +350,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  optionIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  optionImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
   },
   optionRowSelected: {
     backgroundColor: 'rgba(255, 255, 255, 0.08)',

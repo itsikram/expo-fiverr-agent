@@ -1,11 +1,13 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 import { formatTime } from '../utils/formatTime';
 
 const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
+
+  console.log('client item', client);
   const getInitials = (name) => {
     if (!name) return '?';
     const parts = name.trim().split(' ');
@@ -38,7 +40,14 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
           <View style={styles.content}>
             <View style={styles.avatarContainer}>
               <View style={styles.avatar}>
-                <Text style={styles.avatarText}>{getInitials(client.name)}</Text>
+                {client.avatarUrl ? (
+                  <Image 
+                    source={{ uri: client.avatarUrl }} 
+                    style={styles.avatarImage}
+                  />
+                ) : (
+                  <Text style={styles.avatarText}>{getInitials(client.name)}</Text>
+                )}
               </View>
             </View>
             <View style={styles.textContainer}>
@@ -71,7 +80,14 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
         <View style={styles.content}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatarUnselected}>
-              <Text style={styles.avatarTextUnselected}>{getInitials(client.name)}</Text>
+              {client.avatarUrl ? (
+                <Image 
+                  source={{ uri: client.avatarUrl || "https://fiverr-res.cloudinary.com/t_profile_original,q_auto,f_auto/attachments/profile/photo/32b91d616a3f2f49f49eb3feb9710303-1748687977266/ecb4fed7-5ca6-4249-860d-226088a25d1b.png" }} 
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <Text style={styles.avatarTextUnselected}>{getInitials(client.name)}</Text>
+              )}
             </View>
           </View>
           <View style={styles.textContainer}>
@@ -136,6 +152,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.text.white,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.full,
   },
   avatarUnselected: {
     width: 48,
@@ -144,6 +166,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
   },
   avatarText: {
     fontSize: typography.sizes.lg,

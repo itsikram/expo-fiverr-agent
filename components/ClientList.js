@@ -110,7 +110,7 @@ const getTimeUnitPriority = (timeString) => {
 };
 
 const unitRank = {
-  minute: 1,
+  minute: 0,
   hour: 1,
   day: 2,
   week: 3,
@@ -118,16 +118,19 @@ const unitRank = {
   year: 5
 };
 
-// Parse relative time string like "2 weeks", "3 days"
 function parseRelativeTime(value) {
   const [numStr, unitRaw] = value.split(" ");
   const num = parseInt(numStr);
+
   let unit = unitRaw.toLowerCase();
-  // Remove trailing "s" if plural
-  if (unit.endsWith("s")) unit = unit.slice(0, -1);
+
+  // remove plural s
+  if (unit.endsWith("s")) {
+    unit = unit.slice(0, -1);
+  }
+
   return { num, unit };
 }
-
 // Function to convert relative time to timestamp
 function getTimestamp(relative) {
   const now = new Date();
@@ -159,14 +162,15 @@ const ClientList = ({
     const aParsed = parseRelativeTime(a.last_message_timestamp);
     const bParsed = parseRelativeTime(b.last_message_timestamp);
   
-    // If different units, use unit rank
+    // sort by unit priority
     if (unitRank[aParsed.unit] !== unitRank[bParsed.unit]) {
       return unitRank[aParsed.unit] - unitRank[bParsed.unit];
     }
   
-    // Same unit: smaller number = more recent
+    // same unit → smaller number first
     return aParsed.num - bParsed.num;
   });
+  
   
   const filteredClients = clients.filter((client) => {
     // Filter to show clients with minute-based (priority 1) or hour-based (priority 2) timestamps
@@ -257,6 +261,8 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.12)',
+    zIndex: 99999,
+    overflow: 'visible',
   },
   header: {
     flexDirection: 'row',
@@ -274,6 +280,7 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     marginBottom: spacing.xl,
+    zIndex: 1,
   },
   searchLabel: {
     fontSize: typography.sizes.md,
