@@ -545,7 +545,7 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 215 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 215 : 300}
     >
       <ScrollView
         ref={scrollViewRef}

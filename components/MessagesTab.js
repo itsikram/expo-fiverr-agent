@@ -39,7 +39,7 @@ const MessagesTab = ({
     <KeyboardAvoidingView
       style={styles.tabContent}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 215 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 215 : 200}
     >
       <ScrollView
         ref={scrollViewRef}

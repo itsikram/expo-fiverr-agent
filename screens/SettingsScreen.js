@@ -128,7 +128,7 @@ const SettingsScreen = ({ onBack }) => {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 200 : 200}
     >
       <LinearGradient
         colors={[colors.background.primary, colors.background.secondary]}
