@@ -5,25 +5,28 @@ import {
   TouchableOpacity,
   Modal,
   Animated,
-  Dimensions,
   Text,
+  PanResponder,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SIDEBAR_WIDTH = 300;
+const SWIPE_THRESHOLD = SIDEBAR_WIDTH * 0.35;
+const EDGE_STRIP_WIDTH = 20;
 
-const OffcanvasSidebar = ({ isOpen, onClose, children, onRefetch, isRefetching = false }) => {
+const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefetching = false, enableSwipeOpen = false }) => {
   const slideAnim = React.useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
   const overlayOpacity = React.useRef(new Animated.Value(0)).current;
   const rotateAnim = React.useRef(new Animated.Value(0)).current;
   const [modalVisible, setModalVisible] = React.useState(false);
+  const dragOffset = React.useRef(0);
 
   useEffect(() => {
     if (isOpen) {
       setModalVisible(true);
+      dragOffset.current = 0;
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 0,
@@ -76,38 +79,107 @@ const OffcanvasSidebar = ({ isOpen, onClose, children, onRefetch, isRefetching =
     outputRange: ['0deg', '360deg'],
   });
 
+  // Pan: close by dragging sidebar/overlay left when open
+  const panResponderClose = React.useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8,
+    onPanResponderMove: (_, g) => {
+      if (!isOpen) return;
+      const dx = Math.min(0, g.dx);
+      slideAnim.setValue(dx);
+      overlayOpacity.setValue(1 + dx / SIDEBAR_WIDTH);
+    },
+    onPanResponderRelease: (_, g) => {
+      if (!isOpen) return;
+      const shouldClose = g.dx < -SWIPE_THRESHOLD || (g.vx < 0 && Math.abs(g.vx) > 0.3);
+      if (shouldClose) {
+        Animated.parallel([
+          Animated.timing(slideAnim, { toValue: -SIDEBAR_WIDTH, duration: 250, useNativeDriver: true }),
+          Animated.timing(overlayOpacity, { toValue: 0, duration: 250, useNativeDriver: true }),
+        ]).start(() => {
+          setModalVisible(false);
+          onClose?.();
+        });
+      } else {
+        Animated.parallel([
+          Animated.timing(slideAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+          Animated.timing(overlayOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+        ]).start();
+      }
+    },
+  }), [isOpen, onClose, enableSwipeOpen]);
+
+  // Pan: open by dragging from left edge when closed
+  const panResponderOpen = React.useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: (_, g) => g.dx > 8,
+    onPanResponderMove: (_, g) => {
+      if (isOpen) return;
+      const dx = Math.max(0, g.dx);
+      slideAnim.setValue(-SIDEBAR_WIDTH + dx);
+      overlayOpacity.setValue(Math.min(1, dx / SIDEBAR_WIDTH));
+    },
+    onPanResponderRelease: (_, g) => {
+      if (isOpen) return;
+      const shouldOpen = g.dx > SWIPE_THRESHOLD || (g.vx > 0 && g.vx > 0.3);
+      if (shouldOpen && onOpen) {
+        onOpen();
+        Animated.parallel([
+          Animated.timing(slideAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
+          Animated.timing(overlayOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+        ]).start();
+      } else {
+        Animated.parallel([
+          Animated.timing(slideAnim, { toValue: -SIDEBAR_WIDTH, duration: 200, useNativeDriver: true }),
+          Animated.timing(overlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+        ]).start();
+      }
+    },
+  }), [isOpen, onOpen]);
+
+  // Modal only when sidebar is open or closing — so Android doesn't block BottomBar taps when closed
+  const isModalVisible = isOpen || modalVisible;
+  // When closed and swipe enabled, show edge strip *outside* Modal so it doesn't block the screen
+  const showEdgeStripOutside = enableSwipeOpen && !isOpen && !modalVisible;
+
   return (
-    <Modal
-      visible={modalVisible}
-      transparent
-      animationType="none"
-      onRequestClose={onClose}
-    >
-      <View style={styles.container}>
-        {/* Overlay */}
+    <>
+      {/* Edge strip in main tree when closed (so BottomBar and rest of app remain tappable on Android) */}
+      {showEdgeStripOutside && (
+        <View
+          style={styles.edgeStripOutside}
+          {...panResponderOpen.panHandlers}
+        />
+      )}
+      {isModalVisible && (
+        <Modal
+          visible
+          transparent
+          animationType="none"
+          onRequestClose={onClose}
+        >
+          <View style={styles.container} pointerEvents="box-none">
+          {/* Overlay */}
         <TouchableOpacity
           style={styles.overlay}
           activeOpacity={1}
           onPress={onClose}
+          pointerEvents={isOpen ? 'auto' : 'none'}
         >
           <Animated.View
             style={[
               styles.overlayBackground,
-              {
-                opacity: overlayOpacity,
-              },
+              { opacity: overlayOpacity },
             ]}
           />
         </TouchableOpacity>
-
-        {/* Sidebar */}
+        {/* Sidebar (draggable left to close when open) */}
         <Animated.View
           style={[
             styles.sidebar,
-            {
-              transform: [{ translateX: slideAnim }],
-            },
+            { transform: [{ translateX: slideAnim }] },
           ]}
+          {...(isOpen ? panResponderClose.panHandlers : {})}
         >
           <LinearGradient
             colors={[colors.background.sidebar, colors.background.sidebarDark]}
@@ -143,6 +215,8 @@ const OffcanvasSidebar = ({ isOpen, onClose, children, onRefetch, isRefetching =
         </Animated.View>
       </View>
     </Modal>
+      )}
+    </>
   );
 };
 
@@ -150,6 +224,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     flexDirection: 'row',
+  },
+  edgeStrip: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: EDGE_STRIP_WIDTH,
+    zIndex: 1001,
+  },
+  edgeStripOutside: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: EDGE_STRIP_WIDTH,
+    zIndex: 999,
   },
   overlay: {
     flex: 1,

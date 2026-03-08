@@ -41,6 +41,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
   const [translationInitialText, setTranslationInitialText] = useState('');
+  const [translationModalVoiceOnly, setTranslationModalVoiceOnly] = useState(false);
   const [isRefetching, setIsRefetching] = useState(false);
   const [isNewClientModalVisible, setIsNewClientModalVisible] = useState(false);
   const [hasInitialDataLoaded, setHasInitialDataLoaded] = useState(false);
@@ -272,11 +273,18 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   };
 
   const handleMenuToggle = () => {
-    setIsSidebarOpen(!isSidebarOpen);
+    setIsSidebarOpen((prev) => !prev);
   };
 
   const handleOpenTranslationModal = (initialText = '') => {
     setTranslationInitialText(initialText);
+    setTranslationModalVoiceOnly(false);
+    setIsTranslationModalVisible(true);
+  };
+
+  const handleOpenVoiceModal = () => {
+    setTranslationInitialText('');
+    setTranslationModalVoiceOnly(true);
     setIsTranslationModalVisible(true);
   };
 
@@ -324,6 +332,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         <OffcanvasSidebar
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
+          onOpen={() => setIsSidebarOpen(true)}
+          enableSwipeOpen
           onRefetch={handleRefetch}
           isRefetching={isRefetching}
         >
@@ -395,6 +405,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         isRefetching={isRefetching}
         showRefetch={!!selectedClient}
         onNavigateToSettings={onNavigateToSettings}
+        onOpenVoiceModal={handleOpenVoiceModal}
       />
 
       {/* Translation Modal */}
@@ -405,6 +416,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         targetLanguage={selectedClient?.language === 'English' ? 'en' : selectedClient?.language?.toLowerCase() || 'en'}
         onTextReady={handleTranslationTextReady}
         onUseInputText={handleUseInputText}
+        voiceOnly={translationModalVoiceOnly}
       />
 
       {/* New Client Modal */}

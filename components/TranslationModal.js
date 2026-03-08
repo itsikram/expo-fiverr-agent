@@ -18,11 +18,13 @@ import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
 // Deepgram API key – set EXPO_PUBLIC_DEEPGRAM_API_KEY in .env and restart dev server (expo start)
 const DEEPGRAM_LIVE_SAMPLE_RATE = 16000;
-// Native: process when user pauses (silence after speech)
-const SILENCE_MS = 1200; // pause this long after speech → process chunk
-const METERING_POLL_MS = 350;
-const FALLBACK_CHUNK_MS = 3000; // when metering unavailable, process every 3s
-const MIN_CHUNK_MS = 800; // don't send chunks shorter than this
+// Native: stop mic and process when you stop speaking (silence after speech)
+const SILENCE_MS = 900; // pause this long after speech → process and start next
+const METERING_POLL_MS = 280;
+const FALLBACK_CHUNK_MS = 2500; // when metering unavailable, process every 2.5s
+const MIN_CHUNK_MS = 600;
+const LONG_PAUSE_RECORDING_MS = 3000; // after this much recording + silence → process
+const LONG_PAUSE_SILENCE_MS = 2500;
 
 // Languages list matching pyagent app
 // Source: Bangla and English (and auto-detect between them)
@@ -63,6 +65,7 @@ const TranslationModal = ({
   targetLanguage = 'en',
   onTextReady,
   onUseInputText,
+  voiceOnly = false,
 }) => {
   const [inputText, setInputText] = useState(initialText);
   const [translatedText, setTranslatedText] = useState('');
@@ -84,6 +87,7 @@ const TranslationModal = ({
   const translationInProgressRef = useRef(false);
   const runChunkRef = useRef(null);
   const recordingPreparingRef = useRef(false);
+  const voiceSessionActiveRef = useRef(false);
   const recordingStartTimeRef = useRef(0);
   const lastSpeechTimeRef = useRef(0);
   const hadSpeechInChunkRef = useRef(false);
@@ -441,7 +445,7 @@ const TranslationModal = ({
     }
     hadSpeechInChunkRef.current = false;
     const durationMs = Date.now() - startedAt;
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 400));
     if (!chunkIntervalRef.current) {
       processingChunkRef.current = false;
       return;
@@ -490,17 +494,18 @@ const TranslationModal = ({
       meteringUndefinedCountRef.current = 0;
       const now = Date.now();
       const isSpeech = typeof metering === 'number' && (
-        (metering >= 0 && metering <= 1 && metering > 0.02) || (metering < 0 && metering > -55)
+        (metering >= 0 && metering <= 1 && metering > 0.01) || (metering < 0 && metering > -60)
       );
       if (isSpeech) {
         lastSpeechTimeRef.current = now;
         hadSpeechInChunkRef.current = true;
       }
-      if (hadSpeechInChunkRef.current && (now - lastSpeechTimeRef.current) >= SILENCE_MS) {
+      const silenceDuration = now - lastSpeechTimeRef.current;
+      if (hadSpeechInChunkRef.current && silenceDuration >= SILENCE_MS) {
         processCurrentChunkAndRestart();
       }
       const recordingDuration = now - recordingStartTimeRef.current;
-      if (hadSpeechInChunkRef.current && recordingDuration >= 4000 && (now - lastSpeechTimeRef.current) >= 3500) {
+      if (hadSpeechInChunkRef.current && recordingDuration >= LONG_PAUSE_RECORDING_MS && silenceDuration >= LONG_PAUSE_SILENCE_MS) {
         processCurrentChunkAndRestart();
       }
     } catch (_) {}
@@ -512,6 +517,7 @@ const TranslationModal = ({
     if (recordingPreparingRef.current) return;
     recordingPreparingRef.current = true;
     try {
+      recordingRef.current = null;
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
@@ -553,18 +559,32 @@ const TranslationModal = ({
     }
 
     try {
+      if (recordingPreparingRef.current) {
+        setIsListening(false);
+        setVoiceStatus('');
+        return;
+      }
+      voiceSessionActiveRef.current = true;
+      recordingRef.current = null;
       if (permissionResponse?.status !== 'granted') {
         setVoiceStatus('Requesting microphone permission...');
         const { status } = await requestPermission();
         if (status !== 'granted') {
           Alert.alert('Microphone access is required for voice input.');
           setIsListening(false);
+          voiceSessionActiveRef.current = false;
           return;
         }
       }
       meteringUnavailableRef.current = false;
       hadSpeechInChunkRef.current = false;
       meteringUndefinedCountRef.current = 0;
+      await new Promise((r) => setTimeout(r, 350));
+      if (!voiceSessionActiveRef.current || recordingPreparingRef.current) {
+        setIsListening(false);
+        setVoiceStatus('');
+        return;
+      }
       await startNewRecording();
       setVoiceStatus('🎤 Listening... (speak, then pause for next phrase)');
       runChunkRef.current = runMeteringPoll;
@@ -578,6 +598,8 @@ const TranslationModal = ({
       setIsListening(false);
       setVoiceStatus('');
       chunkIntervalRef.current = null;
+      voiceSessionActiveRef.current = false;
+      recordingPreparingRef.current = false;
     }
   };
 
@@ -590,6 +612,7 @@ const TranslationModal = ({
       setTimeout(() => setVoiceStatus(''), 2000);
       return;
     }
+    voiceSessionActiveRef.current = false;
     const intervalId = chunkIntervalRef.current;
     chunkIntervalRef.current = null;
     if (typeof intervalId === 'number') clearInterval(intervalId);
@@ -618,6 +641,8 @@ const TranslationModal = ({
       Alert.alert('Transcription error', (e?.message || String(e)) + '\n\nYour recording was not transcribed.');
     }
     recordingRef.current = null;
+    recordingPreparingRef.current = false;
+    processingChunkRef.current = false;
     setTimeout(() => setVoiceStatus(''), 2000);
   };
 
@@ -842,7 +867,8 @@ const TranslationModal = ({
                   ) : null}
                 </View>
 
-                {/* Input Text */}
+                {/* Input Text - hidden in voiceOnly mode */}
+                {!voiceOnly && (
                 <View style={styles.section}>
                   <Text style={styles.label}>Your Message:</Text>
                   <View
@@ -865,6 +891,7 @@ const TranslationModal = ({
                     />
                   </View>
                 </View>
+                )}
 
                 {/* Translate Button */}
                 <TouchableOpacity
@@ -905,7 +932,7 @@ const TranslationModal = ({
                   </View>
                 </View>
 
-                {/* Action Buttons */}
+                {/* Send input & Send translation - both buttons always visible */}
                 <View style={styles.actionButtons}>
                   <TouchableOpacity
                     style={[
@@ -913,11 +940,16 @@ const TranslationModal = ({
                       styles.useInputButton,
                       !inputText.trim() && styles.buttonDisabled,
                     ]}
-                    onPress={handleUseInputText}
+                    onPress={() => {
+                      if (inputText.trim() && onUseInputText) {
+                        onUseInputText(inputText.trim());
+                        onClose();
+                      }
+                    }}
                     disabled={!inputText.trim()}
                   >
-                    <Text style={styles.actionButtonIcon}>📝</Text>
-                    <Text style={styles.actionButtonText}>Use Input</Text>
+                    <Ionicons name="send" size={18} color={colors.text.white} />
+                    <Text style={styles.actionButtonText}>Send text</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -929,23 +961,10 @@ const TranslationModal = ({
                     onPress={handleUseTranslatedText}
                     disabled={!translatedText.trim()}
                   >
-                    <Text style={styles.actionButtonIcon}>✓</Text>
-                    <Text style={styles.actionButtonText}>Use Translation</Text>
+                    <Ionicons name="send" size={18} color={colors.text.white} />
+                    <Text style={styles.actionButtonText}>Send translation</Text>
                   </TouchableOpacity>
                 </View>
-
-                {/* Send Message Button */}
-                <TouchableOpacity
-                  style={[
-                    styles.sendMessageButton,
-                    !translatedText.trim() && styles.buttonDisabled,
-                  ]}
-                  onPress={handleUseTranslatedText}
-                  disabled={!translatedText.trim()}
-                >
-                  <Ionicons name="send" size={18} color={colors.text.white} />
-                  <Text style={styles.sendMessageButtonText}>Send Message</Text>
-                </TouchableOpacity>
 
                 {/* Cancel Button */}
                 <TouchableOpacity style={styles.cancelButton} onPress={onClose}>

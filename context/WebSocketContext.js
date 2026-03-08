@@ -121,12 +121,9 @@ export const WebSocketProvider = ({ children }) => {
 
         // Provide helpful error messages
         if (code === 1006) {
-          // Connection refused or abnormal closure
           console.error('[WebSocket] Connection refused. Make sure:');
-          console.error('  1. The desktop app (Fiverr Agent) is running');
-          console.error('  2. The server is listening on port', SERVER_CONFIG.PORT);
-          console.error('  3. For physical devices, update HOST in config/server.js to your computer\'s IP');
-          console.error('  4. Firewall allows connections on port', SERVER_CONFIG.PORT);
+          console.error('  1. The server is reachable:', SERVER_CONFIG.getWebSocketUrl(Platform.OS));
+          console.error('  2. Your device has network access');
         }
 
         // Attempt to reconnect
@@ -140,9 +137,8 @@ export const WebSocketProvider = ({ children }) => {
         } else {
           console.error('[WebSocket] Max reconnection attempts reached');
           console.error('[WebSocket] Please check:');
-          console.error('  1. Desktop app is running and server started successfully');
-          console.error('  2. Server URL:', SERVER_CONFIG.getWebSocketUrl(Platform.OS));
-          console.error('  3. Network connectivity');
+          console.error('  1. Server URL:', SERVER_CONFIG.getWebSocketUrl(Platform.OS));
+          console.error('  2. Network connectivity');
           setConnectionStatus('error');
         }
       };

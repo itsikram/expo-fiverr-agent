@@ -15,14 +15,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/theme';
 import { loadSettings, saveSettings } from '../utils/storage';
-import { SERVER_CONFIG } from '../config/server';
 
 const SettingsScreen = ({ onBack }) => {
-  const [serverHost, setServerHost] = useState(SERVER_CONFIG.HOST);
-  const [serverPort, setServerPort] = useState(String(SERVER_CONFIG.PORT));
   const [name, setName] = useState('');
   const [skills, setSkills] = useState('');
   const [aboutMe, setAboutMe] = useState('');
+  const [serverAddress, setServerAddress] = useState('');
   const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -37,11 +35,15 @@ const SettingsScreen = ({ onBack }) => {
     try {
       const settings = await loadSettings();
       if (settings) {
-        if (settings.serverHost) setServerHost(settings.serverHost);
-        if (settings.serverPort) setServerPort(String(settings.serverPort));
         if (settings.name) setName(settings.name);
         if (settings.skills) setSkills(settings.skills);
         if (settings.aboutMe) setAboutMe(settings.aboutMe);
+        // Support both serverUrl (full URL) and serverHost (backward compatibility)
+        if (settings.serverUrl != null) {
+          setServerAddress(settings.serverUrl);
+        } else if (settings.serverHost != null) {
+          setServerAddress(settings.serverHost);
+        }
         if (settings.openaiApiKey) {
           // Mask the API key for display
           const maskedKey = settings.openaiApiKey.startsWith('sk-') 
@@ -57,18 +59,6 @@ const SettingsScreen = ({ onBack }) => {
   };
 
   const handleSave = async () => {
-    // Validate server address
-    if (!serverHost.trim()) {
-      Alert.alert('Validation Error', 'Server address is required');
-      return;
-    }
-
-    const port = parseInt(serverPort, 10);
-    if (isNaN(port) || port < 1 || port > 65535) {
-      Alert.alert('Validation Error', 'Server port must be a valid number between 1 and 65535');
-      return;
-    }
-
     // Validate API key format if provided (and not masked)
     const apiKeyToSave = openaiApiKey.trim();
     if (apiKeyToSave && !isApiKeyMasked && !apiKeyToSave.startsWith('sk-')) {
@@ -79,17 +69,21 @@ const SettingsScreen = ({ onBack }) => {
     setIsSaving(true);
 
     try {
+      const serverAddressTrimmed = serverAddress.trim();
+      
       const settings = {
-        serverHost: serverHost.trim(),
-        serverPort: port,
         name: name.trim(),
         skills: skills.trim(),
         aboutMe: aboutMe.trim(),
-        // Only save API key if it's not masked (i.e., user entered a new one)
+        // Save as serverUrl (full URL with protocol and port)
+        // Also keep serverHost for backward compatibility if it's just a host
+        serverUrl: serverAddressTrimmed || undefined,
+        serverHost: serverAddressTrimmed && !serverAddressTrimmed.includes('://') 
+          ? serverAddressTrimmed 
+          : undefined,
         openaiApiKey: isApiKeyMasked ? undefined : (apiKeyToSave || undefined),
       };
 
-      // Remove undefined values
       Object.keys(settings).forEach(key => {
         if (settings[key] === undefined) {
           delete settings[key];
@@ -97,21 +91,11 @@ const SettingsScreen = ({ onBack }) => {
       });
 
       await saveSettings(settings);
-      
-      // Update SERVER_CONFIG if server address changed
-      if (settings.serverHost && settings.serverPort) {
-        SERVER_CONFIG.HOST = settings.serverHost;
-        SERVER_CONFIG.PORT = settings.serverPort;
-      }
-
-      // Reload settings to ensure API key is preserved if masked
       await loadSettingsData();
 
       Alert.alert(
         'Success',
-        settings.serverHost || settings.serverPort
-          ? 'Settings saved successfully! The connection will be updated on next reconnect.'
-          : 'Settings saved successfully!',
+        'Settings saved successfully!',
         [
           {
             text: 'OK',
@@ -164,35 +148,23 @@ const SettingsScreen = ({ onBack }) => {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Server Configuration Section */}
+          {/* Server address */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Server Configuration</Text>
+            <Text style={styles.sectionTitle}>Server</Text>
             <Text style={styles.sectionDescription}>
-              Configure the WebSocket server address for connecting to the desktop app
+              Server address (full URL with protocol and port). Used for WebSocket connection.
+              {'\n'}Examples: http://192.168.0.102:8765 or https://fiverr-agent-03vs.onrender.com
             </Text>
-
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Server Address (IP or Hostname)</Text>
+              <Text style={styles.label}>Server address</Text>
               <TextInput
                 style={styles.input}
-                value={serverHost}
-                onChangeText={setServerHost}
-                placeholder="192.168.0.101"
+                value={serverAddress}
+                onChangeText={setServerAddress}
+                placeholder="e.g. http://192.168.0.102:8765"
                 placeholderTextColor={colors.text.secondary}
                 autoCapitalize="none"
                 autoCorrect={false}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Server Port</Text>
-              <TextInput
-                style={styles.input}
-                value={serverPort}
-                onChangeText={setServerPort}
-                placeholder="8765"
-                placeholderTextColor={colors.text.secondary}
-                keyboardType="numeric"
               />
             </View>
           </View>

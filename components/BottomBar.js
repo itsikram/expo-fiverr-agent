@@ -3,7 +3,7 @@ import { View, TouchableOpacity, StyleSheet, SafeAreaView, ActivityIndicator, Pl
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, shadows } from '../constants/theme';
 
-const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefetch, onNavigateToSettings }) => {
+const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefetch, onNavigateToSettings, onOpenVoiceModal }) => {
   return (
     <SafeAreaView style={[styles.safeArea, Platform.OS === 'web' && styles.safeAreaWeb]} edges={['bottom']}>
       <View style={[styles.container, Platform.OS === 'web' && styles.containerWeb]}>
@@ -20,6 +20,19 @@ const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefe
         </TouchableOpacity>
         
         <View style={styles.rightButtons}>
+          {onOpenVoiceModal ? (
+            <TouchableOpacity
+              style={styles.voiceButton}
+              onPress={onOpenVoiceModal}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="mic"
+                size={24}
+                color={colors.text.white}
+              />
+            </TouchableOpacity>
+          ) : null}
           {showRefetch && (
             <TouchableOpacity
               style={[styles.refetchButton, isRefetching && styles.refetchButtonActive]}
@@ -60,6 +73,8 @@ const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: colors.background.card,
     marginBottom: Platform.OS === 'android' ? -65 : -35,
+    zIndex: 1000,
+    elevation: 1000,
   },
   safeAreaWeb: {
     marginBottom: 0,
@@ -106,6 +121,15 @@ const styles = StyleSheet.create({
   },
   refetchButtonActive: {
     opacity: 0.7,
+  },
+  voiceButton: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.accent.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...shadows.sm,
   },
   settingsButton: {
     width: 48,

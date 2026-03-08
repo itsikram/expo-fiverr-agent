@@ -20,5 +20,26 @@ allprojects {
   }
 }
 
+// Limit react-native-reanimated native build parallelism to avoid clang "out of memory" on Windows
+subprojects { subproject ->
+  subproject.afterEvaluate {
+    if (subproject.name == "react-native-reanimated") {
+      try {
+        def cfg = subproject.android?.defaultConfig?.externalNativeBuild?.cmake
+        if (cfg != null && cfg.arguments != null) {
+          cfg.arguments.addAll([
+            "-DCMAKE_JOB_POOL_COMPILE=compile",
+            "-DCMAKE_JOB_POOL_LINK=link",
+            "-DCMAKE_JOB_POOLS=compile=2;link=2"
+          ])
+          println "[fiverr-expo] Limited react-native-reanimated native build to 2 parallel jobs to avoid OOM."
+        }
+      } catch (Exception e) {
+        println "[fiverr-expo] Could not set reanimated CMake job pools: ${e.message}"
+      }
+    }
+  }
+}
+
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
