@@ -109,6 +109,22 @@ const getTimeUnitPriority = (timeString) => {
   return { priority: 8, timestamp: 0 };
 };
 
+// Function to convert relative time to timestamp
+function getTimestamp(relative) {
+  const now = new Date();
+  const [numStr, unit] = relative.split(" ");
+  const num = parseInt(numStr);
+
+  if (unit.startsWith("minute")) now.setMinutes(now.getMinutes() - num);
+  else if (unit.startsWith("hour")) now.setHours(now.getHours() - num);
+  else if (unit.startsWith("day")) now.setDate(now.getDate() - num);
+  else if (unit.startsWith("week")) now.setDate(now.getDate() - num * 7);
+  else if (unit.startsWith("month")) now.setMonth(now.getMonth() - num);
+  else if (unit.startsWith("year")) now.setFullYear(now.getFullYear() - num);
+
+  return now.getTime(); // milliseconds timestamp
+}
+
 const ClientList = ({
   clients,
   selectedClientId,
@@ -122,39 +138,47 @@ const ClientList = ({
 
   // Sort clients by time unit priority (minutes > hours > days > weeks > months)
   // Then by actual timestamp within each unit (most recent first)
-  const sortedClients = useMemo(() => {
-    const sorted = [...clients].sort((a, b) => {
-      // Sort by time unit priority
-      const timeA = getTimeUnitPriority(a.last_message_timestamp);
-      const timeB = getTimeUnitPriority(b.last_message_timestamp);
-      
-      // Sort by priority (lower number = higher priority)
-      if (timeA.priority !== timeB.priority) {
-        return timeA.priority - timeB.priority;
-      }
-      
-      // If same priority, sort by timestamp (most recent first)
-      if (timeA.timestamp > 0 && timeB.timestamp > 0) {
-        return timeB.timestamp - timeA.timestamp; // Descending order (newest first)
-      }
-      
-      // If only one has a valid timestamp, prioritize it
-      if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
-      if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
-      
-      // If neither has a timestamp, maintain original order
-      return 0;
-    });
-    
-    return sorted;
-  }, [clients]);
+  // const sortedClients = useMemo(() => {
+  //   const sorted = [...clients].sort((a, b) => {
 
-  const filteredClients = sortedClients.filter((client) => {
+  //     // Sort by time unit priority
+  //     const timeA = parseRelativeTime(a.last_message_timestamp);
+  //     const timeB = parseRelativeTime(b.last_message_timestamp);
+      
+  //     console.log('a.last_message_timestamp',timeA);
+  //     console.log('b.last_message_timestamp', timeB);
+  //     // Sort by priority (lower number = higher priority)
+  //     if (timeA.priority !== timeB.priority) {
+  //       return timeA.priority - timeB.priority;
+  //     }
+      
+  //     // If same priority, sort by timestamp (most recent first)
+  //     if (timeA.timestamp > 0 && timeB.timestamp > 0) {
+  //       return timeB.timestamp - timeA.timestamp; // Descending order (newest first)
+  //     }
+      
+  //     // If only one has a valid timestamp, prioritize it
+  //     if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
+  //     if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
+      
+  //     // If neither has a timestamp, maintain original order
+  //     return 0;
+  //   });
+    
+  //   return sorted;
+  // }, [clients]);
+
+
+
+  let sortedClient = clients.sort((a, b) => getTimestamp(b.last_message_timestamp) - getTimestamp(a.last_message_timestamp));
+  console.log('clients sorted', sortedClient);
+  const filteredClients = sortedClient.filter((client) => {
     // Filter to show clients with minute-based (priority 1) or hour-based (priority 2) timestamps
     const timeInfo = getTimeUnitPriority(client.last_message_timestamp);
     if (timeInfo.priority !== 1 && timeInfo.priority !== 2) {
       return false; // Only show clients with minutes or hours
     }
+
     
     // Then apply search filter if there's search text
     if (!searchText.trim()) return true;
