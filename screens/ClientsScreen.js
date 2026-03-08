@@ -38,7 +38,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   } = useWebSocket();
 
   const [selectedClientId, setSelectedClientId] = useState(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Open sidebar by default
   const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
   const [translationInitialText, setTranslationInitialText] = useState('');
   const [translationModalVoiceOnly, setTranslationModalVoiceOnly] = useState(false);
@@ -46,13 +46,17 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   const [isNewClientModalVisible, setIsNewClientModalVisible] = useState(false);
   const [hasInitialDataLoaded, setHasInitialDataLoaded] = useState(false);
 
-  // Request data when connected
+  // Request data when connected and auto-fetch client list
   useEffect(() => {
     if (isConnected) {
       console.log('[ClientsScreen] Connected, requesting data...');
       requestAllData();
+      // Auto-fetch client list on app init
+      console.log('[ClientsScreen] Auto-fetching client list...');
+      triggerClientListExtraction();
+      requestClientList();
     }
-  }, [isConnected, requestAllData]);
+  }, [isConnected, requestAllData, triggerClientListExtraction, requestClientList]);
 
   // Reset refetching state when clients are updated
   useEffect(() => {
