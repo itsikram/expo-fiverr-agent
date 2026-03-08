@@ -3,8 +3,15 @@
  *
  * Live server: wss://fiverr-agent-03vs.onrender.com (no port input; fixed URL).
  * Local server: ws://localhost:8765 or ws://192.168.0.102:8765
+ * 
+ * Can be configured via environment variable:
+ * - EXPO_PUBLIC_SERVER_URL (for Expo public env vars)
+ * - SERVER_URL (for build-time env vars)
  */
-const DEFAULT_SERVER_URL = 'https://fiverr-agent-03vs.onrender.com';
+const DEFAULT_SERVER_URL = 
+  process.env.EXPO_PUBLIC_SERVER_URL || 
+  process.env.SERVER_URL || 
+  'https://fiverr-agent-03vs.onrender.com';
 
 // Check if host is a local IP or localhost
 const isLocalHost = (host) => {
