@@ -485,11 +485,7 @@ export const WebSocketProvider = ({ children }) => {
         break;
 
       case 'client_list_data':
-        console.log('[WebSocket] Received client list:', data.data?.clients?.length || 0, 'clients');
-        // Log raw data to see what we're receiving
-        if (data.data?.clients && data.data.clients.length > 0) {
-          console.log('[WebSocket] Sample raw client data:', JSON.stringify(data.data.clients[0], null, 2));
-        }
+
         if (data.data?.clients) {
           // Transform client list to match app format
           const transformedClients = data.data.clients.map((client, index) => {
