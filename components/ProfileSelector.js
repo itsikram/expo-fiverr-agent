@@ -22,11 +22,13 @@ const ProfileSelector = ({
   const canSelect = hasOptions && typeof onSelectProfile === 'function';
 
   console.log('sellerProfiles', sellerProfiles);
+  console.log('displayProfile', displayProfile);
+  console.log('displayProfile avatarUrl', displayProfile?.avatarUrl || displayProfile?.avatar_url);
   
   // Helper function to get profile image URL from various possible field names
   const getProfileImageUrl = (profile) => {
     if (!profile) return null;
-    return (
+    const url = (
       profile.avatarUrl ||
       profile.avatar_url ||
       profile.imageUrl ||
@@ -37,6 +39,8 @@ const ProfileSelector = ({
       profile.image ||
       null
     );
+    console.log('getProfileImageUrl for profile:', profile?.username || profile?.profileName, '->', url);
+    return url;
   };
 
   const isSelected = (p) => {

@@ -321,6 +321,20 @@ export const WebSocketProvider = ({ children }) => {
     });
   }, [sendMessage]);
 
+  const navigateToInbox = useCallback(() => {
+    // Send command to browser extension to navigate to Fiverr inbox
+    const inboxUrl = 'https://www.fiverr.com/inbox';
+    console.log('[WebSocket] Navigating to Fiverr inbox:', inboxUrl);
+    const success = sendMessage({
+      type: 'navigate',
+      url: inboxUrl,
+    });
+    if (!success) {
+      console.error('[WebSocket] Failed to send navigate command - WebSocket not connected');
+    }
+    return success;
+  }, [sendMessage]);
+
   const fetchClientDetails = useCallback((username, onError) => {
     // Send command to server to fetch client details by username
     if (!username) {
@@ -549,13 +563,25 @@ export const WebSocketProvider = ({ children }) => {
         break;
 
       case 'client_data':
-        console.log('[WebSocket] Received client data:', data.data?.username || data.data?.conversationId);
+        console.log('[WebSocket] Received client data:', {
+          username: data.data?.username,
+          name: data.data?.name,
+          country: data.data?.country,
+          language: data.data?.language,
+          url: data.data?.url,
+          conversationId: data.data?.conversationId
+        });
         if (data.data) {
           const key = data.data.username || data.data.conversationId || 'default';
-          setClientData((prev) => ({
-            ...prev,
-            [key]: data.data,
-          }));
+          console.log('[WebSocket] Storing client data with key:', key);
+          setClientData((prev) => {
+            const updated = {
+              ...prev,
+              [key]: data.data,
+            };
+            console.log('[WebSocket] Updated clientData keys:', Object.keys(updated));
+            return updated;
+          });
           
           // Check if this client exists in the clients list
           setClients((prevClients) => {
@@ -732,6 +758,8 @@ export const WebSocketProvider = ({ children }) => {
             username: data.data.username || '',
             updated_at: data.data.updated_at || null,
             online: Boolean(data.data.online),
+            avatarUrl: data.data.avatarUrl || data.data.avatar_url || null,
+            avatar_url: data.data.avatarUrl || data.data.avatar_url || null,
           };
           setSellerProfile(profile);
           setSellerProfiles((prev) => {
@@ -946,6 +974,7 @@ export const WebSocketProvider = ({ children }) => {
     triggerClientListExtraction,
     triggerMessageExtraction,
     triggerClientDataExtraction,
+    navigateToInbox,
     fetchClientDetails,
     clickClientInFiverr,
     sendMessageToClient,

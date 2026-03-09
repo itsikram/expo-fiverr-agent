@@ -19,7 +19,7 @@ import { useWebSocket } from '../context/WebSocketContext';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
 const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMessage }) => {
-  const { isConnected, fetchClientDetails, clientData } = useWebSocket();
+  const { isConnected, fetchClientDetails, clientData, navigateToInbox } = useWebSocket();
   const [activeTab, setActiveTab] = useState('messages');
   const [messageText, setMessageText] = useState('');
   const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
@@ -189,6 +189,19 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
           fetchTimeoutRef.current = null;
         }
         setIsFetchingDetails(false);
+        
+        // Navigate back to inbox after successfully fetching client details
+        // Add a small delay to ensure data is fully processed before navigation
+        console.log('[ClientDetailsScreen] Client details received, navigating to inbox...');
+        setTimeout(() => {
+          const success = navigateToInbox();
+          if (!success) {
+            console.warn('[ClientDetailsScreen] Failed to send navigate command');
+          } else {
+            console.log('[ClientDetailsScreen] Navigate command sent successfully');
+          }
+        }, 500);
+        
         Alert.alert(
           'Success',
           `Client details for ${client.name || client.username} have been successfully fetched and saved!`,
@@ -196,7 +209,7 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
         );
       }
     }
-  }, [clientData, client, isFetchingDetails]);
+  }, [clientData, client, isFetchingDetails, navigateToInbox]);
 
   // Cleanup timeout on unmount
   useEffect(() => {

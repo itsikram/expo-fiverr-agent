@@ -15,8 +15,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/theme';
 import { loadSettings, saveSettings } from '../utils/storage';
+import { useWebSocket } from '../context/WebSocketContext';
 
 const SettingsScreen = ({ onBack }) => {
+  const { navigateToInbox, isConnected } = useWebSocket();
   const [name, setName] = useState('');
   const [skills, setSkills] = useState('');
   const [aboutMe, setAboutMe] = useState('');
@@ -253,6 +255,50 @@ const SettingsScreen = ({ onBack }) => {
             </View>
           </View>
 
+          {/* Browser Actions Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Browser Actions</Text>
+            <Text style={styles.sectionDescription}>
+              Control the browser extension to navigate to Fiverr pages
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.actionButton, !isConnected && styles.actionButtonDisabled]}
+              onPress={() => {
+                if (isConnected) {
+                  navigateToInbox();
+                  Alert.alert(
+                    'Success',
+                    'Command sent to navigate to Fiverr inbox page',
+                    [{ text: 'OK' }]
+                  );
+                } else {
+                  Alert.alert(
+                    'Not Connected',
+                    'Please wait for connection to server before using this feature.',
+                    [{ text: 'OK' }]
+                  );
+                }
+              }}
+              disabled={!isConnected}
+            >
+              <LinearGradient
+                colors={isConnected ? [colors.accent.primary, colors.accent.secondary] : [colors.text.secondary, colors.text.secondary]}
+                style={styles.actionButtonGradient}
+              >
+                <Ionicons name="open-outline" size={20} color={colors.text.white} style={styles.actionButtonIcon} />
+                <Text style={styles.actionButtonText}>
+                  Navigate to Inbox
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <Text style={styles.hint}>
+              {isConnected 
+                ? 'Click to redirect the active Fiverr tab to the inbox page'
+                : 'Connect to server to use this feature'}
+            </Text>
+          </View>
+
           {/* Save Button */}
           <TouchableOpacity
             style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
@@ -390,6 +436,30 @@ const styles = StyleSheet.create({
   saveButtonText: {
     fontSize: typography.sizes.lg,
     fontWeight: typography.weights.bold,
+    color: colors.text.white,
+  },
+  actionButton: {
+    marginTop: spacing.sm,
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+    ...shadows.md,
+  },
+  actionButtonDisabled: {
+    opacity: 0.5,
+  },
+  actionButtonGradient: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionButtonIcon: {
+    marginRight: spacing.sm,
+  },
+  actionButtonText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
     color: colors.text.white,
   },
 });
