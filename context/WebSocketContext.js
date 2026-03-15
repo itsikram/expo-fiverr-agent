@@ -335,6 +335,18 @@ export const WebSocketProvider = ({ children }) => {
     return success;
   }, [sendMessage]);
 
+  const reloadFiverrTab = useCallback(() => {
+    // Send command to browser extension to reload the activated Fiverr tab
+    console.log('[WebSocket] Reloading activated Fiverr tab');
+    const success = sendMessage({
+      type: 'reload',
+    });
+    if (!success) {
+      console.error('[WebSocket] Failed to send reload command - WebSocket not connected');
+    }
+    return success;
+  }, [sendMessage]);
+
   const fetchClientDetails = useCallback((username, onError) => {
     // Send command to server to fetch client details by username
     if (!username) {
@@ -975,6 +987,7 @@ export const WebSocketProvider = ({ children }) => {
     triggerMessageExtraction,
     triggerClientDataExtraction,
     navigateToInbox,
+    reloadFiverrTab,
     fetchClientDetails,
     clickClientInFiverr,
     sendMessageToClient,

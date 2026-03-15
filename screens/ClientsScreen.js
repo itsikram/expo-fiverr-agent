@@ -9,6 +9,7 @@ import ClientDetailsScreen from './ClientDetailsScreen';
 import OffcanvasSidebar from '../components/OffcanvasSidebar';
 import BottomBar from '../components/BottomBar';
 import TranslationModal from '../components/TranslationModal';
+import Snackbar from '../components/Snackbar';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
 const ClientsScreen = ({ onNavigateToSettings }) => {
@@ -45,6 +46,14 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   const [isRefetching, setIsRefetching] = useState(false);
   const [isNewClientModalVisible, setIsNewClientModalVisible] = useState(false);
   const [hasInitialDataLoaded, setHasInitialDataLoaded] = useState(false);
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarType, setSnackbarType] = useState('info');
+  const [isBottomBarMinimized, setIsBottomBarMinimized] = useState(false);
+  const prevClientsCountRef = React.useRef(0);
+  const prevMessagesKeysRef = React.useRef(new Set());
+  const isFetchingClientsRef = React.useRef(false);
+  const isFetchingMessagesRef = React.useRef(false);
 
   // Request data when connected and auto-fetch client list
   useEffect(() => {
@@ -58,16 +67,24 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
   }, [isConnected, requestAllData, triggerClientListExtraction, requestClientList]);
 
-  // Reset refetching state when clients are updated
+  // Reset refetching state when clients are updated and show snackbar
   useEffect(() => {
     if (clients.length > 0 && isRefetching) {
+      // Show snackbar when clients are fetched
+      if (hasInitialDataLoaded && isFetchingClientsRef.current) {
+        setSnackbarMessage(`Fetched ${clients.length} client${clients.length !== 1 ? 's' : ''}`);
+        setSnackbarType('success');
+        setSnackbarVisible(true);
+        isFetchingClientsRef.current = false;
+      }
+      
       // Small delay to show the update
       const timer = setTimeout(() => {
         setIsRefetching(false);
       }, 500);
       return () => clearTimeout(timer);
     }
-  }, [clients, isRefetching]);
+  }, [clients, isRefetching, hasInitialDataLoaded]);
 
   // Mark initial data as loaded after first client list is received
   useEffect(() => {
@@ -79,6 +96,48 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       return () => clearTimeout(timer);
     }
   }, [clients.length, hasInitialDataLoaded]);
+
+  // Find selected client (moved before useEffect that uses it)
+  const selectedClient = clients.find((c) => {
+    if (selectedClientId) {
+      return c.id === selectedClientId || c.conversationId === selectedClientId || c.username === selectedClientId;
+    }
+    return false;
+  });
+
+  // Show snackbar when messages are fetched
+  useEffect(() => {
+    if (hasInitialDataLoaded && isFetchingMessagesRef.current) {
+      const currentMessageKeys = new Set(Object.keys(messages));
+      const prevMessageKeys = prevMessagesKeysRef.current;
+      
+      // Check if new conversations were added or messages were updated
+      const hasNewConversations = Array.from(currentMessageKeys).some(key => !prevMessageKeys.has(key));
+      const hasAnyMessages = currentMessageKeys.size > 0;
+      
+      // Show snackbar if messages were fetched (new conversations or any messages exist)
+      if (hasNewConversations || (hasAnyMessages && prevMessageKeys.size === 0)) {
+        const conversationCount = currentMessageKeys.size;
+        const totalMessages = Object.values(messages).reduce((sum, msgs) => sum + (msgs?.length || 0), 0);
+        if (selectedClient) {
+          // If a specific client is selected, show message count for that conversation
+          const conversationId = selectedClient.conversationId || selectedClient.username || selectedClient.id;
+          const clientMessages = messages[conversationId] || [];
+          setSnackbarMessage(`Fetched ${clientMessages.length} message${clientMessages.length !== 1 ? 's' : ''} from ${selectedClient.name || selectedClient.username}`);
+        } else {
+          setSnackbarMessage(`Fetched messages from ${conversationCount} conversation${conversationCount !== 1 ? 's' : ''}`);
+        }
+        setSnackbarType('success');
+        setSnackbarVisible(true);
+        isFetchingMessagesRef.current = false;
+      }
+      
+      prevMessagesKeysRef.current = currentMessageKeys;
+    } else if (hasInitialDataLoaded) {
+      // Update the ref even if not fetching, to track state
+      prevMessagesKeysRef.current = new Set(Object.keys(messages));
+    }
+  }, [messages, hasInitialDataLoaded, selectedClient]);
 
   // Show modal when new client data is received (only after initial data is loaded)
   // DISABLED: Modal is disabled for now
@@ -123,14 +182,6 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     setIsNewClientModalVisible(false);
   };
 
-  // Find selected client
-  const selectedClient = clients.find((c) => {
-    if (selectedClientId) {
-      return c.id === selectedClientId || c.conversationId === selectedClientId || c.username === selectedClientId;
-    }
-    return false;
-  });
-
   // Get messages for selected client
   const selectedMessages = React.useMemo(() => {
     if (!selectedClient) return [];
@@ -149,6 +200,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
     const conversationId = selectedClient.conversationId || selectedClient.username || selectedClient.id;
     const username = selectedClient.username;
+    isFetchingMessagesRef.current = true;
     requestMessages(conversationId);
     if (username) {
       clickClientInFiverr(username);
@@ -174,6 +226,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       
       // Request client data immediately
       requestClientData(conversationId);
+      isFetchingMessagesRef.current = true;
       requestMessages(conversationId);
 
       // Trigger browser extension to click/activate this client in Fiverr first
@@ -234,6 +287,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     console.log('[ClientsScreen] Refetching clients and messages...');
     if (isConnected) {
       setIsRefetching(true);
+      isFetchingClientsRef.current = true;
+      isFetchingMessagesRef.current = true;
       
       // Trigger browser extension to extract client list from Fiverr
       triggerClientListExtraction();
@@ -409,6 +464,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         showRefetch={!!selectedClient}
         onNavigateToSettings={onNavigateToSettings}
         onOpenVoiceModal={handleOpenVoiceModal}
+        isMinimized={isBottomBarMinimized}
+        onToggleMinimize={() => setIsBottomBarMinimized(!isBottomBarMinimized)}
       />
 
       {/* Translation Modal */}
@@ -420,6 +477,15 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         onTextReady={handleTranslationTextReady}
         onUseInputText={handleUseInputText}
         voiceOnly={translationModalVoiceOnly}
+      />
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        visible={snackbarVisible}
+        message={snackbarMessage}
+        type={snackbarType}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
       />
 
       {/* New Client Modal */}

@@ -22,6 +22,8 @@ const MessagesTab = ({
   onSend,
   onFetchMessages,
   isFetchingMessages = false,
+  isFooterMinimized = false,
+  onToggleFooterMinimize,
 }) => {
   const scrollViewRef = useRef(null);
 
@@ -86,29 +88,60 @@ const MessagesTab = ({
         )}
       </ScrollView>
       <View style={styles.inputContainer}>
-        <TouchableOpacity
-          style={styles.translateButton}
-          onPress={onOpenTranslationModal}
-        >
-          <Ionicons name="language" size={20} color={colors.text.white} />
-        </TouchableOpacity>
+        {!isFooterMinimized ? (
+          <>
+            <TouchableOpacity
+              style={styles.translateButton}
+              onPress={onOpenTranslationModal}
+            >
+              <Ionicons name="language" size={20} color={colors.text.white} />
+            </TouchableOpacity>
 
-        <TextInput
-          style={styles.messageInput}
-          placeholder="Type your message here..."
-          placeholderTextColor={colors.text.secondary}
-          value={messageText}
-          onChangeText={setMessageText}
-          multiline
-          maxLength={1000}
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, !messageText.trim() && styles.sendButtonDisabled]}
-          onPress={onSend}
-          disabled={!messageText.trim()}
-        >
-          <Ionicons name="send" size={20} color={colors.text.white} />
-        </TouchableOpacity>
+            <TextInput
+              style={styles.messageInput}
+              placeholder="Type your message here..."
+              placeholderTextColor={colors.text.secondary}
+              value={messageText}
+              onChangeText={setMessageText}
+              multiline
+              maxLength={1000}
+            />
+            <TouchableOpacity
+              style={[styles.sendButton, !messageText.trim() && styles.sendButtonDisabled]}
+              onPress={onSend}
+              disabled={!messageText.trim()}
+            >
+              <Ionicons name="send" size={20} color={colors.text.white} />
+            </TouchableOpacity>
+            {onToggleFooterMinimize && (
+              <TouchableOpacity
+                style={styles.minimizeButton}
+                onPress={onToggleFooterMinimize}
+              >
+                <Ionicons
+                  name="chevron-down"
+                  size={20}
+                  color={colors.text.primary}
+                />
+              </TouchableOpacity>
+            )}
+          </>
+        ) : (
+          onToggleFooterMinimize && (
+            <View style={styles.minimizedFooter}>
+              <TouchableOpacity
+                style={styles.minimizeButton}
+                onPress={onToggleFooterMinimize}
+              >
+                <Ionicons
+                  name="chevron-up"
+                  size={20}
+                  color={colors.text.primary}
+                />
+              </TouchableOpacity>
+            </View>
+          )
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -133,6 +166,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border.light,
     gap: spacing.sm,
+  },
+  minimizedFooter: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  minimizeButton: {
+    padding: spacing.xs,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.background.secondary || 'rgba(255, 255, 255, 0.1)',
   },
   translateButton: {
     padding: spacing.sm,

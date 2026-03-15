@@ -18,7 +18,7 @@ import { loadSettings, saveSettings } from '../utils/storage';
 import { useWebSocket } from '../context/WebSocketContext';
 
 const SettingsScreen = ({ onBack }) => {
-  const { navigateToInbox, isConnected } = useWebSocket();
+  const { navigateToInbox, reloadFiverrTab, isConnected } = useWebSocket();
   const [name, setName] = useState('');
   const [skills, setSkills] = useState('');
   const [aboutMe, setAboutMe] = useState('');
@@ -295,6 +295,42 @@ const SettingsScreen = ({ onBack }) => {
             <Text style={styles.hint}>
               {isConnected 
                 ? 'Click to redirect the active Fiverr tab to the inbox page'
+                : 'Connect to server to use this feature'}
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.actionButton, !isConnected && styles.actionButtonDisabled]}
+              onPress={() => {
+                if (isConnected) {
+                  reloadFiverrTab();
+                  Alert.alert(
+                    'Success',
+                    'Command sent to reload the activated Fiverr tab',
+                    [{ text: 'OK' }]
+                  );
+                } else {
+                  Alert.alert(
+                    'Not Connected',
+                    'Please wait for connection to server before using this feature.',
+                    [{ text: 'OK' }]
+                  );
+                }
+              }}
+              disabled={!isConnected}
+            >
+              <LinearGradient
+                colors={isConnected ? [colors.accent.primary, colors.accent.secondary] : [colors.text.secondary, colors.text.secondary]}
+                style={styles.actionButtonGradient}
+              >
+                <Ionicons name="reload" size={20} color={colors.text.white} style={styles.actionButtonIcon} />
+                <Text style={styles.actionButtonText}>
+                  Reload Fiverr
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <Text style={styles.hint}>
+              {isConnected 
+                ? 'Click to reload the activated Fiverr tab'
                 : 'Connect to server to use this feature'}
             </Text>
           </View>

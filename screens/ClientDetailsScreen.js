@@ -25,6 +25,8 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
   const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
   const [isFetchingMessages, setIsFetchingMessages] = useState(false);
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
+  const [isHeaderMinimized, setIsHeaderMinimized] = useState(false);
+  const [isFooterMinimized, setIsFooterMinimized] = useState(false);
   const fetchTimeoutRef = useRef(null);
 
   // Merge fetched client data with client prop
@@ -63,56 +65,91 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
     const displayClient = mergedClient || client;
     
     return (
-      <LinearGradient
-        colors={[colors.background.card, colors.background.cardLight]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
-        style={styles.header}
-      >
-        <View style={styles.headerContent}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {displayClient?.name ? displayClient.name.substring(0, 2).toUpperCase() : '?'}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.headerText}>
-            <Text style={styles.clientName}>{displayClient?.name || 'Unknown Client'}</Text>
-            {displayClient?.username && (
-              <Text style={styles.clientUsername}>@{displayClient.username}</Text>
-            )}
-            <View style={styles.infoRow}>
-              {displayClient?.country && (
-                <View style={styles.infoBadge}>
-                  <Text style={styles.infoIcon}>🌍</Text>
-                  <Text style={styles.infoText}>{displayClient.country}</Text>
+      <View style={styles.headerWrapper}>
+        {!isHeaderMinimized ? (
+          <LinearGradient
+            colors={[colors.background.card, colors.background.cardLight]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.header}
+          >
+            <View style={styles.headerContent}>
+              <View style={styles.avatarContainer}>
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>
+                    {displayClient?.name ? displayClient.name.substring(0, 2).toUpperCase() : '?'}
+                  </Text>
                 </View>
-              )}
+              </View>
+              <View style={styles.headerText}>
+                <Text style={styles.clientName}>{displayClient?.name || 'Unknown Client'}</Text>
+                {displayClient?.username && (
+                  <Text style={styles.clientUsername}>@{displayClient.username}</Text>
+                )}
+                <View style={styles.infoRow}>
+                  {displayClient?.country && (
+                    <View style={styles.infoBadge}>
+                      <Text style={styles.infoIcon}>🌍</Text>
+                      <Text style={styles.infoText}>{displayClient.country}</Text>
+                    </View>
+                  )}
 
-              {displayClient?.language && (
-                <View style={styles.infoBadge}>
-                  <Text style={styles.infoIcon}>🗣️</Text>
-                  <Text style={styles.infoText}>{displayClient.language}</Text>
-                </View>
-              )}
+                  {displayClient?.language && (
+                    <View style={styles.infoBadge}>
+                      <Text style={styles.infoIcon}>🗣️</Text>
+                      <Text style={styles.infoText}>{displayClient.language}</Text>
+                    </View>
+                  )}
 
-              {displayClient?.review_avg_rating && (
-                <View style={styles.infoBadge}>
-                  <Text style={styles.infoIcon}>⭐</Text>
-                  <Text style={styles.infoText}>{parseFloat(displayClient.review_avg_rating).toFixed(1)}</Text>
+                  {displayClient?.review_avg_rating && (
+                    <View style={styles.infoBadge}>
+                      <Text style={styles.infoIcon}>⭐</Text>
+                      <Text style={styles.infoText}>{parseFloat(displayClient.review_avg_rating).toFixed(1)}</Text>
+                    </View>
+                  )}
+                  {displayClient?.review_count && (
+                    <View style={styles.infoBadge}>
+                      <Text style={styles.infoIcon}>📝</Text>
+                      <Text style={styles.infoText}>{displayClient.review_count} reviews</Text>
+                    </View>
+                  )}
                 </View>
-              )}
-              {displayClient?.review_count && (
-                <View style={styles.infoBadge}>
-                  <Text style={styles.infoIcon}>📝</Text>
-                  <Text style={styles.infoText}>{displayClient.review_count} reviews</Text>
-                </View>
-              )}
+              </View>
             </View>
-          </View>
-        </View>
-      </LinearGradient>
+            <TouchableOpacity
+              style={styles.minimizeButton}
+              onPress={() => setIsHeaderMinimized(!isHeaderMinimized)}
+            >
+              <Ionicons
+                name="chevron-up"
+                size={20}
+                color={colors.text.primary}
+              />
+            </TouchableOpacity>
+          </LinearGradient>
+        ) : (
+          <LinearGradient
+            colors={[colors.background.card, colors.background.cardLight]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.header}
+          >
+            <View style={styles.minimizedHeaderContent}>
+              <TouchableOpacity
+                style={styles.minimizeButtonMinimized}
+                onPress={() => setIsHeaderMinimized(!isHeaderMinimized)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="chevron-down"
+                  size={20}
+                  color={colors.text.primary}
+                />
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+        )}
+      </View>
     );
   };
 
@@ -284,6 +321,8 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
       onSend={handleSendMessage}
       onFetchMessages={handleFetchMessages}
       isFetchingMessages={isFetchingMessages}
+      isFooterMinimized={isFooterMinimized}
+      onToggleFooterMinimize={() => setIsFooterMinimized(!isFooterMinimized)}
     />
   );
 
@@ -402,14 +441,53 @@ const styles = StyleSheet.create({
   gradient: {
     flex: 1,
   },
+  headerWrapper: {
+    position: 'relative',
+    overflow: 'visible',
+    minHeight: 20,
+
+  },
   header: {
     padding: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
+    position: 'relative',
+    
   },
   headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  minimizedHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    gap: 0,
+    marginTop: -10,
+    marginBottom: -10,
+  },
+  minimizeButton: {
+    padding: spacing.xs,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.background.secondary || 'rgba(255, 255, 255, 0.1)',
+    position: 'absolute',
+    right: spacing.sm,
+    top: spacing.sm,
+    zIndex: 10,
+    minWidth: 44, // Ensure minimum touch target
+    minHeight: 44, // Ensure minimum touch target
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  minimizeButtonMinimized: {
+    padding: 0,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.background.secondary || 'rgba(255, 255, 255, 0.1)',
+    minWidth: 44, // Ensure minimum touch target
+    minHeight: 10, // Ensure minimum touch target
+    justifyContent: 'center',
+    alignItems: 'center',
+    margin: 0,
   },
   avatarContainer: {
     marginRight: spacing.md,
