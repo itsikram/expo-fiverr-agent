@@ -419,6 +419,37 @@ export const WebSocketProvider = ({ children }) => {
     console.log('[WebSocket] Added optimistic message to conversation:', conversationId);
   }, []);
 
+  const cancelOptimisticMessage = useCallback((messageText, conversationId) => {
+    // Remove optimistic message from local state (cancel sending)
+    if (!messageText || !messageText.trim() || !conversationId) {
+      return false;
+    }
+    
+    setMessages((prev) => {
+      const existingMessages = prev[conversationId] || [];
+      if (!existingMessages || existingMessages.length === 0) {
+        return prev;
+      }
+      
+      // Remove the optimistic message that matches the text
+      const filteredMessages = existingMessages.filter((msg) => {
+        // Remove if it's optimistic and matches the text
+        if (msg.optimistic && (msg.text === messageText.trim() || msg.content === messageText.trim())) {
+          return false;
+        }
+        return true;
+      });
+      
+      return {
+        ...prev,
+        [conversationId]: filteredMessages,
+      };
+    });
+    
+    console.log('[WebSocket] Cancelled optimistic message from conversation:', conversationId);
+    return true;
+  }, []);
+
   const sendMessageToClient = useCallback((messageText, conversationId) => {
     // Send message to client via browser extension
     if (!messageText || !messageText.trim()) {
@@ -992,6 +1023,7 @@ export const WebSocketProvider = ({ children }) => {
     clickClientInFiverr,
     sendMessageToClient,
     addOptimisticMessage,
+    cancelOptimisticMessage,
     deleteClient,
   };
 

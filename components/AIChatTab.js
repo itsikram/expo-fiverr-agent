@@ -21,8 +21,10 @@ import { colors, spacing, borderRadius, typography } from '../constants/theme';
 import { getAiChatResponse } from '../utils/aiChatService';
 import { formatTime } from '../utils/formatTime';
 import { loadAIChatHistory, saveAIChatHistory, clearAIChatHistory, loadSettings } from '../utils/storage';
+import { useWebSocket } from '../context/WebSocketContext';
 
 const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) => {
+  const { cancelOptimisticMessage } = useWebSocket();
   const [chatMessages, setChatMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -33,8 +35,14 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
   const [previousClientId, setPreviousClientId] = useState(null); // Track previous client ID to avoid saving when switching clients
   const [userProfile, setUserProfile] = useState({}); // User profile from settings
   const [sendingToClient, setSendingToClient] = useState(false); // Track if message is being sent to client
+  const [sendingMessageText, setSendingMessageText] = useState(null); // Track the message text being sent
   const [aiSuggestedActions, setAiSuggestedActions] = useState([]); // AI-suggested action buttons based on last messages
+  const [isOptionsModalVisible, setIsOptionsModalVisible] = useState(false); // Options modal visibility
+  const [selectedMessageType, setSelectedMessageType] = useState(null); // Selected message type
+  const [optionsModalInputText, setOptionsModalInputText] = useState(''); // Input text in options modal
+  const [optionsModalLoading, setOptionsModalLoading] = useState(false); // Loading state for options modal
   const scrollViewRef = useRef(null);
+  const isClearingRef = useRef(false); // Track if we're currently clearing history
 
   // Get client ID for storage key
   const getClientId = () => {
@@ -70,6 +78,12 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
   // Load chat history when client changes
   useEffect(() => {
     const loadHistory = async () => {
+      // Don't load if we're currently clearing
+      if (isClearingRef.current) {
+        console.log('[AIChatTab] Skipping load - currently clearing history');
+        return;
+      }
+      
       if (!client) {
         setChatMessages([]);
         setPreviousClientId(null);
@@ -77,6 +91,13 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
       }
 
       const clientId = getClientId();
+      
+      // Only load if client actually changed
+      if (clientId === previousClientId) {
+        console.log('[AIChatTab] Skipping load - same client, no change');
+        return;
+      }
+      
       setPreviousClientId(clientId); // Update previous client ID
       
       try {
@@ -95,11 +116,17 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
     };
 
     loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client?.id, client?.conversationId, client?.username]);
 
   // Save chat history whenever messages change (but not when loading from storage)
   useEffect(() => {
     const currentClientId = getClientId();
+    
+    // Don't save if we're currently clearing history
+    if (isClearingRef.current) {
+      return;
+    }
     
     // Don't save if client changed (we just loaded history) or if no client
     if (!client || currentClientId !== previousClientId) {
@@ -113,6 +140,11 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
     }
 
     const saveHistory = async () => {
+      // Double-check we're not clearing before saving
+      if (isClearingRef.current) {
+        return;
+      }
+      
       try {
         await saveAIChatHistory(currentClientId, chatMessages);
         console.log('[AIChatTab] Saved chat history for client:', currentClientId, '-', chatMessages.length, 'messages');
@@ -138,6 +170,14 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
       }, 150);
     }
   }, [isActive, chatMessages.length]);
+
+  // Reset options modal state when it closes
+  useEffect(() => {
+    if (!isOptionsModalVisible) {
+      setSelectedMessageType(null);
+      setOptionsModalInputText('');
+    }
+  }, [isOptionsModalVisible]);
 
   // Check if there's no chat history
   const hasNoChatHistory = chatMessages.length === 0;
@@ -527,25 +567,292 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
       return;
     }
 
+    const trimmedMessage = messageText.trim();
     setSendingToClient(true);
+    setSendingMessageText(trimmedMessage);
     
     try {
-      const success = onSendMessage(messageText.trim(), conversationId);
+      const success = onSendMessage(trimmedMessage, conversationId);
       if (success) {
         // Show success feedback
         Alert.alert('Success', 'Message sent to client');
       } else {
         Alert.alert('Error', 'Failed to send message. Please check your connection.');
+        // Cancel optimistic message if send failed
+        if (cancelOptimisticMessage) {
+          cancelOptimisticMessage(trimmedMessage, conversationId);
+        }
       }
     } catch (error) {
       console.error('Error sending message to client:', error);
       Alert.alert('Error', 'Failed to send message. Please try again.');
+      // Cancel optimistic message on error
+      if (cancelOptimisticMessage) {
+        cancelOptimisticMessage(trimmedMessage, conversationId);
+      }
     } finally {
       // Reset sending state after a short delay to show the feedback
       setTimeout(() => {
         setSendingToClient(false);
+        setSendingMessageText(null);
       }, 1000);
     }
+  };
+
+  const handleStopSending = () => {
+    if (!sendingToClient || !sendingMessageText) {
+      return;
+    }
+
+    const conversationId = client?.conversationId || client?.username || client?.id;
+    if (!conversationId) {
+      return;
+    }
+
+    // Cancel the optimistic message
+    if (cancelOptimisticMessage) {
+      cancelOptimisticMessage(sendingMessageText, conversationId);
+    }
+
+    // Reset sending state
+    setSendingToClient(false);
+    setSendingMessageText(null);
+    
+    Alert.alert('Cancelled', 'Message sending cancelled');
+  };
+
+  // Generate AI suggestions based on latest client messages and AI chat messages
+  const generateOptionsModalSuggestions = () => {
+    const suggestions = [];
+    
+    // Check if user has sent any messages to the client
+    const hasUserSentMessages = messages.some(m => m?.isFromMe === true || m?.sender === 'user');
+    
+    // Get latest client messages (last 5)
+    const recentClientMessages = messages.slice(-5);
+    const recentAIChatMessages = chatMessages.slice(-5);
+    
+    // Combine text from recent messages
+    const clientMessagesText = recentClientMessages
+      .map(m => (m?.text || m?.content || '').toLowerCase())
+      .join(' ');
+    
+    const aiChatMessagesText = recentAIChatMessages
+      .filter(m => m.sender === 'ai')
+      .map(m => (m?.text || '').toLowerCase())
+      .join(' ');
+    
+    const combinedText = (clientMessagesText + ' ' + aiChatMessagesText).toLowerCase();
+    
+    // Show "Generate First Message" if user hasn't sent any messages
+    if (!hasUserSentMessages) {
+      suggestions.push({
+        id: 'first-message',
+        label: 'Generate First Message',
+        icon: 'mail',
+        type: 'first-message',
+      });
+    }
+    
+    // Analyze and suggest based on context
+    if (combinedText.includes('task') || combinedText.includes('project') || combinedText.includes('complete')) {
+      suggestions.push({
+        id: 'task-update',
+        label: 'Update after task completion',
+        icon: 'checkmark-circle',
+        type: 'task-update',
+      });
+    }
+    
+    if (combinedText.includes('price') || combinedText.includes('budget') || combinedText.includes('cost') || combinedText.includes('offer')) {
+      suggestions.push({
+        id: 'budget-persuade',
+        label: 'Persuade client on budget',
+        icon: 'cash',
+        type: 'budget-persuade',
+      });
+    }
+    
+    if (combinedText.includes('understand') || combinedText.includes('explain') || combinedText.includes('clarify')) {
+      suggestions.push({
+        id: 'understand-client',
+        label: 'Understand client professionally',
+        icon: 'person',
+        type: 'understand-client',
+      });
+    }
+    
+    // Add more general suggestions to reach at least 5
+    if (!suggestions.find(s => s.id === 'next-message')) {
+      suggestions.push({
+        id: 'next-message',
+        label: 'Generate Next Message',
+        icon: 'chatbubble-ellipses',
+        type: 'next-message',
+      });
+    }
+    
+    if (!suggestions.find(s => s.id === 'explain-task')) {
+      suggestions.push({
+        id: 'explain-task',
+        label: 'Explain Task',
+        icon: 'information-circle',
+        type: 'explain-task',
+      });
+    }
+    
+    if (!suggestions.find(s => s.id === 'generate-offer')) {
+      suggestions.push({
+        id: 'generate-offer',
+        label: 'Generate Offer',
+        icon: 'briefcase',
+        type: 'generate-offer',
+      });
+    }
+    
+    if (!suggestions.find(s => s.id === 'professional-response')) {
+      suggestions.push({
+        id: 'professional-response',
+        label: 'Professional Response',
+        icon: 'chatbubble',
+        type: 'professional-response',
+      });
+    }
+    
+    if (!suggestions.find(s => s.id === 'follow-up')) {
+      suggestions.push({
+        id: 'follow-up',
+        label: 'Follow-up Message',
+        icon: 'arrow-forward-circle',
+        type: 'follow-up',
+      });
+    }
+    
+    // Always ensure we have at least 5 suggestions
+    const defaultSuggestions = [
+      { id: 'general-response', label: 'Generate Response', icon: 'chatbubble-ellipses', type: 'general' },
+      { id: 'thank-you', label: 'Thank You Message', icon: 'heart', type: 'thank-you' },
+      { id: 'clarification', label: 'Ask for Clarification', icon: 'help-circle', type: 'clarification' },
+      { id: 'greeting', label: 'Greeting Message', icon: 'hand-right', type: 'greeting' },
+      { id: 'closing', label: 'Closing Message', icon: 'checkmark-done', type: 'closing' },
+    ];
+    
+    // Add default suggestions if we still don't have 5
+    let defaultIndex = 0;
+    while (suggestions.length < 5 && defaultIndex < defaultSuggestions.length) {
+      const defaultSuggestion = defaultSuggestions[defaultIndex];
+      if (!suggestions.find(s => s.id === defaultSuggestion.id)) {
+        suggestions.push(defaultSuggestion);
+      }
+      defaultIndex++;
+    }
+    
+    // Return suggestions (should have at least 5 after the while loop)
+    return suggestions;
+  };
+
+  // Handle message type selection in options modal
+  const handleMessageTypeSelect = (type) => {
+    setSelectedMessageType(type);
+    
+    // Generate prompt based on type
+    let prompt = '';
+    const recentMessages = messages.slice(-3);
+    const recentAIChat = chatMessages.slice(-3);
+    
+    switch (type) {
+      case 'first-message':
+        prompt = `Generate a professional first message I can send to this client when they message me. Make it welcoming, friendly, and contextually relevant based on their initial message. The message should introduce me professionally and show interest in helping them. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, no prefixes like "Here is a message:" or "You can send this:" - just the actual message content that I can copy and send directly to the client.`;
+        break;
+      case 'task-update':
+        prompt = `Generate a professional update message to send to the client after completing their task. Based on the conversation history: ${recentMessages.map(m => m?.text || m?.content || '').join(' ')}. Make it concise, professional, and show that the task is completed. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        break;
+      case 'budget-persuade':
+        prompt = `Generate a persuasive message to help the client agree with my proposed budget. Based on our conversation: ${recentMessages.map(m => m?.text || m?.content || '').join(' ')}. Make it professional, highlight value, and be persuasive but not pushy. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        break;
+      case 'understand-client':
+        prompt = `Based on the conversation history with this client and my AI chat messages: ${recentAIChat.map(m => m?.text || '').join(' ')}, help me understand the client's needs, preferences, and communication style professionally. Provide insights I can use to communicate better.`;
+        break;
+      case 'next-message':
+        prompt = `Generate a professional follow-up message I can send directly to this client. Make it contextually relevant based on our conversation history. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, no prefixes like "Here is a message:" or "You can send this:" - just the actual message content that I can copy and send directly to the client.`;
+        break;
+      case 'explain-task':
+        prompt = `Based on the conversation history with this client, explain what their task or project is about. Provide a clear summary of what they need.`;
+        break;
+      case 'generate-offer':
+        prompt = `Generate a professional custom offer message for this client based on their requirements and our conversation. Include pricing suggestions if appropriate. CRITICAL: Return ONLY the offer message text itself - no explanations, no descriptions, just the actual offer message that I can send directly to the client.`;
+        break;
+      case 'professional-response':
+        prompt = `Generate a professional response message based on the conversation: ${recentMessages.map(m => m?.text || m?.content || '').join(' ')}. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        break;
+      case 'follow-up':
+        prompt = `Generate a professional follow-up message to continue the conversation with this client. Based on: ${recentMessages.map(m => m?.text || m?.content || '').join(' ')}. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        break;
+      case 'thank-you':
+        prompt = `Generate a professional thank you message for this client. Make it warm and appreciative. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        break;
+      case 'clarification':
+        prompt = `Generate a professional message asking the client for clarification about their requirements. Based on: ${recentMessages.map(m => m?.text || m?.content || '').join(' ')}. Make it polite and specific. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        break;
+      case 'greeting':
+        prompt = `Generate a professional greeting message for this client. Make it warm and friendly. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        break;
+      case 'closing':
+        prompt = `Generate a professional closing message for this client. Make it polite and professional. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        break;
+      default:
+        prompt = `Generate a professional message based on the conversation: ${recentMessages.map(m => m?.text || m?.content || '').join(' ')}. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+    }
+    
+    setOptionsModalInputText(prompt);
+  };
+
+  // Handle sending message from options modal
+  const handleOptionsModalSend = async () => {
+    if (!optionsModalInputText.trim() || optionsModalLoading) {
+      return;
+    }
+
+    setOptionsModalLoading(true);
+    
+    try {
+      // Build chat history for context
+      const historyForApi = chatMessages.map((m) => ({
+        sender: m.sender === 'ai' ? 'assistant' : 'user',
+        text: m.text,
+        time: m.time,
+      }));
+
+      const aiText = await getAiChatResponse({
+        userMessage: optionsModalInputText,
+        client,
+        messages,
+        chatHistory: historyForApi,
+        userProfile: userProfile,
+      });
+
+      // Update the input text with AI response
+      setOptionsModalInputText(aiText);
+    } catch (error) {
+      console.error('Options modal AI error:', error);
+      Alert.alert('Error', error.message || 'Failed to generate response. Please try again.');
+    } finally {
+      setOptionsModalLoading(false);
+    }
+  };
+
+  // Handle using the generated message from options modal
+  const handleUseOptionsModalMessage = () => {
+    if (!optionsModalInputText.trim()) {
+      Alert.alert('Error', 'No message to use');
+      return;
+    }
+    
+    // Set the input text in main chat and close modal
+    setInputText(optionsModalInputText);
+    setIsOptionsModalVisible(false);
+    setSelectedMessageType(null);
+    setOptionsModalInputText('');
   };
 
   const handleClearChatHistory = () => {
@@ -568,14 +875,54 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
           onPress: async () => {
             try {
               const clientId = getClientId();
-              await clearAIChatHistory(clientId);
+              console.log('[AIChatTab] Starting to clear chat history for client:', clientId);
+              
+              // Set clearing flag to prevent saves during clearing
+              isClearingRef.current = true;
+              
+              // Clear from storage FIRST
+              const cleared = await clearAIChatHistory(clientId);
+              console.log('[AIChatTab] Storage clear result:', cleared);
+              
+              // Wait a bit to ensure storage operation completes
+              await new Promise(resolve => setTimeout(resolve, 200));
+              
+              // Now clear state - this prevents any pending saves from executing
               setChatMessages([]);
               setSuggestedPrompts({});
-              Alert.alert('Success', 'Chat history cleared successfully');
-              console.log('[AIChatTab] Cleared chat history for client:', clientId);
+              
+              // Update previousClientId to current to prevent reload effect from triggering
+              setPreviousClientId(clientId);
+              
+              // Wait longer to ensure any pending save timeouts are cancelled
+              await new Promise(resolve => setTimeout(resolve, 600));
+              
+              // Reset clearing flag
+              isClearingRef.current = false;
+              
+              // Verify it was actually cleared by checking storage
+              const verifyHistory = await loadAIChatHistory(clientId);
+              console.log('[AIChatTab] Verification - remaining history length:', verifyHistory?.length || 0);
+              
+              if (cleared && (!verifyHistory || verifyHistory.length === 0)) {
+                Alert.alert('Success', 'Chat history cleared successfully');
+                console.log('[AIChatTab] Successfully cleared chat history for client:', clientId);
+              } else if (cleared) {
+                // Storage said it cleared but verification shows data still exists
+                Alert.alert('Warning', 'Chat history may not have been fully cleared. Please try again.');
+                console.warn('[AIChatTab] Clear reported success but verification shows data still exists');
+              } else {
+                Alert.alert('Warning', 'Chat history cleared from view, but there may have been an issue clearing from storage.');
+                console.warn('[AIChatTab] Storage clear returned false for client:', clientId);
+              }
             } catch (error) {
               console.error('[AIChatTab] Error clearing chat history:', error);
-              Alert.alert('Error', 'Failed to clear chat history. Please try again.');
+              // Clear state anyway even if storage clear failed
+              setChatMessages([]);
+              setSuggestedPrompts({});
+              // Reset clearing flag
+              isClearingRef.current = false;
+              Alert.alert('Error', 'Failed to clear chat history from storage, but cleared from view. Please try again.');
             }
           },
         },
@@ -637,23 +984,24 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
                   <Ionicons name="create-outline" size={16} color={colors.text.secondary} />
                   <Text style={styles.aiActionButtonText}>Edit</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.aiActionButton, styles.sendActionButton, sendingToClient && styles.sendActionButtonDisabled]}
-                  onPress={() => handleSendToClient(message.text || message.content)}
-                  disabled={sendingToClient}
-                >
-                  {sendingToClient ? (
-                    <>
-                      <ActivityIndicator size="small" color={colors.text.white} />
-                      <Text style={[styles.aiActionButtonText, styles.sendActionButtonText]}>Sending...</Text>
-                    </>
-                  ) : (
-                    <>
-                      <Ionicons name="send-outline" size={16} color={colors.text.white} />
-                      <Text style={[styles.aiActionButtonText, styles.sendActionButtonText]}>Send</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
+                {sendingToClient && sendingMessageText === (message.text || message.content) ? (
+                  <TouchableOpacity
+                    style={[styles.aiActionButton, styles.stopActionButton]}
+                    onPress={handleStopSending}
+                  >
+                    <Ionicons name="stop" size={16} color={colors.text.white} />
+                    <Text style={[styles.aiActionButtonText, styles.stopActionButtonText]}>Stop</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.aiActionButton, styles.sendActionButton]}
+                    onPress={() => handleSendToClient(message.text || message.content)}
+                    disabled={sendingToClient}
+                  >
+                    <Ionicons name="send-outline" size={16} color={colors.text.white} />
+                    <Text style={[styles.aiActionButtonText, styles.sendActionButtonText]}>Send</Text>
+                  </TouchableOpacity>
+                )}
               </View>
               {/* Suggested Prompts */}
               {suggestedPrompts[index] && suggestedPrompts[index].length > 0 && (
@@ -868,10 +1216,7 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
       <View style={styles.inputContainer}>
         <TouchableOpacity
           style={styles.optionsButton}
-          onPress={() => {
-            // Options button handler - can be expanded later
-            Alert.alert('Options', 'Options menu coming soon');
-          }}
+          onPress={() => setIsOptionsModalVisible(true)}
         >
           <Ionicons name="options-outline" size={20} color={colors.text.white} />
         </TouchableOpacity>
@@ -925,6 +1270,204 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
         onTextReady={handleTranslationTextReady}
         onUseInputText={handleUseInputText}
       />
+
+      {/* Options Modal */}
+      <Modal
+        visible={isOptionsModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsOptionsModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.optionsModalOverlay}
+          activeOpacity={1}
+          onPress={() => setIsOptionsModalVisible(false)}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={(e) => e.stopPropagation()}
+            style={styles.optionsModalWrapper}
+          >
+            <View style={styles.optionsModalContainer}>
+              <View style={styles.optionsModalContent}>
+                {/* Header */}
+                <View style={styles.optionsModalHeader}>
+                  <Text style={styles.optionsModalTitle}>AI Message Options</Text>
+                  <TouchableOpacity
+                    onPress={() => setIsOptionsModalVisible(false)}
+                    style={styles.optionsModalCloseButton}
+                  >
+                    <Ionicons name="close" size={24} color={colors.text.primary} />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView
+                  style={styles.optionsModalScrollView}
+                  contentContainerStyle={styles.optionsModalScrollContent}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {/* AI Suggested Actions */}
+                  <View style={styles.optionsModalSection}>
+                    <Text style={styles.optionsModalSectionTitle}>AI Suggested Actions</Text>
+                    <View style={styles.optionsModalSuggestionsContainer}>
+                      {generateOptionsModalSuggestions().map((suggestion) => (
+                        <TouchableOpacity
+                          key={suggestion.id}
+                          style={[
+                            styles.optionsModalSuggestionButton,
+                            selectedMessageType === suggestion.type && styles.optionsModalSuggestionButtonActive,
+                          ]}
+                          onPress={() => handleMessageTypeSelect(suggestion.type)}
+                        >
+                          <Ionicons
+                            name={suggestion.icon}
+                            size={18}
+                            color={selectedMessageType === suggestion.type ? colors.text.white : colors.text.primary}
+                          />
+                          <Text
+                            style={[
+                              styles.optionsModalSuggestionText,
+                              selectedMessageType === suggestion.type && styles.optionsModalSuggestionTextActive,
+                            ]}
+                          >
+                            {suggestion.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+
+                  {/* Message Type Selection */}
+                  <View style={styles.optionsModalSection}>
+                    <Text style={styles.optionsModalSectionTitle}>Message Type</Text>
+                    <View style={styles.optionsModalMessageTypesContainer}>
+                      <TouchableOpacity
+                        style={[
+                          styles.optionsModalMessageTypeButton,
+                          selectedMessageType === 'task-update' && styles.optionsModalMessageTypeButtonActive,
+                        ]}
+                        onPress={() => handleMessageTypeSelect('task-update')}
+                      >
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={20}
+                          color={selectedMessageType === 'task-update' ? colors.text.white : colors.text.primary}
+                        />
+                        <Text
+                          style={[
+                            styles.optionsModalMessageTypeText,
+                            selectedMessageType === 'task-update' && styles.optionsModalMessageTypeTextActive,
+                          ]}
+                        >
+                          Update after task done
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.optionsModalMessageTypeButton,
+                          selectedMessageType === 'budget-persuade' && styles.optionsModalMessageTypeButtonActive,
+                        ]}
+                        onPress={() => handleMessageTypeSelect('budget-persuade')}
+                      >
+                        <Ionicons
+                          name="cash"
+                          size={20}
+                          color={selectedMessageType === 'budget-persuade' ? colors.text.white : colors.text.primary}
+                        />
+                        <Text
+                          style={[
+                            styles.optionsModalMessageTypeText,
+                            selectedMessageType === 'budget-persuade' && styles.optionsModalMessageTypeTextActive,
+                          ]}
+                        >
+                          Impress client to agree with my budget
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[
+                          styles.optionsModalMessageTypeButton,
+                          selectedMessageType === 'understand-client' && styles.optionsModalMessageTypeButtonActive,
+                        ]}
+                        onPress={() => handleMessageTypeSelect('understand-client')}
+                      >
+                        <Ionicons
+                          name="person"
+                          size={20}
+                          color={selectedMessageType === 'understand-client' ? colors.text.white : colors.text.primary}
+                        />
+                        <Text
+                          style={[
+                            styles.optionsModalMessageTypeText,
+                            selectedMessageType === 'understand-client' && styles.optionsModalMessageTypeTextActive,
+                          ]}
+                        >
+                          Understand client professionally
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Message Input */}
+                  <View style={styles.optionsModalSection}>
+                    <Text style={styles.optionsModalSectionTitle}>Message</Text>
+                    <TextInput
+                      style={styles.optionsModalInput}
+                      placeholder="Type your message or let AI generate based on selected type..."
+                      placeholderTextColor={colors.text.secondary}
+                      value={optionsModalInputText}
+                      onChangeText={setOptionsModalInputText}
+                      multiline
+                      numberOfLines={6}
+                      textAlignVertical="top"
+                    />
+                  </View>
+
+                  {/* Action Buttons */}
+                  <View style={styles.optionsModalActionsContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.optionsModalActionButton,
+                        styles.optionsModalGenerateButton,
+                        (!optionsModalInputText.trim() || optionsModalLoading) && styles.optionsModalActionButtonDisabled,
+                      ]}
+                      onPress={handleOptionsModalSend}
+                      disabled={!optionsModalInputText.trim() || optionsModalLoading}
+                    >
+                      {optionsModalLoading ? (
+                        <>
+                          <ActivityIndicator size="small" color={colors.text.white} />
+                          <Text style={styles.optionsModalActionButtonText}>Generating...</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons name="sparkles" size={18} color={colors.text.white} />
+                          <Text style={styles.optionsModalActionButtonText}>Generate with AI</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.optionsModalActionButton,
+                        styles.optionsModalUseButton,
+                        !optionsModalInputText.trim() && styles.optionsModalActionButtonDisabled,
+                      ]}
+                      onPress={handleUseOptionsModalMessage}
+                      disabled={!optionsModalInputText.trim()}
+                    >
+                      <Ionicons name="send" size={18} color={colors.text.white} />
+                      <Text style={styles.optionsModalActionButtonText}>Use in Chat</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -1198,10 +1741,20 @@ const styles = StyleSheet.create({
   sendActionButtonText: {
     color: colors.text.white,
   },
+  stopActionButton: {
+    backgroundColor: colors.accent.error || '#dc3545',
+  },
+  stopActionButtonText: {
+    color: colors.text.white,
+  },
   editContainer: {
     width: '100%',
+    alignSelf: 'stretch',
+    marginHorizontal: -spacing.md, // Extend to bubble edges, accounting for bubble padding
+    minWidth: '80%',
   },
   editInput: {
+    width: '100%',
     backgroundColor: colors.background.secondary,
     borderWidth: 1,
     borderColor: colors.border.dark,
@@ -1212,6 +1765,8 @@ const styles = StyleSheet.create({
     minHeight: 100,
     textAlignVertical: 'top',
     marginBottom: spacing.sm,
+    minWidth: '70vw',
+    minHeight: 250,
   },
   editActions: {
     flexDirection: 'row',
@@ -1266,6 +1821,164 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     color: colors.text.primary,
     fontWeight: typography.weights.medium,
+  },
+  // Options Modal Styles
+  optionsModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  optionsModalWrapper: {
+    width: '90%',
+    maxWidth: '95%',
+    height: '85%',
+    maxHeight: '90%',
+  },
+  optionsModalContainer: {
+    width: '100%',
+    height: '100%',
+  },
+  optionsModalContent: {
+    flex: 1,
+    backgroundColor: colors.background.primary,
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 16,
+  },
+  optionsModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.dark,
+  },
+  optionsModalTitle: {
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.bold,
+    color: colors.text.primary,
+  },
+  optionsModalCloseButton: {
+    padding: spacing.xs,
+    borderRadius: borderRadius.sm,
+  },
+  optionsModalScrollView: {
+    flex: 1,
+  },
+  optionsModalScrollContent: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    paddingBottom: spacing.xl,
+  },
+  optionsModalSection: {
+    marginBottom: spacing.lg,
+  },
+  optionsModalSectionTitle: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.primary,
+    marginBottom: spacing.md,
+  },
+  optionsModalSuggestionsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  optionsModalSuggestionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background.secondary,
+    borderWidth: 1,
+    borderColor: colors.border.dark,
+    gap: spacing.xs,
+  },
+  optionsModalSuggestionButtonActive: {
+    backgroundColor: colors.accent.primary,
+    borderColor: colors.accent.primary,
+  },
+  optionsModalSuggestionText: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.primary,
+    fontWeight: typography.weights.medium,
+  },
+  optionsModalSuggestionTextActive: {
+    color: colors.text.white,
+  },
+  optionsModalMessageTypesContainer: {
+    gap: spacing.sm,
+  },
+  optionsModalMessageTypeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background.secondary,
+    borderWidth: 1,
+    borderColor: colors.border.dark,
+    gap: spacing.sm,
+  },
+  optionsModalMessageTypeButtonActive: {
+    backgroundColor: colors.accent.primary,
+    borderColor: colors.accent.primary,
+  },
+  optionsModalMessageTypeText: {
+    fontSize: typography.sizes.base,
+    color: colors.text.primary,
+    fontWeight: typography.weights.medium,
+    flex: 1,
+  },
+  optionsModalMessageTypeTextActive: {
+    color: colors.text.white,
+  },
+  optionsModalInput: {
+    backgroundColor: colors.background.secondary,
+    borderWidth: 1,
+    borderColor: colors.border.dark,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    color: colors.text.primary,
+    fontSize: typography.sizes.base,
+    minHeight: 120,
+    textAlignVertical: 'top',
+  },
+  optionsModalActionsContainer: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  optionsModalActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    gap: spacing.xs,
+  },
+  optionsModalGenerateButton: {
+    backgroundColor: colors.accent.primary,
+  },
+  optionsModalUseButton: {
+    backgroundColor: colors.accent.success,
+  },
+  optionsModalActionButtonDisabled: {
+    opacity: 0.5,
+  },
+  optionsModalActionButtonText: {
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.white,
   },
 });
 

@@ -323,6 +323,7 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
       isFetchingMessages={isFetchingMessages}
       isFooterMinimized={isFooterMinimized}
       onToggleFooterMinimize={() => setIsFooterMinimized(!isFooterMinimized)}
+      client={client}
     />
   );
 

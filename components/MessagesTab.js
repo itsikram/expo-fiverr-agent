@@ -9,10 +9,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import MessageBubble from './MessageBubble';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
+import { useWebSocket } from '../context/WebSocketContext';
 
 const MessagesTab = ({
   messages = [],
@@ -24,10 +26,12 @@ const MessagesTab = ({
   isFetchingMessages = false,
   isFooterMinimized = false,
   onToggleFooterMinimize,
+  client = null,
 }) => {
   const scrollViewRef = useRef(null);
   const [sendingMessages, setSendingMessages] = useState([]); // Array of messages being sent
   const [isSending, setIsSending] = useState(false);
+  const { cancelOptimisticMessage } = useWebSocket();
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
@@ -83,11 +87,46 @@ const MessagesTab = ({
       if (success === false) {
         setSendingMessages(prev => prev.filter(msg => msg.text !== textToSend));
         setIsSending(false);
+        // Cancel optimistic message if send failed
+        if (client && cancelOptimisticMessage) {
+          const conversationId = client?.conversationId || client?.username || client?.id;
+          if (conversationId) {
+            cancelOptimisticMessage(textToSend, conversationId);
+          }
+        }
       }
     } else {
       setSendingMessages(prev => prev.filter(msg => msg.text !== textToSend));
       setIsSending(false);
     }
+  };
+
+  const handleStopSending = () => {
+    if (!isSending || sendingMessages.length === 0) {
+      return;
+    }
+
+    // Get the most recent sending message
+    const lastSendingMessage = sendingMessages[sendingMessages.length - 1];
+    if (!lastSendingMessage || !lastSendingMessage.text) {
+      return;
+    }
+
+    const conversationId = client?.conversationId || client?.username || client?.id;
+    if (!conversationId) {
+      return;
+    }
+
+    // Cancel the optimistic message
+    if (cancelOptimisticMessage) {
+      cancelOptimisticMessage(lastSendingMessage.text, conversationId);
+    }
+
+    // Remove from sending messages
+    setSendingMessages(prev => prev.filter(msg => msg.text !== lastSendingMessage.text));
+    setIsSending(false);
+    
+    Alert.alert('Cancelled', 'Message sending cancelled');
   };
 
   return (
@@ -194,17 +233,22 @@ const MessagesTab = ({
               multiline
               maxLength={1000}
             />
-            <TouchableOpacity
-              style={[styles.sendButton, (!messageText.trim() || isSending) && styles.sendButtonDisabled]}
-              onPress={handleSend}
-              disabled={!messageText.trim() || isSending}
-            >
-              {isSending ? (
-                <ActivityIndicator size="small" color={colors.text.white} />
-              ) : (
+            {isSending ? (
+              <TouchableOpacity
+                style={[styles.sendButton, styles.stopButton]}
+                onPress={handleStopSending}
+              >
+                <Ionicons name="stop" size={20} color={colors.text.white} />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.sendButton, (!messageText.trim()) && styles.sendButtonDisabled]}
+                onPress={handleSend}
+                disabled={!messageText.trim()}
+              >
                 <Ionicons name="send" size={20} color={colors.text.white} />
-              )}
-            </TouchableOpacity>
+              </TouchableOpacity>
+            )}
             {onToggleFooterMinimize && (
               <TouchableOpacity
                 style={styles.minimizeButton}
@@ -314,6 +358,9 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     opacity: 0.5,
+  },
+  stopButton: {
+    backgroundColor: colors.accent.error || '#dc3545',
   },
   emptyState: {
     flex: 1,
