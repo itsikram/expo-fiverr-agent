@@ -358,7 +358,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     // You can integrate this with your message input logic
   };
 
-  // Connection status indicator
+  // Connection status indicators
   const getConnectionStatusColor = () => {
     switch (connectionStatus) {
       case 'connected':
@@ -373,16 +373,47 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
   };
 
+  const getServerStatusText = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return 'Server: Connected';
+      case 'connecting':
+        return 'Server: Connecting...';
+      case 'disconnected':
+        return 'Server: Disconnected';
+      case 'error':
+        return 'Server: Error';
+      default:
+        return 'Server: Unknown';
+    }
+  };
+
+  // Extension status (based on WebSocket connection and sellerProfile data)
+  const getExtensionStatus = () => {
+    // Extension is only active if WebSocket is connected AND we have sellerProfile data
+    if (isConnected && sellerProfile) {
+      return { text: 'Extension: Active', color: colors.accent.success || '#4CAF50' };
+    }
+    // If WebSocket is disconnected, extension is inactive regardless of sellerProfile
+    if (!isConnected) {
+      return { text: 'Extension: Disconnected', color: colors.accent.error || '#F44336' };
+    }
+    // WebSocket is connected but no sellerProfile yet
+    return { text: 'Extension: Inactive', color: colors.accent.warning || '#FF9800' };
+  };
+
+  const extensionStatus = getExtensionStatus();
+
   return (
     <View style={[styles.container, Platform.OS === 'web' && styles.containerWeb]}>
-      {/* Connection Status Bar */}
-      <View style={[styles.connectionBar, { backgroundColor: getConnectionStatusColor() }]}>
-        <Text style={styles.connectionText}>
-          {connectionStatus === 'connected' && 'Connected'}
-          {connectionStatus === 'connecting' && 'Connecting...'}
-          {connectionStatus === 'disconnected' && 'Disconnected'}
-          {connectionStatus === 'error' && 'Connection Error'}
-        </Text>
+      {/* Connection Status Bar - Split Horizontally */}
+      <View style={styles.connectionBar}>
+        <View style={[styles.connectionStatusItem, { backgroundColor: getConnectionStatusColor() }]}>
+          <Text style={styles.connectionText}>{getServerStatusText()}</Text>
+        </View>
+        <View style={[styles.connectionStatusItem, { backgroundColor: extensionStatus.color }]}>
+          <Text style={styles.connectionText}>{extensionStatus.text}</Text>
+        </View>
       </View>
 
       <View style={styles.content}>
@@ -577,13 +608,19 @@ const styles = StyleSheet.create({
   },
   connectionBar: {
     height: 16,
-    paddingHorizontal: 16,
+    flexDirection: 'row',
     alignItems: 'center',
-
+  },
+  connectionStatusItem: {
+    flex: 1,
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 8,
   },
   connectionText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   content: {

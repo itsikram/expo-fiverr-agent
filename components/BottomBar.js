@@ -73,7 +73,7 @@ const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefe
                   activeOpacity={0.7}
                 >
                   <Ionicons
-                    name="chevron-up"
+                    name="chevron-down"
                     size={20}
                     color={colors.text.white}
                   />
@@ -90,7 +90,7 @@ const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefe
                 activeOpacity={0.7}
               >
                 <Ionicons
-                  name="chevron-down"
+                  name="chevron-up"
                   size={20}
                   color={colors.text.white}
                 />

@@ -1,10 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 import { formatTime } from '../utils/formatTime';
 
-const MessageBubble = ({ message, isFromMe }) => {
+const MessageBubble = ({ message, isFromMe, isSending = false }) => {
 
   if (isFromMe) {
     return (
@@ -16,9 +16,16 @@ const MessageBubble = ({ message, isFromMe }) => {
           style={styles.bubbleRight}
         >
           <Text style={styles.textRight}>{message.text || message.content}</Text>
-          {message.time && (
-            <Text style={styles.timeRight}>{formatTime(message.time)}</Text>
-          )}
+          <View style={styles.timeContainer}>
+            {isSending ? (
+              <>
+                <ActivityIndicator size="small" color="rgba(255, 255, 255, 0.8)" style={styles.sendingIndicator} />
+                <Text style={styles.sendingText}>Sending...</Text>
+              </>
+            ) : message.time ? (
+              <Text style={styles.timeRight}>{formatTime(message.time)}</Text>
+            ) : null}
+          </View>
         </LinearGradient>
       </View>
     );
@@ -78,15 +85,28 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: spacing.xs / 2,
   },
+  timeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    gap: spacing.xs / 2,
+  },
   timeRight: {
     fontSize: typography.sizes.xs,
     color: 'rgba(255, 255, 255, 0.8)',
-    alignSelf: 'flex-end',
   },
   timeLeft: {
     fontSize: typography.sizes.xs,
     color: colors.text.secondary,
     alignSelf: 'flex-end',
+  },
+  sendingIndicator: {
+    marginRight: spacing.xs / 2,
+  },
+  sendingText: {
+    fontSize: typography.sizes.xs,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontStyle: 'italic',
   },
 });
 

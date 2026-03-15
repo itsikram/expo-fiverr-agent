@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -26,6 +26,8 @@ const MessagesTab = ({
   onToggleFooterMinimize,
 }) => {
   const scrollViewRef = useRef(null);
+  const [sendingMessages, setSendingMessages] = useState([]); // Array of messages being sent
+  const [isSending, setIsSending] = useState(false);
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
@@ -36,6 +38,57 @@ const MessagesTab = ({
       }, 150);
     }
   }, [messages.length, messages]);
+
+  // Clear sending state when a new message appears (message was successfully sent)
+  useEffect(() => {
+    if (sendingMessages.length > 0 && messages.length > 0) {
+      // Check if any of the messages we were sending now have a time (meaning they were sent successfully)
+      const updatedSendingMessages = sendingMessages.filter(sendingMsg => {
+        const sentMessage = messages.find(m => 
+          (m.text === sendingMsg.text || m.content === sendingMsg.text) && m.time
+        );
+        return !sentMessage; // Keep messages that haven't been confirmed yet
+      });
+      
+      if (updatedSendingMessages.length !== sendingMessages.length) {
+        setSendingMessages(updatedSendingMessages);
+        if (updatedSendingMessages.length === 0) {
+          setIsSending(false);
+        }
+      }
+    }
+  }, [messages, sendingMessages]);
+
+  const handleSend = async () => {
+    if (!messageText.trim() || isSending) {
+      return;
+    }
+
+    const textToSend = messageText.trim();
+    setIsSending(true);
+    
+    // Add temporary sending message
+    const tempMessage = {
+      text: textToSend,
+      sender: 'me',
+      isFromMe: true,
+      time: null, // No time means it's still sending
+    };
+    setSendingMessages(prev => [...prev, { text: textToSend }]);
+    
+    // Call the onSend callback
+    if (onSend) {
+      const success = onSend();
+      // If send fails immediately, remove from sending messages
+      if (success === false) {
+        setSendingMessages(prev => prev.filter(msg => msg.text !== textToSend));
+        setIsSending(false);
+      }
+    } else {
+      setSendingMessages(prev => prev.filter(msg => msg.text !== textToSend));
+      setIsSending(false);
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -78,13 +131,48 @@ const MessagesTab = ({
             )}
           </View>
         ) : (
-          messages.map((message, index) => (
-            <MessageBubble
-              key={index}
-              message={message}
-              isFromMe={message.sender === 'me' || message.isFromMe}
-            />
-          ))
+          <>
+            {/* Show all regular messages */}
+            {messages.map((message, index) => {
+              // Check if this message is currently being sent (no time means it's still sending)
+              const messageText = message.text || message.content || '';
+              const isMessageSending = !message.time && sendingMessages.some(sm => sm.text === messageText);
+              
+              return (
+                <MessageBubble
+                  key={`msg-${index}`}
+                  message={message}
+                  isFromMe={message.sender === 'me' || message.isFromMe}
+                  isSending={isMessageSending}
+                />
+              );
+            })}
+            {/* Show temporary sending messages that aren't in the messages array yet */}
+            {sendingMessages.map((sendingMsg, index) => {
+              // Only show if this message isn't already in the messages array
+              const existsInMessages = messages.some(m => 
+                (m.text === sendingMsg.text || m.content === sendingMsg.text)
+              );
+              
+              if (existsInMessages) {
+                return null;
+              }
+              
+              return (
+                <MessageBubble
+                  key={`sending-${index}`}
+                  message={{
+                    text: sendingMsg.text,
+                    sender: 'me',
+                    isFromMe: true,
+                    time: null,
+                  }}
+                  isFromMe={true}
+                  isSending={true}
+                />
+              );
+            })}
+          </>
         )}
       </ScrollView>
       <View style={styles.inputContainer}>
@@ -107,11 +195,15 @@ const MessagesTab = ({
               maxLength={1000}
             />
             <TouchableOpacity
-              style={[styles.sendButton, !messageText.trim() && styles.sendButtonDisabled]}
-              onPress={onSend}
-              disabled={!messageText.trim()}
+              style={[styles.sendButton, (!messageText.trim() || isSending) && styles.sendButtonDisabled]}
+              onPress={handleSend}
+              disabled={!messageText.trim() || isSending}
             >
-              <Ionicons name="send" size={20} color={colors.text.white} />
+              {isSending ? (
+                <ActivityIndicator size="small" color={colors.text.white} />
+              ) : (
+                <Ionicons name="send" size={20} color={colors.text.white} />
+              )}
             </TouchableOpacity>
             {onToggleFooterMinimize && (
               <TouchableOpacity

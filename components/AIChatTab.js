@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +32,8 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
   const [suggestedPrompts, setSuggestedPrompts] = useState({}); // { messageIndex: [prompts] }
   const [previousClientId, setPreviousClientId] = useState(null); // Track previous client ID to avoid saving when switching clients
   const [userProfile, setUserProfile] = useState({}); // User profile from settings
+  const [sendingToClient, setSendingToClient] = useState(false); // Track if message is being sent to client
+  const [aiSuggestedActions, setAiSuggestedActions] = useState([]); // AI-suggested action buttons based on last messages
   const scrollViewRef = useRef(null);
 
   // Get client ID for storage key
@@ -138,6 +141,109 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
 
   // Check if there's no chat history
   const hasNoChatHistory = chatMessages.length === 0;
+
+  // Update AI-suggested actions when messages change
+  useEffect(() => {
+    if (!isActive || !messages || messages.length === 0) {
+      setAiSuggestedActions([]);
+      return;
+    }
+
+    // Get the last few messages (last 3-5 messages)
+    const recentMessages = messages.slice(-5);
+    const lastMessage = recentMessages[recentMessages.length - 1];
+    const messageText = (lastMessage?.text || lastMessage?.content || '').toLowerCase();
+    const allMessagesText = recentMessages
+      .map(m => (m?.text || m?.content || '').toLowerCase())
+      .join(' ');
+
+    const actions = [];
+
+    // Analyze message content to suggest relevant actions
+    // Check if it's a new conversation (no chat history)
+    if (chatMessages.length === 0) {
+      actions.push({
+        id: 'first-message',
+        label: 'Generate First Message',
+        icon: 'mail',
+        handler: handleGenerateFirstMessage,
+        style: 'generateFirstMessageButton',
+      });
+    }
+
+    // Check for pricing/offer related keywords
+    if (
+      messageText.includes('price') ||
+      messageText.includes('cost') ||
+      messageText.includes('budget') ||
+      messageText.includes('offer') ||
+      messageText.includes('quote') ||
+      messageText.includes('payment') ||
+      messageText.includes('how much')
+    ) {
+      actions.push({
+        id: 'generate-offer',
+        label: 'Generate Offer',
+        icon: 'briefcase',
+        handler: handleGenerateOffer,
+        style: 'generateOfferButton',
+      });
+    }
+
+    // Check for task/project description
+    if (
+      messageText.includes('task') ||
+      messageText.includes('project') ||
+      messageText.includes('need') ||
+      messageText.includes('want') ||
+      messageText.includes('looking for') ||
+      messageText.includes('requirement') ||
+      allMessagesText.includes('task') ||
+      allMessagesText.includes('project')
+    ) {
+      actions.push({
+        id: 'explain-task',
+        label: 'Explain Task',
+        icon: 'information-circle',
+        handler: handleExplainTask,
+        style: 'explainTaskButton',
+      });
+    }
+
+    // Check for questions or requests for information
+    if (
+      messageText.includes('?') ||
+      messageText.includes('what') ||
+      messageText.includes('how') ||
+      messageText.includes('when') ||
+      messageText.includes('can you') ||
+      messageText.includes('could you') ||
+      messageText.includes('please')
+    ) {
+      actions.push({
+        id: 'generate-response',
+        label: 'Generate Response',
+        icon: 'chatbubble-ellipses',
+        handler: handleGenerateNextMessage,
+        style: 'nextMessageButton',
+      });
+    }
+
+    // If no specific actions found, suggest general ones
+    if (actions.length === 0 && chatMessages.length > 0) {
+      actions.push({
+        id: 'generate-next',
+        label: 'Generate Next Message',
+        icon: 'chatbubble-ellipses',
+        handler: handleGenerateNextMessage,
+        style: 'nextMessageButton',
+      });
+    }
+
+    // Limit to 3 actions max
+    setAiSuggestedActions(actions.slice(0, 3));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, chatMessages.length, isActive]);
 
   // Generate suggested prompts based on context
   const generateSuggestedPrompts = (lastAIMessage, messageIndex) => {
@@ -351,6 +457,12 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
     );
   };
 
+  const handleGenerateFirstMessage = () => {
+    handleQuickAction(
+      'Generate a professional first message I can send to this client when they message me. Make it welcoming, friendly, and contextually relevant based on their initial message. The message should introduce me professionally and show interest in helping them. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, no prefixes like "Here is a message:" or "You can send this:" - just the actual message content that I can copy and send directly to the client.'
+    );
+  };
+
   const handleGenerateCustomOffer = () => {
     handleQuickAction(
       'Generate a professional custom offer message for this client based on our conversation history. The offer should be tailored to their specific requirements mentioned in the conversation. Include appropriate pricing if relevant. CRITICAL: Return ONLY the offer message text itself - no explanations, no descriptions, just the actual offer message that I can send directly to the client.'
@@ -394,7 +506,7 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
     handleSendMessage(prompt);
   };
 
-  const handleSendToClient = (messageText) => {
+  const handleSendToClient = async (messageText) => {
     if (!onSendMessage) {
       Alert.alert('Error', 'Send message function is not available');
       return;
@@ -405,17 +517,34 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
       return;
     }
 
+    if (sendingToClient) {
+      return; // Prevent multiple sends
+    }
+
     const conversationId = client?.conversationId || client?.username || client?.id;
     if (!conversationId) {
       Alert.alert('Error', 'Cannot send message: no conversation ID');
       return;
     }
 
-    const success = onSendMessage(messageText.trim(), conversationId);
-    if (success) {
-      Alert.alert('Success', 'Message sent to client');
-    } else {
-      Alert.alert('Error', 'Failed to send message. Please check your connection.');
+    setSendingToClient(true);
+    
+    try {
+      const success = onSendMessage(messageText.trim(), conversationId);
+      if (success) {
+        // Show success feedback
+        Alert.alert('Success', 'Message sent to client');
+      } else {
+        Alert.alert('Error', 'Failed to send message. Please check your connection.');
+      }
+    } catch (error) {
+      console.error('Error sending message to client:', error);
+      Alert.alert('Error', 'Failed to send message. Please try again.');
+    } finally {
+      // Reset sending state after a short delay to show the feedback
+      setTimeout(() => {
+        setSendingToClient(false);
+      }, 1000);
     }
   };
 
@@ -509,11 +638,21 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
                   <Text style={styles.aiActionButtonText}>Edit</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.aiActionButton, styles.sendActionButton]}
+                  style={[styles.aiActionButton, styles.sendActionButton, sendingToClient && styles.sendActionButtonDisabled]}
                   onPress={() => handleSendToClient(message.text || message.content)}
+                  disabled={sendingToClient}
                 >
-                  <Ionicons name="send-outline" size={16} color={colors.text.white} />
-                  <Text style={[styles.aiActionButtonText, styles.sendActionButtonText]}>Send</Text>
+                  {sendingToClient ? (
+                    <>
+                      <ActivityIndicator size="small" color={colors.text.white} />
+                      <Text style={[styles.aiActionButtonText, styles.sendActionButtonText]}>Sending...</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Ionicons name="send-outline" size={16} color={colors.text.white} />
+                      <Text style={[styles.aiActionButtonText, styles.sendActionButtonText]}>Send</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               </View>
               {/* Suggested Prompts */}
@@ -556,40 +695,72 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
       >
         {chatMessages.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>🤖</Text>
             <Text style={styles.emptyTitle}>Start a Conversation</Text>
             <Text style={styles.emptyText}>
               Ask me anything about {client?.name || 'this client'} or get help with your tasks.
             </Text>
             {/* Default buttons when no messages */}
             {!isLoading && (
-              <View style={styles.quickActionsContainer}>
-                <Text style={styles.quickActionsTitle}>Quick Actions</Text>
-                <TouchableOpacity
-                  style={[styles.quickActionButton, styles.nextMessageButton]}
-                  onPress={handleGenerateNextMessage}
-                  disabled={isLoading}
-                >
-                  <Ionicons name="chatbubble-ellipses" size={20} color={colors.text.white} />
-                  <Text style={styles.quickActionText}>Generate Next Message</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.quickActionButton, styles.explainTaskButton]}
-                  onPress={handleExplainTask}
-                  disabled={isLoading}
-                >
-                  <Ionicons name="information-circle" size={20} color={colors.text.white} />
-                  <Text style={styles.quickActionText}>Explain Task</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.quickActionButton, styles.generateOfferButton]}
-                  onPress={handleGenerateOffer}
-                  disabled={isLoading}
-                >
-                  <Ionicons name="briefcase" size={20} color={colors.text.white} />
-                  <Text style={styles.quickActionText}>Generate Offer</Text>
-                </TouchableOpacity>
-              </View>
+              <>
+                <View style={styles.quickActionsContainer}>
+                  <Text style={styles.quickActionsTitle}>Quick Actions</Text>
+                  <TouchableOpacity
+                    style={[styles.quickActionButton, styles.nextMessageButton]}
+                    onPress={handleGenerateNextMessage}
+                    disabled={isLoading}
+                  >
+                    <Ionicons name="chatbubble-ellipses" size={20} color={colors.text.white} />
+                    <Text style={styles.quickActionText}>Generate Next Message</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.quickActionButton, styles.explainTaskButton]}
+                    onPress={handleExplainTask}
+                    disabled={isLoading}
+                  >
+                    <Ionicons name="information-circle" size={20} color={colors.text.white} />
+                    <Text style={styles.quickActionText}>Explain Task</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.quickActionButton, styles.generateOfferButton]}
+                    onPress={handleGenerateOffer}
+                    disabled={isLoading}
+                  >
+                    <Ionicons name="briefcase" size={20} color={colors.text.white} />
+                    <Text style={styles.quickActionText}>Generate Offer</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.quickActionButton, styles.generateFirstMessageButton]}
+                    onPress={handleGenerateFirstMessage}
+                    disabled={isLoading}
+                  >
+                    <Ionicons name="mail" size={20} color={colors.text.white} />
+                    <Text style={styles.quickActionText}>Generate First Message</Text>
+                  </TouchableOpacity>
+                </View>
+                {/* AI Suggested Action Buttons - Based on last messages */}
+                {aiSuggestedActions.length > 0 && (
+                  <View style={styles.aiSuggestedActionsContainer}>
+                    <Text style={styles.aiSuggestedActionsTitle}>Suggested Actions</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.aiSuggestedActionsScroll}
+                    >
+                      {aiSuggestedActions.map((action) => (
+                        <TouchableOpacity
+                          key={action.id}
+                          style={[styles.aiSuggestedActionButton, styles[action.style]]}
+                          onPress={action.handler}
+                          disabled={isLoading}
+                        >
+                          <Ionicons name={action.icon} size={18} color={colors.text.white} />
+                          <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </>
             )}
           </View>
         ) : (
@@ -609,33 +780,66 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
               );
             })}
             {hasNoChatHistory && !isLoading && (
-              <View style={styles.quickActionsContainer}>
-                <Text style={styles.quickActionsTitle}>Quick Actions</Text>
-                <TouchableOpacity
-                  style={[styles.quickActionButton, styles.nextMessageButton]}
-                  onPress={handleGenerateNextMessage}
-                  disabled={isLoading}
-                >
-                  <Ionicons name="chatbubble-ellipses" size={20} color={colors.text.white} />
-                  <Text style={styles.quickActionText}>Generate Next Message</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.quickActionButton, styles.explainTaskButton]}
-                  onPress={handleExplainTask}
-                  disabled={isLoading}
-                >
-                  <Ionicons name="information-circle" size={20} color={colors.text.white} />
-                  <Text style={styles.quickActionText}>Explain Task</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.quickActionButton, styles.generateOfferButton]}
-                  onPress={handleGenerateOffer}
-                  disabled={isLoading}
-                >
-                  <Ionicons name="briefcase" size={20} color={colors.text.white} />
-                  <Text style={styles.quickActionText}>Generate Offer</Text>
-                </TouchableOpacity>
-              </View>
+              <>
+                <View style={styles.quickActionsContainer}>
+                  <Text style={styles.quickActionsTitle}>Quick Actions</Text>
+                  <TouchableOpacity
+                    style={[styles.quickActionButton, styles.nextMessageButton]}
+                    onPress={handleGenerateNextMessage}
+                    disabled={isLoading}
+                  >
+                    <Ionicons name="chatbubble-ellipses" size={20} color={colors.text.white} />
+                    <Text style={styles.quickActionText}>Generate Next Message</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.quickActionButton, styles.explainTaskButton]}
+                    onPress={handleExplainTask}
+                    disabled={isLoading}
+                  >
+                    <Ionicons name="information-circle" size={20} color={colors.text.white} />
+                    <Text style={styles.quickActionText}>Explain Task</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.quickActionButton, styles.generateOfferButton]}
+                    onPress={handleGenerateOffer}
+                    disabled={isLoading}
+                  >
+                    <Ionicons name="briefcase" size={20} color={colors.text.white} />
+                    <Text style={styles.quickActionText}>Generate Offer</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.quickActionButton, styles.generateFirstMessageButton]}
+                    onPress={handleGenerateFirstMessage}
+                    disabled={isLoading}
+                  >
+                    <Ionicons name="mail" size={20} color={colors.text.white} />
+                    <Text style={styles.quickActionText}>Generate First Message</Text>
+                  </TouchableOpacity>
+                </View>
+                {/* AI Suggested Action Buttons - Based on last messages */}
+                {aiSuggestedActions.length > 0 && (
+                  <View style={styles.aiSuggestedActionsContainer}>
+                    <Text style={styles.aiSuggestedActionsTitle}>Suggested Actions</Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.aiSuggestedActionsScroll}
+                    >
+                      {aiSuggestedActions.map((action) => (
+                        <TouchableOpacity
+                          key={action.id}
+                          style={[styles.aiSuggestedActionButton, styles[action.style]]}
+                          onPress={action.handler}
+                          disabled={isLoading}
+                        >
+                          <Ionicons name={action.icon} size={18} color={colors.text.white} />
+                          <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+              </>
             )}
           </>
         )}
@@ -647,7 +851,7 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
         )}
       </ScrollView>
 
-      {/* Custom Offer Button - Only show when no chat history */}
+      {/* Custom Offer Button - Only show when no chat history
       {hasNoChatHistory && !isLoading && (
         <View style={styles.customOfferContainer}>
           <TouchableOpacity
@@ -659,9 +863,18 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
             <Text style={styles.customOfferButtonText}>Generate Custom Offer</Text>
           </TouchableOpacity>
         </View>
-      )}
+      )} */}
 
       <View style={styles.inputContainer}>
+        <TouchableOpacity
+          style={styles.optionsButton}
+          onPress={() => {
+            // Options button handler - can be expanded later
+            Alert.alert('Options', 'Options menu coming soon');
+          }}
+        >
+          <Ionicons name="options-outline" size={20} color={colors.text.white} />
+        </TouchableOpacity>
         <TouchableOpacity
           style={styles.translateButton}
           onPress={() => setIsTranslationModalVisible(true)}
@@ -731,7 +944,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: spacing.xxxl * 2,
+    // paddingVertical: spacing.xxxl * 2,
     paddingHorizontal: spacing.xl,
   },
   emptyIcon: {
@@ -772,9 +985,27 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border.light,
     gap: spacing.sm,
   },
+  optionsButton: {
+    padding: spacing.sm,
+    backgroundColor: colors.accent.primary,
+    borderRadius: borderRadius.md,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   translateButton: {
     padding: spacing.sm,
     backgroundColor: colors.accent.primary,
+    borderRadius: borderRadius.md,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearButton: {
+    padding: spacing.sm,
+    backgroundColor: colors.accent.error || '#dc3545',
     borderRadius: borderRadius.md,
     width: 44,
     height: 44,
@@ -841,6 +1072,9 @@ const styles = StyleSheet.create({
   generateOfferButton: {
     backgroundColor: colors.accent.success,
   },
+  generateFirstMessageButton: {
+    backgroundColor: colors.accent.warning || '#f59e0b',
+  },
   quickActionText: {
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
@@ -868,6 +1102,39 @@ const styles = StyleSheet.create({
   },
   customOfferButtonText: {
     fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.white,
+  },
+  aiSuggestedActionsContainer: {
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.background.card,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+  },
+  aiSuggestedActionsTitle: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.secondary,
+    marginBottom: spacing.sm,
+  },
+  aiSuggestedActionsScroll: {
+    gap: spacing.sm,
+  },
+  aiSuggestedActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    marginRight: spacing.sm,
+    gap: spacing.xs,
+  },
+  aiSuggestedActionText: {
+    fontSize: typography.sizes.sm,
     fontWeight: typography.weights.semibold,
     color: colors.text.white,
   },
@@ -924,6 +1191,9 @@ const styles = StyleSheet.create({
   },
   sendActionButton: {
     backgroundColor: colors.accent.success,
+  },
+  sendActionButtonDisabled: {
+    opacity: 0.6,
   },
   sendActionButtonText: {
     color: colors.text.white,

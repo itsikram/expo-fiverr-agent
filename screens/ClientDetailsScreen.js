@@ -86,34 +86,34 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
                 {displayClient?.username && (
                   <Text style={styles.clientUsername}>@{displayClient.username}</Text>
                 )}
-                <View style={styles.infoRow}>
-                  {displayClient?.country && (
-                    <View style={styles.infoBadge}>
-                      <Text style={styles.infoIcon}>🌍</Text>
-                      <Text style={styles.infoText}>{displayClient.country}</Text>
-                    </View>
-                  )}
+              </View>
+              <View style={styles.infoRow}>
+                {displayClient?.country && (
+                  <View style={styles.infoBadge}>
+                    <Text style={styles.infoIcon}>🌍</Text>
+                    <Text style={styles.infoText}>{displayClient.country}</Text>
+                  </View>
+                )}
 
-                  {displayClient?.language && (
-                    <View style={styles.infoBadge}>
-                      <Text style={styles.infoIcon}>🗣️</Text>
-                      <Text style={styles.infoText}>{displayClient.language}</Text>
-                    </View>
-                  )}
+                {displayClient?.language && (
+                  <View style={styles.infoBadge}>
+                    <Text style={styles.infoIcon}>🗣️</Text>
+                    <Text style={styles.infoText}>{displayClient.language}</Text>
+                  </View>
+                )}
 
-                  {displayClient?.review_avg_rating && (
-                    <View style={styles.infoBadge}>
-                      <Text style={styles.infoIcon}>⭐</Text>
-                      <Text style={styles.infoText}>{parseFloat(displayClient.review_avg_rating).toFixed(1)}</Text>
-                    </View>
-                  )}
-                  {displayClient?.review_count && (
-                    <View style={styles.infoBadge}>
-                      <Text style={styles.infoIcon}>📝</Text>
-                      <Text style={styles.infoText}>{displayClient.review_count} reviews</Text>
-                    </View>
-                  )}
-                </View>
+                {displayClient?.review_avg_rating && (
+                  <View style={styles.infoBadge}>
+                    <Text style={styles.infoIcon}>⭐</Text>
+                    <Text style={styles.infoText}>{parseFloat(displayClient.review_avg_rating).toFixed(1)}</Text>
+                  </View>
+                )}
+                {displayClient?.review_count && (
+                  <View style={styles.infoBadge}>
+                    <Text style={styles.infoIcon}>📝</Text>
+                    <Text style={styles.infoText}>{displayClient.review_count} reviews</Text>
+                  </View>
+                )}
               </View>
             </View>
             <TouchableOpacity
@@ -507,6 +507,7 @@ const styles = StyleSheet.create({
   },
   headerText: {
     flex: 1,
+    marginRight: spacing.md,
   },
   clientName: {
     fontSize: typography.sizes.xl,
@@ -518,12 +519,13 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.medium,
     color: colors.text.secondary,
-    marginBottom: spacing.sm,
   },
   infoRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   infoBadge: {
     flexDirection: 'row',
