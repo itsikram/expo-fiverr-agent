@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
 import { SERVER_CONFIG } from '../config/server';
 import {
   saveMessages,
@@ -9,6 +9,7 @@ import {
   saveLastSync,
   clearAIChatHistory,
 } from '../utils/storage';
+import notificationService from '../utils/notificationService';
 
 const WebSocketContext = createContext(null);
 
@@ -760,6 +761,7 @@ export const WebSocketProvider = ({ children }) => {
           // Show popup/alert for new message
           const clientUsername = data.data?.clientUsername || data.data?.username || 'Unknown';
           const conversationId = data.data?.conversationId;
+          const messageText = data.data?.messageText || data.data?.lastMessage || 'You have a new message';
           
           // Find client name from clients list
           const client = clients.find((c) => {
@@ -769,6 +771,34 @@ export const WebSocketProvider = ({ children }) => {
           
           const clientName = client?.name || clientUsername;
           const messageCount = data.data?.messageCount || 1;
+          const isTest = data.data?.isTest === true;
+          
+          // Check if app is in background or if conversation is not currently selected
+          const appState = AppState.currentState;
+          const isAppInBackground = appState === 'background' || appState === 'inactive';
+          const isConversationSelected = selectedConversationId === conversationId || selectedConversationId === clientUsername;
+          
+          // Show notification if:
+          // 1. It's a test notification (always show)
+          // 2. App is in background
+          // 3. Conversation is not currently selected
+          if (isTest || isAppInBackground || !isConversationSelected) {
+            notificationService.showMessageNotification({
+              clientName: isTest ? '🧪 Test Notification' : clientName,
+              messageText: isTest ? '📱 ' + messageText : messageText,
+              conversationId,
+              username: clientUsername,
+            }).catch((error) => {
+              console.error('[WebSocket] Error showing notification:', error);
+            });
+            
+            // Increment badge count (skip for test notifications)
+            if (!isTest) {
+              notificationService.incrementBadge().catch((error) => {
+                console.error('[WebSocket] Error incrementing badge:', error);
+              });
+            }
+          }
           
           // Emit event for UI to show popup
           // We'll use a callback system similar to fetchClientDetails
@@ -892,7 +922,7 @@ export const WebSocketProvider = ({ children }) => {
       default:
         console.log('[WebSocket] Unknown message type:', type, data);
     }
-  }, [requestClientData, requestMessages, requestClientList]);
+  }, [requestClientData, requestMessages, requestClientList, clients, selectedConversationId]);
 
   // Load stored data on mount (messages and client data only, not clients)
   useEffect(() => {

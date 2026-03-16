@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   Alert,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,6 +39,11 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
     const fetchedData = clientData[key];
     
     if (fetchedData) {
+      // Get client's original avatar (check both formats)
+      const clientAvatar = client.avatarUrl || client.avatar_url || null;
+      // Get fetched avatar (check both formats)
+      const fetchedAvatar = fetchedData.avatar_url || fetchedData.avatarUrl || null;
+      
       // Merge fetched data with existing client data, prioritizing fetched data
       return {
         ...client,
@@ -54,7 +60,9 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
         language: fetchedData.language || client.language,
         review_avg_rating: fetchedData.review_avg_rating !== undefined ? fetchedData.review_avg_rating : client.review_avg_rating,
         review_count: fetchedData.review_count !== undefined ? fetchedData.review_count : client.review_count,
-        avatar_url: fetchedData.avatar_url || fetchedData.avatarUrl || client.avatar_url,
+        // Prioritize fetched avatar, but fall back to client's original avatar
+        avatarUrl: fetchedAvatar || clientAvatar,
+        avatar_url: fetchedAvatar || clientAvatar,
       };
     }
     
@@ -63,6 +71,20 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
 
   const renderHeader = () => {
     const displayClient = mergedClient || client;
+    
+    // Get client avatar URL from the original client prop (same as sidebar ClientListItem)
+    // This ensures we show the same avatar as in the sidebar client list
+    const clientAvatarUrl = client?.avatarUrl || client?.avatar_url || null;
+    
+    // Helper function to get initials (same logic as ClientListItem)
+    const getInitials = (name) => {
+      if (!name) return '?';
+      const parts = name.trim().split(' ');
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+      }
+      return name.substring(0, 2).toUpperCase();
+    };
     
     return (
       <View style={styles.headerWrapper}>
@@ -76,9 +98,16 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
             <View style={styles.headerContent}>
               <View style={styles.avatarContainer}>
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {displayClient?.name ? displayClient.name.substring(0, 2).toUpperCase() : '?'}
-                  </Text>
+                  {clientAvatarUrl ? (
+                    <Image 
+                      source={{ uri: clientAvatarUrl }} 
+                      style={styles.avatarImage}
+                    />
+                  ) : (
+                    <Text style={styles.avatarText}>
+                      {getInitials(displayClient?.name)}
+                    </Text>
+                  )}
                 </View>
               </View>
               <View style={styles.headerText}>
@@ -500,6 +529,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.full,
   },
   avatarText: {
     fontSize: typography.sizes.base,

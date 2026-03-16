@@ -75,10 +75,10 @@ const buildContextText = (client, messages = [], userProfile = {}) => {
   contextParts.push('');
 
   // Seller profile (basic – Expo app doesn't have full settings like desktop)
-  const sellerName = userProfile.name || 'Seller';
+  const sellerName = userProfile.name || 'Md';
   contextParts.push('MY PROFILE (SELLER INFORMATION):');
   contextParts.push(
-    `- Name: ${sellerName} (THIS IS THE SELLER'S ACTUAL NAME - USE THIS NAME WHEN REFERRING TO THE SELLER)`
+    `- Name: ${sellerName} (THIS IS THE SELLER'S ACTUAL NAME - USE THIS NAME WHEN REFERRING TO THE SELLER OR SIGNING MESSAGES. NEVER USE "Seller" - ALWAYS USE THIS NAME OR "Md" IF NOT SET)`
   );
   
   // Handle skills - can be array or string
@@ -111,23 +111,41 @@ const buildContextText = (client, messages = [], userProfile = {}) => {
   contextParts.push('');
 
   // Conversation history (messages for this client)
+  // IMPORTANT: Sort messages chronologically to ensure proper conversation flow
   if (messages && messages.length > 0) {
-    contextParts.push(`FULL CONVERSATION HISTORY WITH CLIENT (${messages.length} messages):`);
+    // Sort messages by timestamp (oldest first) to maintain conversation flow
+    const sortedMessages = [...messages].sort((a, b) => {
+      const timeA = a.time || a.timestamp || a.date || '';
+      const timeB = b.time || b.timestamp || b.date || '';
+      if (!timeA && !timeB) return 0;
+      if (!timeA) return 1; // Put messages without timestamp at end
+      if (!timeB) return -1;
+      return new Date(timeA) - new Date(timeB);
+    });
+
+    contextParts.push(`FULL CONVERSATION HISTORY WITH CLIENT (${sortedMessages.length} messages, sorted chronologically):`);
+    contextParts.push('======================================================================');
+    contextParts.push('CRITICAL: This includes ALL messages from the Messages tab, including the LATEST messages.');
+    contextParts.push('You MUST read and consider ALL messages, especially the most recent ones, when generating responses.');
     contextParts.push('======================================================================');
 
-    messages.forEach((msg, index) => {
-      const sender = msg.sender === 'client' ? 'Client' : 'You (Seller)';
+    const sellerName = userProfile.name || 'Md';
+    sortedMessages.forEach((msg, index) => {
+      const sender = msg.sender === 'client' || (!msg.isFromMe && msg.sender !== 'me') ? 'Client' : `You (${sellerName})`;
       const text = (msg.text || msg.content || msg.message || '').trim();
-      const timestamp = msg.time || msg.timestamp || msg.date || '';
 
       if (!text) {
         return;
       }
 
+      const timestamp = msg.time || msg.timestamp || msg.date || '';
+      const isLatest = index === sortedMessages.length - 1;
+      const latestMarker = isLatest ? ' [LATEST MESSAGE]' : '';
+
       if (timestamp) {
-        contextParts.push(`Message ${index + 1} [${timestamp}]`);
+        contextParts.push(`Message ${index + 1} [${timestamp}]${latestMarker}`);
       } else {
-        contextParts.push(`Message ${index + 1}`);
+        contextParts.push(`Message ${index + 1}${latestMarker}`);
       }
 
       contextParts.push(`${sender}: ${text}`);
@@ -135,6 +153,7 @@ const buildContextText = (client, messages = [], userProfile = {}) => {
     });
 
     contextParts.push('======================================================================');
+    contextParts.push(`END OF CONVERSATION (Total: ${sortedMessages.length} messages)`);
     contextParts.push('');
   }
 
@@ -142,15 +161,26 @@ const buildContextText = (client, messages = [], userProfile = {}) => {
 };
 
 const buildSystemMessage = (client, messages, userProfile = {}) => {
-  const sellerName = userProfile.name || 'Seller';
+  const sellerName = userProfile.name || 'Md';
   const contextText = buildContextText(client, messages, userProfile);
+  const messageCount = messages && messages.length > 0 ? messages.length : 0;
 
   return `You are an expert AI assistant helping a Fiverr seller named "${sellerName}" manage their client relationships and make informed decisions.
 
 CRITICAL - SELLER IDENTITY:
 - The seller's name is: ${sellerName}
-- ALWAYS use this name when referring to the seller or speaking as the seller
+- ALWAYS use this name when referring to the seller, speaking as the seller, or signing messages
+- NEVER use the word "Seller" - always use the actual name "${sellerName}" or "Md" if no name is set
+- When generating messages, sign them with "${sellerName}" or "Md" (never "Seller")
 - When the seller asks about their name or identity, tell them their name is ${sellerName}
+
+CRITICAL - MESSAGE CONTEXT:
+- You have access to ALL ${messageCount} messages from the Fiverr Messages tab conversation
+- These messages are sorted chronologically (oldest to newest)
+- The conversation history includes ALL messages, including the LATEST messages
+- You MUST read and consider ALL messages, especially the most recent ones, before generating any response
+- Pay special attention to the latest message(s) as they contain the most current context
+- Your response should be based on the FULL conversation history, not just recent messages
 
 YOUR CAPABILITIES:
 You have access to:
@@ -175,14 +205,19 @@ CORE PRINCIPLES:
    - Use the conversation history to answer questions accurately
 
 HOW TO RESPOND:
+- BEFORE generating ANY response, you MUST read and analyze ALL messages in the conversation history
+- Pay special attention to the LATEST messages as they contain the most current context and information
 - Answer questions about the client, project, risks, next steps, specific messages, or any relevant topics
 - Provide strategic insights based on conversation patterns, client behavior, and project characteristics
 - Offer actionable recommendations that help the seller succeed
+- Your response MUST be contextually relevant to the ENTIRE conversation, especially the most recent messages
 
 IMPORTANT - MESSAGE GENERATION:
 - When asked to generate a message to send to the client, return ONLY the message text itself
 - Do NOT include explanations, descriptions, or prefixes like "Here is a message:" or "You can send this:"
-- Return just the actual message content that can be copied and sent directly to the client.`;
+- Return just the actual message content that can be copied and sent directly to the client
+- When signing messages (e.g., "Best regards,"), ALWAYS use "${sellerName}" or "Md" - NEVER use "Seller"
+- If the message includes a signature or closing, use "${sellerName}" as the name`;
 };
 
 // Convert local chat message history (user/ai) into OpenAI-style messages
@@ -228,7 +263,18 @@ export const getAiChatResponse = async ({
     throw new Error('No client selected.');
   }
 
-  const systemMessage = buildSystemMessage(client, messages, userProfile);
+  // Log message count for debugging
+  const messageCount = messages && Array.isArray(messages) ? messages.length : 0;
+  console.log(`[aiChatService] Generating AI response with ${messageCount} Fiverr messages from Messages tab`);
+  if (messageCount > 0) {
+    const latestMessage = messages[messages.length - 1];
+    console.log(`[aiChatService] Latest message: ${(latestMessage?.text || latestMessage?.content || '').substring(0, 50)}...`);
+  }
+
+  // Ensure messages is an array and not empty
+  const allMessages = Array.isArray(messages) && messages.length > 0 ? messages : [];
+  
+  const systemMessage = buildSystemMessage(client, allMessages, userProfile);
   const apiMessages = [
     { role: 'system', content: systemMessage },
     ...buildChatHistoryMessages(chatHistory || []).slice(-10),

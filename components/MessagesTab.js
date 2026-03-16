@@ -31,6 +31,7 @@ const MessagesTab = ({
   const scrollViewRef = useRef(null);
   const [sendingMessages, setSendingMessages] = useState([]); // Array of messages being sent
   const [isSending, setIsSending] = useState(false);
+  const sendingStartTimeRef = useRef(null); // Track when sending started for minimum display time
   const { cancelOptimisticMessage } = useWebSocket();
 
   // Auto-scroll to bottom when new messages are added
@@ -44,6 +45,7 @@ const MessagesTab = ({
   }, [messages.length, messages]);
 
   // Clear sending state when a new message appears (message was successfully sent)
+  // But ensure stop button displays for minimum 30 seconds
   useEffect(() => {
     if (sendingMessages.length > 0 && messages.length > 0) {
       // Check if any of the messages we were sending now have a time (meaning they were sent successfully)
@@ -55,9 +57,36 @@ const MessagesTab = ({
       });
       
       if (updatedSendingMessages.length !== sendingMessages.length) {
-        setSendingMessages(updatedSendingMessages);
-        if (updatedSendingMessages.length === 0) {
-          setIsSending(false);
+        // Message was confirmed as sent
+        const startTime = sendingStartTimeRef.current;
+        if (startTime && updatedSendingMessages.length === 0) {
+          // All messages confirmed, but ensure minimum 30 seconds display
+          const elapsedTime = Date.now() - startTime;
+          const minDisplayTime = 30000; // 30 seconds in milliseconds
+          const remainingTime = Math.max(0, minDisplayTime - elapsedTime);
+          
+          if (remainingTime > 0) {
+            // Still need to wait for minimum display time
+            setTimeout(() => {
+              // Double-check we're still in sending state before clearing
+              if (sendingStartTimeRef.current === startTime) {
+                setIsSending(false);
+                setSendingMessages([]);
+                sendingStartTimeRef.current = null;
+              }
+            }, remainingTime);
+          } else {
+            // Minimum time has passed, can clear immediately
+            setIsSending(false);
+            setSendingMessages(updatedSendingMessages);
+            sendingStartTimeRef.current = null;
+          }
+        } else {
+          setSendingMessages(updatedSendingMessages);
+          if (updatedSendingMessages.length === 0) {
+            setIsSending(false);
+            sendingStartTimeRef.current = null;
+          }
         }
       }
     }
@@ -69,7 +98,9 @@ const MessagesTab = ({
     }
 
     const textToSend = messageText.trim();
+    const startTime = Date.now();
     setIsSending(true);
+    sendingStartTimeRef.current = startTime; // Record start time for minimum display
     
     // Add temporary sending message
     const tempMessage = {
@@ -83,10 +114,8 @@ const MessagesTab = ({
     // Call the onSend callback
     if (onSend) {
       const success = onSend();
-      // If send fails immediately, remove from sending messages
+      // If send fails immediately, still show stop button for minimum 30 seconds
       if (success === false) {
-        setSendingMessages(prev => prev.filter(msg => msg.text !== textToSend));
-        setIsSending(false);
         // Cancel optimistic message if send failed
         if (client && cancelOptimisticMessage) {
           const conversationId = client?.conversationId || client?.username || client?.id;
@@ -94,10 +123,34 @@ const MessagesTab = ({
             cancelOptimisticMessage(textToSend, conversationId);
           }
         }
+        // Ensure minimum 30 seconds display even on failure
+        const elapsedTime = Date.now() - startTime;
+        const minDisplayTime = 30000; // 30 seconds in milliseconds
+        const remainingTime = Math.max(0, minDisplayTime - elapsedTime);
+        
+        setTimeout(() => {
+          // Only reset if we're still in sending state (not cancelled)
+          if (sendingStartTimeRef.current === startTime) {
+            setSendingMessages(prev => prev.filter(msg => msg.text !== textToSend));
+            setIsSending(false);
+            sendingStartTimeRef.current = null;
+          }
+        }, remainingTime);
       }
     } else {
-      setSendingMessages(prev => prev.filter(msg => msg.text !== textToSend));
-      setIsSending(false);
+      // No onSend callback, still ensure minimum 30 seconds display
+      const elapsedTime = Date.now() - startTime;
+      const minDisplayTime = 30000; // 30 seconds in milliseconds
+      const remainingTime = Math.max(0, minDisplayTime - elapsedTime);
+      
+      setTimeout(() => {
+        // Only reset if we're still in sending state (not cancelled)
+        if (sendingStartTimeRef.current === startTime) {
+          setSendingMessages(prev => prev.filter(msg => msg.text !== textToSend));
+          setIsSending(false);
+          sendingStartTimeRef.current = null;
+        }
+      }, remainingTime);
     }
   };
 
@@ -122,9 +175,10 @@ const MessagesTab = ({
       cancelOptimisticMessage(lastSendingMessage.text, conversationId);
     }
 
-    // Remove from sending messages
+    // Remove from sending messages and reset state immediately when user clicks stop
     setSendingMessages(prev => prev.filter(msg => msg.text !== lastSendingMessage.text));
     setIsSending(false);
+    sendingStartTimeRef.current = null; // Clear start time reference
     
     Alert.alert('Cancelled', 'Message sending cancelled');
   };

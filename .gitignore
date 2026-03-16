@@ -24,3 +24,11 @@ yarn-error.log
 # Build
 *.log
 *.tgz
+
+# Android
+android/app/build/
+android/app/.cxx/
+android/build/
+android/.gradle/
+*.apk
+*.aab

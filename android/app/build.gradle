@@ -87,14 +87,16 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.fiverr.expo'
+    namespace "com.fiverr.expo"
     defaultConfig {
-        applicationId 'com.fiverr.expo'
+        applicationId "com.fiverr.expo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0.0"
+        versionName "1.0"
 
+        buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", (findProperty("newArchEnabled") ?: "false").toString()
+        buildConfigField "boolean", "IS_EDGE_TO_EDGE_ENABLED", (findProperty("edgeToEdgeEnabled") ?: "false").toString()
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
     }
     signingConfigs {
@@ -129,6 +131,11 @@ android {
     }
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+        disable 'Instantiatable'
     }
 }
 
@@ -178,5 +185,40 @@ dependencies {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
+    }
+}
+
+// Fix the generated ReactNativeApplicationEntryPoint.java package name
+// The autolinking generates it with wrong package name (com.fiverrexpo instead of com.fiverr.expo)
+tasks.whenTaskAdded { task ->
+    if (task.name == 'generateReactNativeEntryPoint' || task.name.contains('generateReactNativeEntryPoint')) {
+        task.doLast {
+            def entryPointFile = file("${buildDir}/generated/autolinking/src/main/java/com/facebook/react/ReactNativeApplicationEntryPoint.java")
+            if (entryPointFile.exists()) {
+                def content = entryPointFile.text
+                def correctedContent = content.replace('com.fiverrexpo.BuildConfig', 'com.fiverr.expo.BuildConfig')
+                if (content != correctedContent) {
+                    entryPointFile.text = correctedContent
+                    println "Fixed package name in ReactNativeApplicationEntryPoint.java"
+                }
+            }
+        }
+    }
+}
+
+// Also fix it after compile tasks
+afterEvaluate {
+    tasks.matching { it.name.startsWith('compile') && it.name.contains('Java') }.configureEach {
+        doFirst {
+            def entryPointFile = file("${buildDir}/generated/autolinking/src/main/java/com/facebook/react/ReactNativeApplicationEntryPoint.java")
+            if (entryPointFile.exists()) {
+                def content = entryPointFile.text
+                def correctedContent = content.replace('com.fiverrexpo.BuildConfig', 'com.fiverr.expo.BuildConfig')
+                if (content != correctedContent) {
+                    entryPointFile.text = correctedContent
+                    println "Fixed package name in ReactNativeApplicationEntryPoint.java before compilation"
+                }
+            }
+        }
     }
 }

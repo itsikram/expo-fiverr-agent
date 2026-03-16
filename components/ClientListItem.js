@@ -17,6 +17,9 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
     return name.substring(0, 2).toUpperCase();
   };
 
+  // Get client avatar URL (check both camelCase and snake_case)
+  const clientAvatarUrl = client?.avatarUrl || client?.avatar_url || null;
+
   const handleDeletePress = (e) => {
     e.stopPropagation();
     if (onDelete) {
@@ -40,9 +43,9 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
           <View style={styles.content}>
             <View style={styles.avatarContainer}>
               <View style={styles.avatar}>
-                {client.avatarUrl ? (
+                {clientAvatarUrl ? (
                   <Image 
-                    source={{ uri: client.avatarUrl }} 
+                    source={{ uri: clientAvatarUrl }} 
                     style={styles.avatarImage}
                   />
                 ) : (
@@ -77,19 +80,19 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
           </View>
         </LinearGradient>
       ) : (
-        <View style={styles.content}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatarUnselected}>
-              {client.avatarUrl ? (
-                <Image 
-                  source={{ uri: client.avatarUrl || "https://fiverr-res.cloudinary.com/t_profile_original,q_auto,f_auto/attachments/profile/photo/32b91d616a3f2f49f49eb3feb9710303-1748687977266/ecb4fed7-5ca6-4249-860d-226088a25d1b.png" }} 
-                  style={styles.avatarImage}
-                />
-              ) : (
-                <Text style={styles.avatarTextUnselected}>{getInitials(client.name)}</Text>
-              )}
+          <View style={styles.content}>
+            <View style={styles.avatarContainer}>
+              <View style={styles.avatarUnselected}>
+                {clientAvatarUrl ? (
+                  <Image 
+                    source={{ uri: clientAvatarUrl }} 
+                    style={styles.avatarImage}
+                  />
+                ) : (
+                  <Text style={styles.avatarTextUnselected}>{getInitials(client.name)}</Text>
+                )}
+              </View>
             </View>
-          </View>
           <View style={styles.textContainer}>
             <Text style={styles.name} numberOfLines={1}>
               {client.name || 'Unknown Client'}

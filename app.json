@@ -34,14 +34,34 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
-        "android.permission.ACCESS_WIFI_STATE"
-      ]
+        "android.permission.ACCESS_WIFI_STATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.USE_FULL_SCREEN_INTENT"
+      ],
+      "notification": {
+        "icon": "./assets/icon.png",
+        "color": "#FF231F7C",
+        "sound": "default",
+        "defaultChannelId": "messages"
+      }
     },
     "web": {
       "favicon": "./assets/icon.png"
     },
     "plugins": [
-      "expo-speech-recognition"
+      "expo-speech-recognition",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#FF231F7C",
+          "sounds": [
+            "./assets/notification.wav"
+          ],
+          "mode": "production"
+        }
+      ]
     ],
     "extra": {
       "eas": {

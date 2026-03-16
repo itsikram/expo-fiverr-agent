@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, AppState } from 'react-native';
 import { WebSocketProvider, useWebSocket } from './context/WebSocketContext';
 import ClientsScreen from './screens/ClientsScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import { colors } from './constants/theme';
 import { SERVER_CONFIG } from './config/server';
+import notificationService from './utils/notificationService';
 
 // Component to log client and message data for debugging
 function DebugLogger() {
@@ -44,6 +45,73 @@ function DebugLogger() {
 }
 
 function AppContent({ currentScreen, onNavigateToSettings, onNavigateToClients }) {
+  const appState = useRef(AppState.currentState);
+
+  // Initialize notifications and set up listeners
+  useEffect(() => {
+    let isMounted = true;
+
+    const initializeNotifications = async () => {
+      try {
+        // Initialize notification service
+        const initialized = await notificationService.initialize();
+        if (!initialized) {
+          console.warn('[App] Notification service initialization failed');
+          return;
+        }
+
+        // Set up notification listeners
+        notificationService.setupListeners(
+          // When notification is received (foreground)
+          (notification) => {
+            console.log('[App] Notification received in foreground:', notification);
+            // You can handle foreground notifications here if needed
+          },
+          // When notification is tapped
+          (response) => {
+            console.log('[App] Notification tapped:', response);
+            const { conversationId, username } = response.notification.request.content.data || {};
+            
+            // Navigate to the conversation if needed
+            if (conversationId || username) {
+              // You can add navigation logic here
+              console.log('[App] Navigate to conversation:', conversationId || username);
+            }
+          }
+        );
+
+        // Listen for app state changes to handle background notifications
+        const subscription = AppState.addEventListener('change', (nextAppState) => {
+          if (
+            appState.current.match(/inactive|background/) &&
+            nextAppState === 'active'
+          ) {
+            console.log('[App] App has come to the foreground');
+            // Clear badge when app comes to foreground
+            notificationService.clearBadge();
+          }
+          appState.current = nextAppState;
+        });
+
+        return () => {
+          if (isMounted) {
+            notificationService.removeListeners();
+            subscription?.remove();
+          }
+        };
+      } catch (error) {
+        console.error('[App] Error setting up notifications:', error);
+      }
+    };
+
+    initializeNotifications();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />

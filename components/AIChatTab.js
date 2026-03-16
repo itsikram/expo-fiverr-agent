@@ -36,7 +36,9 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
   const [userProfile, setUserProfile] = useState({}); // User profile from settings
   const [sendingToClient, setSendingToClient] = useState(false); // Track if message is being sent to client
   const [sendingMessageText, setSendingMessageText] = useState(null); // Track the message text being sent
+  const sendingStartTimeRef = useRef(null); // Track when sending started for minimum display time
   const [aiSuggestedActions, setAiSuggestedActions] = useState([]); // AI-suggested action buttons based on last messages
+  const [isGeneratingActions, setIsGeneratingActions] = useState(false); // Loading state for AI action generation
   const [isOptionsModalVisible, setIsOptionsModalVisible] = useState(false); // Options modal visibility
   const [selectedMessageType, setSelectedMessageType] = useState(null); // Selected message type
   const [optionsModalInputText, setOptionsModalInputText] = useState(''); // Input text in options modal
@@ -182,6 +184,188 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
   // Check if there's no chat history
   const hasNoChatHistory = chatMessages.length === 0;
 
+  // Generate AI-suggested actions based on conversation
+  const generateAiSuggestedActions = async () => {
+    if (!isActive || !messages || messages.length === 0) {
+      setAiSuggestedActions([]);
+      setIsGeneratingActions(false);
+      return;
+    }
+
+    setIsGeneratingActions(true);
+    try {
+      // Build context from recent messages (last 10 messages for better context)
+      const recentMessages = messages.slice(-10);
+      const sellerName = userProfile.name || 'Md';
+      const conversationText = recentMessages
+        .map((m, idx) => {
+          const sender = m.isFromMe || m.sender === 'me' ? sellerName : 'Client';
+          const text = m.text || m.content || '';
+          return `${sender}: ${text}`;
+        })
+        .join('\n');
+
+      // Build chat history for context
+      const historyForApi = chatMessages.map((m) => ({
+        sender: m.sender === 'ai' ? 'assistant' : 'user',
+        text: m.text,
+        time: m.time,
+      }));
+
+      // Create prompt for AI to generate suggested actions
+      const prompt = `You are analyzing a Fiverr conversation to suggest the most relevant action buttons for the seller.
+
+CONVERSATION HISTORY:
+${conversationText}
+
+${chatMessages.length === 0 ? 'NOTE: This is a new conversation - no previous AI chat history exists.' : ''}
+
+AVAILABLE ACTION TYPES:
+1. "first-message" - Generate a professional first message (use when seller hasn't responded yet)
+2. "generate-offer" - Generate a custom offer/proposal with pricing (use when client mentions price, budget, cost, quote, or payment)
+3. "explain-task" - Explain the client's task/project requirements (use when client describes a project, task, or requirements)
+4. "generate-response" or "next-message" - Generate a professional response (use for general follow-ups, questions, or continuing conversation)
+
+CRITICAL REQUIREMENTS:
+- Return ONLY valid JSON array, no markdown, no code blocks, no explanations
+- Format: [{"type": "action-type", "label": "Button Text", "priority": number}]
+- Suggest 2-3 actions maximum, ordered by priority (highest priority first)
+- Priority range: 1-10 (10 = most relevant)
+- Label max length: 20 characters
+- Base suggestions on actual conversation content and context
+- If no seller messages exist, prioritize "first-message"
+- If client asks about pricing/budget, prioritize "generate-offer"
+- If client describes task/project, include "explain-task"
+- Always include at least one response generation option
+
+Example (return exactly this format, no other text):
+[{"type": "first-message", "label": "Generate First Message", "priority": 9}, {"type": "generate-offer", "label": "Create Offer", "priority": 7}]`;
+
+      const aiResponse = await getAiChatResponse({
+        userMessage: prompt,
+        client,
+        messages: recentMessages,
+        chatHistory: historyForApi,
+        userProfile: userProfile,
+      });
+
+      // Parse AI response - try to extract JSON array
+      let suggestedActions = [];
+      try {
+        // Try to find JSON array in response (might have extra text)
+        const jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(parsed)) {
+            suggestedActions = parsed;
+          }
+        } else {
+          // Try parsing entire response as JSON
+          const parsed = JSON.parse(aiResponse.trim());
+          if (Array.isArray(parsed)) {
+            suggestedActions = parsed;
+          }
+        }
+      } catch (parseError) {
+        console.warn('[AIChatTab] Failed to parse AI action suggestions:', parseError);
+        console.log('[AIChatTab] AI response:', aiResponse);
+        // Fallback to default actions if parsing fails
+        suggestedActions = [];
+      }
+
+      // Map AI suggestions to action objects with handlers
+      const actionMap = {
+        'first-message': {
+          id: 'first-message',
+          label: 'Generate First Message',
+          icon: 'mail',
+          handler: handleGenerateFirstMessage,
+          style: 'generateFirstMessageButton',
+        },
+        'generate-offer': {
+          id: 'generate-offer',
+          label: 'Generate Offer',
+          icon: 'briefcase',
+          handler: handleGenerateOffer,
+          style: 'generateOfferButton',
+        },
+        'explain-task': {
+          id: 'explain-task',
+          label: 'Explain Task',
+          icon: 'information-circle',
+          handler: handleExplainTask,
+          style: 'explainTaskButton',
+        },
+        'generate-response': {
+          id: 'generate-response',
+          label: 'Generate Response',
+          icon: 'chatbubble-ellipses',
+          handler: handleGenerateNextMessage,
+          style: 'nextMessageButton',
+        },
+        'next-message': {
+          id: 'generate-next',
+          label: 'Generate Next Message',
+          icon: 'chatbubble-ellipses',
+          handler: handleGenerateNextMessage,
+          style: 'nextMessageButton',
+        },
+      };
+
+      // Convert AI suggestions to action objects
+      const mappedActions = suggestedActions
+        .map((suggestion) => {
+          const actionType = suggestion.type || suggestion.action;
+          const action = actionMap[actionType];
+          if (action) {
+            // Use AI-provided label if available and valid, otherwise use default
+            return {
+              ...action,
+              label: suggestion.label && suggestion.label.length <= 25 ? suggestion.label : action.label,
+            };
+          }
+          return null;
+        })
+        .filter((action) => action !== null)
+        .slice(0, 3); // Limit to 3 actions
+
+      // If no actions were generated or mapped, use fallback
+      if (mappedActions.length === 0) {
+        if (chatMessages.length === 0) {
+          mappedActions.push(actionMap['first-message']);
+        } else {
+          mappedActions.push(actionMap['next-message']);
+        }
+      }
+
+      setAiSuggestedActions(mappedActions);
+    } catch (error) {
+      console.error('[AIChatTab] Error generating AI suggested actions:', error);
+      // Fallback to default actions on error
+      const fallbackActions = [];
+      if (chatMessages.length === 0) {
+        fallbackActions.push({
+          id: 'first-message',
+          label: 'Generate First Message',
+          icon: 'mail',
+          handler: handleGenerateFirstMessage,
+          style: 'generateFirstMessageButton',
+        });
+      } else {
+        fallbackActions.push({
+          id: 'generate-next',
+          label: 'Generate Next Message',
+          icon: 'chatbubble-ellipses',
+          handler: handleGenerateNextMessage,
+          style: 'nextMessageButton',
+        });
+      }
+      setAiSuggestedActions(fallbackActions);
+    } finally {
+      setIsGeneratingActions(false);
+    }
+  };
+
   // Update AI-suggested actions when messages change
   useEffect(() => {
     if (!isActive || !messages || messages.length === 0) {
@@ -189,99 +373,12 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
       return;
     }
 
-    // Get the last few messages (last 3-5 messages)
-    const recentMessages = messages.slice(-5);
-    const lastMessage = recentMessages[recentMessages.length - 1];
-    const messageText = (lastMessage?.text || lastMessage?.content || '').toLowerCase();
-    const allMessagesText = recentMessages
-      .map(m => (m?.text || m?.content || '').toLowerCase())
-      .join(' ');
+    // Debounce AI action generation to avoid too many API calls
+    const timeoutId = setTimeout(() => {
+      generateAiSuggestedActions();
+    }, 500);
 
-    const actions = [];
-
-    // Analyze message content to suggest relevant actions
-    // Check if it's a new conversation (no chat history)
-    if (chatMessages.length === 0) {
-      actions.push({
-        id: 'first-message',
-        label: 'Generate First Message',
-        icon: 'mail',
-        handler: handleGenerateFirstMessage,
-        style: 'generateFirstMessageButton',
-      });
-    }
-
-    // Check for pricing/offer related keywords
-    if (
-      messageText.includes('price') ||
-      messageText.includes('cost') ||
-      messageText.includes('budget') ||
-      messageText.includes('offer') ||
-      messageText.includes('quote') ||
-      messageText.includes('payment') ||
-      messageText.includes('how much')
-    ) {
-      actions.push({
-        id: 'generate-offer',
-        label: 'Generate Offer',
-        icon: 'briefcase',
-        handler: handleGenerateOffer,
-        style: 'generateOfferButton',
-      });
-    }
-
-    // Check for task/project description
-    if (
-      messageText.includes('task') ||
-      messageText.includes('project') ||
-      messageText.includes('need') ||
-      messageText.includes('want') ||
-      messageText.includes('looking for') ||
-      messageText.includes('requirement') ||
-      allMessagesText.includes('task') ||
-      allMessagesText.includes('project')
-    ) {
-      actions.push({
-        id: 'explain-task',
-        label: 'Explain Task',
-        icon: 'information-circle',
-        handler: handleExplainTask,
-        style: 'explainTaskButton',
-      });
-    }
-
-    // Check for questions or requests for information
-    if (
-      messageText.includes('?') ||
-      messageText.includes('what') ||
-      messageText.includes('how') ||
-      messageText.includes('when') ||
-      messageText.includes('can you') ||
-      messageText.includes('could you') ||
-      messageText.includes('please')
-    ) {
-      actions.push({
-        id: 'generate-response',
-        label: 'Generate Response',
-        icon: 'chatbubble-ellipses',
-        handler: handleGenerateNextMessage,
-        style: 'nextMessageButton',
-      });
-    }
-
-    // If no specific actions found, suggest general ones
-    if (actions.length === 0 && chatMessages.length > 0) {
-      actions.push({
-        id: 'generate-next',
-        label: 'Generate Next Message',
-        icon: 'chatbubble-ellipses',
-        handler: handleGenerateNextMessage,
-        style: 'nextMessageButton',
-      });
-    }
-
-    // Limit to 3 actions max
-    setAiSuggestedActions(actions.slice(0, 3));
+    return () => clearTimeout(timeoutId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, chatMessages.length, isActive]);
 
@@ -371,10 +468,14 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
         return;
       }
       
+      // Ensure all messages are passed (including latest)
+      const allFiverrMessages = Array.isArray(messages) ? messages : [];
+      console.log(`[AIChatTab] Sending ${allFiverrMessages.length} Fiverr messages to AI for response generation`);
+      
       const aiText = await getAiChatResponse({
         userMessage: messageText,
         client,
-        messages,
+        messages: allFiverrMessages, // Pass ALL messages from Messages tab
         chatHistory: historyForApi,
         userProfile: userProfile,
       });
@@ -441,10 +542,14 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
       // Ensure prompt is a string
       const messageText = typeof prompt === 'string' ? prompt : String(prompt || '');
       
+      // Ensure all messages are passed (including latest)
+      const allFiverrMessages = Array.isArray(messages) ? messages : [];
+      console.log(`[AIChatTab] Sending ${allFiverrMessages.length} Fiverr messages to AI for quick action`);
+      
       const aiText = await getAiChatResponse({
         userMessage: messageText,
         client,
-        messages,
+        messages: allFiverrMessages, // Pass ALL messages from Messages tab
         chatHistory: historyForApi,
         userProfile: userProfile,
       });
@@ -568,8 +673,10 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
     }
 
     const trimmedMessage = messageText.trim();
+    const startTime = Date.now();
     setSendingToClient(true);
     setSendingMessageText(trimmedMessage);
+    sendingStartTimeRef.current = startTime; // Record start time
     
     try {
       const success = onSendMessage(trimmedMessage, conversationId);
@@ -591,11 +698,19 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
         cancelOptimisticMessage(trimmedMessage, conversationId);
       }
     } finally {
-      // Reset sending state after a short delay to show the feedback
+      // Ensure stop button displays for minimum 30 seconds
+      const elapsedTime = Date.now() - startTime;
+      const minDisplayTime = 30000; // 30 seconds in milliseconds
+      const remainingTime = Math.max(0, minDisplayTime - elapsedTime);
+      
       setTimeout(() => {
-        setSendingToClient(false);
-        setSendingMessageText(null);
-      }, 1000);
+        // Only reset if we're still in sending state (not cancelled)
+        if (sendingStartTimeRef.current === startTime) {
+          setSendingToClient(false);
+          setSendingMessageText(null);
+          sendingStartTimeRef.current = null;
+        }
+      }, remainingTime);
     }
   };
 
@@ -614,9 +729,10 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
       cancelOptimisticMessage(sendingMessageText, conversationId);
     }
 
-    // Reset sending state
+    // Reset sending state immediately when user clicks stop
     setSendingToClient(false);
     setSendingMessageText(null);
+    sendingStartTimeRef.current = null; // Clear start time reference
     
     Alert.alert('Cancelled', 'Message sending cancelled');
   };
@@ -823,10 +939,14 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
         time: m.time,
       }));
 
+      // Ensure all messages are passed (including latest)
+      const allFiverrMessages = Array.isArray(messages) ? messages : [];
+      console.log(`[AIChatTab] Sending ${allFiverrMessages.length} Fiverr messages to AI for options modal`);
+
       const aiText = await getAiChatResponse({
         userMessage: optionsModalInputText,
         client,
-        messages,
+        messages: allFiverrMessages, // Pass ALL messages from Messages tab
         chatHistory: historyForApi,
         userProfile: userProfile,
       });
@@ -1086,26 +1206,35 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
                   </TouchableOpacity>
                 </View>
                 {/* AI Suggested Action Buttons - Based on last messages */}
-                {aiSuggestedActions.length > 0 && (
+                {(aiSuggestedActions.length > 0 || isGeneratingActions) && (
                   <View style={styles.aiSuggestedActionsContainer}>
-                    <Text style={styles.aiSuggestedActionsTitle}>Suggested Actions</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.aiSuggestedActionsScroll}
-                    >
-                      {aiSuggestedActions.map((action) => (
-                        <TouchableOpacity
-                          key={action.id}
-                          style={[styles.aiSuggestedActionButton, styles[action.style]]}
-                          onPress={action.handler}
-                          disabled={isLoading}
-                        >
-                          <Ionicons name={action.icon} size={18} color={colors.text.white} />
-                          <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
+                    <Text style={styles.aiSuggestedActionsTitle}>
+                      {isGeneratingActions ? 'Analyzing conversation...' : 'Suggested Actions'}
+                    </Text>
+                    {isGeneratingActions ? (
+                      <View style={styles.aiSuggestedActionsLoading}>
+                        <ActivityIndicator size="small" color={colors.accent.primary} />
+                        <Text style={styles.aiSuggestedActionsLoadingText}>Generating suggestions...</Text>
+                      </View>
+                    ) : (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.aiSuggestedActionsScroll}
+                      >
+                        {aiSuggestedActions.map((action) => (
+                          <TouchableOpacity
+                            key={action.id}
+                            style={[styles.aiSuggestedActionButton, styles[action.style]]}
+                            onPress={action.handler}
+                            disabled={isLoading}
+                          >
+                            <Ionicons name={action.icon} size={18} color={colors.text.white} />
+                            <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    )}
                   </View>
                 )}
               </>
@@ -1165,26 +1294,35 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
                   </TouchableOpacity>
                 </View>
                 {/* AI Suggested Action Buttons - Based on last messages */}
-                {aiSuggestedActions.length > 0 && (
+                {(aiSuggestedActions.length > 0 || isGeneratingActions) && (
                   <View style={styles.aiSuggestedActionsContainer}>
-                    <Text style={styles.aiSuggestedActionsTitle}>Suggested Actions</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.aiSuggestedActionsScroll}
-                    >
-                      {aiSuggestedActions.map((action) => (
-                        <TouchableOpacity
-                          key={action.id}
-                          style={[styles.aiSuggestedActionButton, styles[action.style]]}
-                          onPress={action.handler}
-                          disabled={isLoading}
-                        >
-                          <Ionicons name={action.icon} size={18} color={colors.text.white} />
-                          <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
+                    <Text style={styles.aiSuggestedActionsTitle}>
+                      {isGeneratingActions ? 'Analyzing conversation...' : 'Suggested Actions'}
+                    </Text>
+                    {isGeneratingActions ? (
+                      <View style={styles.aiSuggestedActionsLoading}>
+                        <ActivityIndicator size="small" color={colors.accent.primary} />
+                        <Text style={styles.aiSuggestedActionsLoadingText}>Generating suggestions...</Text>
+                      </View>
+                    ) : (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.aiSuggestedActionsScroll}
+                      >
+                        {aiSuggestedActions.map((action) => (
+                          <TouchableOpacity
+                            key={action.id}
+                            style={[styles.aiSuggestedActionButton, styles[action.style]]}
+                            onPress={action.handler}
+                            disabled={isLoading}
+                          >
+                            <Ionicons name={action.icon} size={18} color={colors.text.white} />
+                            <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    )}
                   </View>
                 )}
               </>
@@ -1680,6 +1818,18 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.semibold,
     color: colors.text.white,
+  },
+  aiSuggestedActionsLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  aiSuggestedActionsLoadingText: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+    fontStyle: 'italic',
   },
   aiMessageContainer: {
     flexDirection: 'row',
