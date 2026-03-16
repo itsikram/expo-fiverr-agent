@@ -229,7 +229,7 @@ AVAILABLE ACTION TYPES:
 CRITICAL REQUIREMENTS:
 - Return ONLY valid JSON array, no markdown, no code blocks, no explanations
 - Format: [{"type": "action-type", "label": "Button Text", "priority": number}]
-- Suggest 2-3 actions maximum, ordered by priority (highest priority first)
+- Suggest 5-7 actions minimum, ordered by priority (highest priority first)
 - Priority range: 1-10 (10 = most relevant)
 - Label max length: 20 characters
 - Base suggestions on actual conversation content and context
@@ -237,9 +237,10 @@ CRITICAL REQUIREMENTS:
 - If client asks about pricing/budget, prioritize "generate-offer"
 - If client describes task/project, include "explain-task"
 - Always include at least one response generation option
+- Use variety: mix different action types to provide comprehensive options
 
 Example (return exactly this format, no other text):
-[{"type": "first-message", "label": "Generate First Message", "priority": 9}, {"type": "generate-offer", "label": "Create Offer", "priority": 7}]`;
+[{"type": "first-message", "label": "Generate First Message", "priority": 9}, {"type": "generate-offer", "label": "Create Offer", "priority": 7}, {"type": "explain-task", "label": "Explain Task", "priority": 6}, {"type": "next-message", "label": "Generate Response", "priority": 5}, {"type": "generate-offer", "label": "Custom Offer", "priority": 4}]`;
 
       const aiResponse = await getAiChatResponse({
         userMessage: prompt,
@@ -327,38 +328,125 @@ Example (return exactly this format, no other text):
           return null;
         })
         .filter((action) => action !== null)
-        .slice(0, 3); // Limit to 3 actions
+        .slice(0, 7); // Allow up to 7 actions from AI
 
-      // If no actions were generated or mapped, use fallback
+      // Ensure we have at least 5 actions by adding fallback actions
+      const allAvailableActions = [
+        actionMap['first-message'],
+        actionMap['generate-offer'],
+        actionMap['explain-task'],
+        actionMap['generate-response'],
+        actionMap['next-message'],
+      ];
+
+      // If no actions were generated, use all fallback actions
       if (mappedActions.length === 0) {
         if (chatMessages.length === 0) {
-          mappedActions.push(actionMap['first-message']);
+          mappedActions.push(...allAvailableActions);
         } else {
-          mappedActions.push(actionMap['next-message']);
+          // For existing conversations, prioritize response generation
+          mappedActions.push(
+            actionMap['next-message'],
+            actionMap['generate-offer'],
+            actionMap['explain-task'],
+            actionMap['generate-response'],
+            actionMap['first-message']
+          );
+        }
+      } else {
+        // Fill up to 5 actions with fallback actions if needed
+        const usedActionIds = new Set(mappedActions.map(a => a.id));
+        const fallbackActions = allAvailableActions.filter(a => !usedActionIds.has(a.id));
+        
+        while (mappedActions.length < 5 && fallbackActions.length > 0) {
+          mappedActions.push(fallbackActions.shift());
         }
       }
 
-      setAiSuggestedActions(mappedActions);
+      // Ensure we have exactly 5 actions (take first 5)
+      const finalActions = mappedActions.slice(0, 5);
+
+      setAiSuggestedActions(finalActions);
     } catch (error) {
       console.error('[AIChatTab] Error generating AI suggested actions:', error);
-      // Fallback to default actions on error
+      // Fallback to default actions on error - ensure at least 5 actions
       const fallbackActions = [];
       if (chatMessages.length === 0) {
-        fallbackActions.push({
-          id: 'first-message',
-          label: 'Generate First Message',
-          icon: 'mail',
-          handler: handleGenerateFirstMessage,
-          style: 'generateFirstMessageButton',
-        });
+        fallbackActions.push(
+          {
+            id: 'first-message',
+            label: 'Generate First Message',
+            icon: 'mail',
+            handler: handleGenerateFirstMessage,
+            style: 'generateFirstMessageButton',
+          },
+          {
+            id: 'generate-offer',
+            label: 'Generate Offer',
+            icon: 'briefcase',
+            handler: handleGenerateOffer,
+            style: 'generateOfferButton',
+          },
+          {
+            id: 'explain-task',
+            label: 'Explain Task',
+            icon: 'information-circle',
+            handler: handleExplainTask,
+            style: 'explainTaskButton',
+          },
+          {
+            id: 'generate-response',
+            label: 'Generate Response',
+            icon: 'chatbubble-ellipses',
+            handler: handleGenerateNextMessage,
+            style: 'nextMessageButton',
+          },
+          {
+            id: 'generate-next',
+            label: 'Generate Next Message',
+            icon: 'chatbubble-ellipses',
+            handler: handleGenerateNextMessage,
+            style: 'nextMessageButton',
+          }
+        );
       } else {
-        fallbackActions.push({
-          id: 'generate-next',
-          label: 'Generate Next Message',
-          icon: 'chatbubble-ellipses',
-          handler: handleGenerateNextMessage,
-          style: 'nextMessageButton',
-        });
+        fallbackActions.push(
+          {
+            id: 'generate-next',
+            label: 'Generate Next Message',
+            icon: 'chatbubble-ellipses',
+            handler: handleGenerateNextMessage,
+            style: 'nextMessageButton',
+          },
+          {
+            id: 'generate-offer',
+            label: 'Generate Offer',
+            icon: 'briefcase',
+            handler: handleGenerateOffer,
+            style: 'generateOfferButton',
+          },
+          {
+            id: 'explain-task',
+            label: 'Explain Task',
+            icon: 'information-circle',
+            handler: handleExplainTask,
+            style: 'explainTaskButton',
+          },
+          {
+            id: 'first-message',
+            label: 'Generate First Message',
+            icon: 'mail',
+            handler: handleGenerateFirstMessage,
+            style: 'generateFirstMessageButton',
+          },
+          {
+            id: 'generate-response',
+            label: 'Generate Response',
+            icon: 'chatbubble-ellipses',
+            handler: handleGenerateNextMessage,
+            style: 'nextMessageButton',
+          }
+        );
       }
       setAiSuggestedActions(fallbackActions);
     } finally {
@@ -997,27 +1085,24 @@ Example (return exactly this format, no other text):
               const clientId = getClientId();
               console.log('[AIChatTab] Starting to clear chat history for client:', clientId);
               
-              // Set clearing flag to prevent saves during clearing
+              // Set clearing flag to prevent saves and loads during clearing
               isClearingRef.current = true;
               
-              // Clear from storage FIRST
-              const cleared = await clearAIChatHistory(clientId);
-              console.log('[AIChatTab] Storage clear result:', cleared);
-              
-              // Wait a bit to ensure storage operation completes
-              await new Promise(resolve => setTimeout(resolve, 200));
-              
-              // Now clear state - this prevents any pending saves from executing
+              // Clear state IMMEDIATELY - this updates the UI right away
               setChatMessages([]);
               setSuggestedPrompts({});
               
               // Update previousClientId to current to prevent reload effect from triggering
               setPreviousClientId(clientId);
               
-              // Wait longer to ensure any pending save timeouts are cancelled
-              await new Promise(resolve => setTimeout(resolve, 600));
+              // Clear from storage
+              const cleared = await clearAIChatHistory(clientId);
+              console.log('[AIChatTab] Storage clear result:', cleared);
               
-              // Reset clearing flag
+              // Wait a bit to ensure storage operation completes and any pending saves are cancelled
+              await new Promise(resolve => setTimeout(resolve, 800));
+              
+              // Reset clearing flag after ensuring all operations are complete
               isClearingRef.current = false;
               
               // Verify it was actually cleared by checking storage
@@ -1025,24 +1110,21 @@ Example (return exactly this format, no other text):
               console.log('[AIChatTab] Verification - remaining history length:', verifyHistory?.length || 0);
               
               if (cleared && (!verifyHistory || verifyHistory.length === 0)) {
-                Alert.alert('Success', 'Chat history cleared successfully');
                 console.log('[AIChatTab] Successfully cleared chat history for client:', clientId);
               } else if (cleared) {
                 // Storage said it cleared but verification shows data still exists
-                Alert.alert('Warning', 'Chat history may not have been fully cleared. Please try again.');
                 console.warn('[AIChatTab] Clear reported success but verification shows data still exists');
+                // Try clearing again
+                await clearAIChatHistory(clientId);
               } else {
-                Alert.alert('Warning', 'Chat history cleared from view, but there may have been an issue clearing from storage.');
                 console.warn('[AIChatTab] Storage clear returned false for client:', clientId);
+                // Try clearing again
+                await clearAIChatHistory(clientId);
               }
             } catch (error) {
               console.error('[AIChatTab] Error clearing chat history:', error);
-              // Clear state anyway even if storage clear failed
-              setChatMessages([]);
-              setSuggestedPrompts({});
-              // Reset clearing flag
+              // State is already cleared, just reset the flag
               isClearingRef.current = false;
-              Alert.alert('Error', 'Failed to clear chat history from storage, but cleared from view. Please try again.');
             }
           },
         },
@@ -1167,6 +1249,38 @@ Example (return exactly this format, no other text):
             <Text style={styles.emptyText}>
               Ask me anything about {client?.name || 'this client'} or get help with your tasks.
             </Text>
+
+            {(aiSuggestedActions.length > 0 || isGeneratingActions) && (
+                  <View style={styles.aiSuggestedActionsContainer}>
+                    <Text style={styles.aiSuggestedActionsTitle}>
+                      {isGeneratingActions ? 'Analyzing conversation...' : 'Suggested Actions'}
+                    </Text>
+                    {isGeneratingActions ? (
+                      <View style={styles.aiSuggestedActionsLoading}>
+                        <ActivityIndicator size="small" color={colors.accent.primary} />
+                        <Text style={styles.aiSuggestedActionsLoadingText}>Generating suggestions...</Text>
+                      </View>
+                    ) : (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.aiSuggestedActionsScroll}
+                      >
+                        {aiSuggestedActions.map((action) => (
+                          <TouchableOpacity
+                            key={action.id}
+                            style={[styles.aiSuggestedActionButton, styles[action.style]]}
+                            onPress={action.handler}
+                            disabled={isLoading}
+                          >
+                            <Ionicons name={action.icon} size={20} color={colors.text.white} />
+                            <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    )}
+                  </View>
+                )}
             {/* Default buttons when no messages */}
             {!isLoading && (
               <>
@@ -1206,37 +1320,6 @@ Example (return exactly this format, no other text):
                   </TouchableOpacity>
                 </View>
                 {/* AI Suggested Action Buttons - Based on last messages */}
-                {(aiSuggestedActions.length > 0 || isGeneratingActions) && (
-                  <View style={styles.aiSuggestedActionsContainer}>
-                    <Text style={styles.aiSuggestedActionsTitle}>
-                      {isGeneratingActions ? 'Analyzing conversation...' : 'Suggested Actions'}
-                    </Text>
-                    {isGeneratingActions ? (
-                      <View style={styles.aiSuggestedActionsLoading}>
-                        <ActivityIndicator size="small" color={colors.accent.primary} />
-                        <Text style={styles.aiSuggestedActionsLoadingText}>Generating suggestions...</Text>
-                      </View>
-                    ) : (
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.aiSuggestedActionsScroll}
-                      >
-                        {aiSuggestedActions.map((action) => (
-                          <TouchableOpacity
-                            key={action.id}
-                            style={[styles.aiSuggestedActionButton, styles[action.style]]}
-                            onPress={action.handler}
-                            disabled={isLoading}
-                          >
-                            <Ionicons name={action.icon} size={18} color={colors.text.white} />
-                            <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </ScrollView>
-                    )}
-                  </View>
-                )}
               </>
             )}
           </View>
@@ -1317,7 +1400,7 @@ Example (return exactly this format, no other text):
                             onPress={action.handler}
                             disabled={isLoading}
                           >
-                            <Ionicons name={action.icon} size={18} color={colors.text.white} />
+                            <Ionicons name={action.icon} size={20} color={colors.text.white} />
                             <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
                           </TouchableOpacity>
                         ))}
@@ -1442,8 +1525,10 @@ Example (return exactly this format, no other text):
                 <ScrollView
                   style={styles.optionsModalScrollView}
                   contentContainerStyle={styles.optionsModalScrollContent}
-                  showsVerticalScrollIndicator={false}
+                  showsVerticalScrollIndicator={true}
                   keyboardShouldPersistTaps="handled"
+                  nestedScrollEnabled={true}
+                  bounces={true}
                 >
                   {/* AI Suggested Actions */}
                   <View style={styles.optionsModalSection}>
@@ -1787,35 +1872,39 @@ const styles = StyleSheet.create({
     color: colors.text.white,
   },
   aiSuggestedActionsContainer: {
-    marginTop: spacing.md,
+    marginTop: spacing.xl,
     marginBottom: spacing.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    padding: spacing.lg,
     backgroundColor: colors.background.card,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
     borderColor: colors.border.light,
   },
   aiSuggestedActionsTitle: {
-    fontSize: typography.sizes.sm,
+    fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
-    color: colors.text.secondary,
-    marginBottom: spacing.sm,
+    color: colors.text.primary,
+    marginBottom: spacing.md,
+    textAlign: 'center',
   },
   aiSuggestedActionsScroll: {
     gap: spacing.sm,
+    paddingRight: spacing.lg,
   },
   aiSuggestedActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
     marginRight: spacing.sm,
-    gap: spacing.xs,
+    gap: spacing.sm,
+    flexShrink: 0,
+    alignSelf: 'flex-start',
   },
   aiSuggestedActionText: {
-    fontSize: typography.sizes.sm,
+    fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
     color: colors.text.white,
   },
@@ -2025,6 +2114,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
   optionsModalSection: {
     marginBottom: spacing.lg,
@@ -2059,6 +2149,8 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.sm,
     color: colors.text.primary,
     fontWeight: typography.weights.medium,
+        maxHeight: 40,
+      
   },
   optionsModalSuggestionTextActive: {
     color: colors.text.white,
