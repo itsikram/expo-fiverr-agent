@@ -26,6 +26,14 @@ class NotificationService {
   }
 
   /**
+   * Detect whether the app is running on web
+   * @returns {boolean}
+   */
+  isWebPlatform() {
+    return Platform.OS === 'web';
+  }
+
+  /**
    * Request notification permissions
    * @returns {Promise<boolean>} True if permissions granted, false otherwise
    */
@@ -58,6 +66,11 @@ class NotificationService {
    */
   async getExpoPushToken() {
     try {
+      if (this.isWebPlatform()) {
+        console.warn('[Notifications] Skipping Expo push token retrieval on web. Use browser notifications or configure web push with `notification.vapidPublicKey` and `notification.serviceWorkerPath` in app.json.');
+        return null;
+      }
+
       if (!this.expoPushToken) {
         const tokenData = await Notifications.getExpoPushTokenAsync({
           projectId: EXPO_PROJECT_ID,
@@ -117,6 +130,24 @@ class NotificationService {
    */
   async showNotification({ title, body, data = {}, channelId = NOTIFICATION_CHANNELS.MESSAGES }) {
     try {
+      if (this.isWebPlatform()) {
+        // On web, scheduleNotificationAsync is not available in Expo web.
+        // Use the browser Notification API as a fallback.
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+          const browserNotification = new window.Notification(title, {
+            body,
+            data: {
+              ...data,
+              type: data.type || NOTIFICATION_TYPES.NEW_MESSAGE,
+            },
+          });
+          console.log('[Notifications] Browser notification shown:', browserNotification);
+          return 'browser_notification';
+        }
+
+        throw new Error('Web notifications are not supported in this environment.');
+      }
+
       const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
           title,
@@ -274,7 +305,11 @@ class NotificationService {
       await this.configureAndroidChannel();
 
       // Get Expo push token (for future remote notifications)
-      await this.getExpoPushToken();
+      if (!this.isWebPlatform()) {
+        await this.getExpoPushToken();
+      } else {
+        console.log('[Notifications] Skipping Expo push token initialization on web.');
+      }
 
       console.log('[Notifications] Notification service initialized successfully');
       return true;
@@ -289,6 +324,11 @@ class NotificationService {
    * @returns {Promise<number>} Current badge count
    */
   async getBadgeCount() {
+    if (this.isWebPlatform()) {
+      console.warn('[Notifications] Badge count is not supported on Expo web without the Web Badging API. Skipping getBadgeCount.');
+      return 0;
+    }
+
     try {
       return await Notifications.getBadgeCountAsync();
     } catch (error) {
@@ -302,6 +342,11 @@ class NotificationService {
    * @param {number} count - Badge count to set
    */
   async setBadgeCount(count) {
+    if (this.isWebPlatform()) {
+      console.warn('[Notifications] Badge count is not supported on Expo web without the Web Badging API. Skipping setBadgeCount.');
+      return;
+    }
+
     try {
       await Notifications.setBadgeCountAsync(count);
     } catch (error) {
@@ -313,6 +358,11 @@ class NotificationService {
    * Increment badge count
    */
   async incrementBadge() {
+    if (this.isWebPlatform()) {
+      console.warn('[Notifications] Badge count increment is not supported on Expo web without the Web Badging API. Skipping incrementBadge.');
+      return;
+    }
+
     const current = await this.getBadgeCount();
     await this.setBadgeCount(current + 1);
   }
@@ -321,6 +371,11 @@ class NotificationService {
    * Clear badge count
    */
   async clearBadge() {
+    if (this.isWebPlatform()) {
+      console.warn('[Notifications] Badge count clear is not supported on Expo web without the Web Badging API. Skipping clearBadge.');
+      return;
+    }
+
     await this.setBadgeCount(0);
   }
 }

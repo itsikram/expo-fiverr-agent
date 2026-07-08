@@ -6,8 +6,6 @@ import { colors, spacing, borderRadius, typography } from '../constants/theme';
 import { formatTime } from '../utils/formatTime';
 
 const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
-
-  console.log('client item', client);
   const getInitials = (name) => {
     if (!name) return '?';
     const parts = name.trim().split(' ');

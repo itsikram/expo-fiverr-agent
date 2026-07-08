@@ -150,8 +150,15 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   const handleAddNewClient = () => {
     if (newClientData) {
       // Add the new client to the clients list
+      const uniqueClientId = newClientData.username
+        ? `user:${newClientData.username}`
+        : newClientData.conversationId
+          ? `conv:${newClientData.conversationId}`
+          : `client:${Date.now()}`;
+
       const newClient = {
-        id: newClientData.username || newClientData.conversationId || Date.now(),
+        id: uniqueClientId,
+        clientKey: uniqueClientId,
         name: newClientData.name || newClientData.username || 'Unknown',
         username: newClientData.username,
         country: newClientData.country || '',
@@ -205,10 +212,10 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     if (username) {
       clickClientInFiverr(username);
       setTimeout(() => {
-        triggerMessageExtraction();
+        triggerMessageExtraction(conversationId || username);
       }, EXTRACTION_DELAY_MS);
     } else {
-      triggerMessageExtraction();
+      triggerMessageExtraction(conversationId);
     }
   };
 
@@ -230,15 +237,16 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       requestMessages(conversationId);
 
       // Trigger browser extension to click/activate this client in Fiverr first
-      if (username && isConnected) {
-        console.log('[ClientsScreen] Activating client in browser:', username);
-        clickClientInFiverr(username);
+      const targetIdentifier = username || conversationId || client.id;
+      if (targetIdentifier && isConnected) {
+        console.log('[ClientsScreen] Activating client in browser:', targetIdentifier);
+        clickClientInFiverr(targetIdentifier);
         // Delay message extraction so Fiverr has time to switch to this conversation.
         setTimeout(() => {
-          triggerMessageExtraction();
+          triggerMessageExtraction(conversationId || username);
         }, EXTRACTION_DELAY_MS);
       } else {
-        triggerMessageExtraction();
+        triggerMessageExtraction(conversationId || username);
       }
     }
   };

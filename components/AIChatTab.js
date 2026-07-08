@@ -1261,11 +1261,7 @@ Example (return exactly this format, no other text):
                         <Text style={styles.aiSuggestedActionsLoadingText}>Generating suggestions...</Text>
                       </View>
                     ) : (
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.aiSuggestedActionsScroll}
-                      >
+                      <View style={styles.aiSuggestedActionsList}>
                         {aiSuggestedActions.map((action) => (
                           <TouchableOpacity
                             key={action.id}
@@ -1277,7 +1273,7 @@ Example (return exactly this format, no other text):
                             <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
                           </TouchableOpacity>
                         ))}
-                      </ScrollView>
+                      </View>
                     )}
                   </View>
                 )}
@@ -1388,11 +1384,7 @@ Example (return exactly this format, no other text):
                         <Text style={styles.aiSuggestedActionsLoadingText}>Generating suggestions...</Text>
                       </View>
                     ) : (
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={styles.aiSuggestedActionsScroll}
-                      >
+                      <View style={styles.aiSuggestedActionsList}>
                         {aiSuggestedActions.map((action) => (
                           <TouchableOpacity
                             key={action.id}
@@ -1404,7 +1396,7 @@ Example (return exactly this format, no other text):
                             <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
                           </TouchableOpacity>
                         ))}
-                      </ScrollView>
+                      </View>
                     )}
                   </View>
                 )}
@@ -1887,9 +1879,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     textAlign: 'center',
   },
-  aiSuggestedActionsScroll: {
+  aiSuggestedActionsList: {
     gap: spacing.sm,
-    paddingRight: spacing.lg,
   },
   aiSuggestedActionButton: {
     flexDirection: 'row',
@@ -1898,10 +1889,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
-    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
     gap: spacing.sm,
-    flexShrink: 0,
-    alignSelf: 'flex-start',
   },
   aiSuggestedActionText: {
     fontSize: typography.sizes.base,

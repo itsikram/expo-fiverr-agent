@@ -14,6 +14,10 @@ import ClientListItem from './ClientListItem';
 import ProfileSelector from './ProfileSelector';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
+const getClientListKey = (client, index) => {
+  return client.id || client.clientKey || client.conversationId || client.username || `client-${index}`;
+};
+
 // Helper function to get time unit priority for sorting
 // Returns: { priority: number, timestamp: number }
 // Priority: 1=minutes, 2=hours, 3=days, 4=weeks, 5=months, 6=years, 7=dates, 8=unparseable
@@ -119,8 +123,14 @@ const unitRank = {
 };
 
 function parseRelativeTime(value) {
-  const [numStr, unitRaw] = value.split(" ");
-  const num = parseInt(numStr);
+  if (typeof value !== 'string' || !value.trim()) {
+    return { num: 0, unit: 'unknown' };
+  }
+
+  const parts = value.trim().split(" ");
+  const numStr = parts[0];
+  const unitRaw = parts[1] || '';
+  const num = parseInt(numStr, 10) || 0;
 
   let unit = unitRaw.toLowerCase();
 
@@ -158,7 +168,18 @@ const ClientList = ({
 }) => {
   const [searchText, setSearchText] = useState('');
 
-  const sortedClients = clients.sort((a, b) => {
+  const normalizedClients = useMemo(() => {
+    return (clients || []).map((client, index) => {
+      const uniqueId = getClientListKey(client, index);
+      return {
+        ...client,
+        id: uniqueId,
+        clientKey: uniqueId,
+      };
+    });
+  }, [clients]);
+
+  const sortedClients = [...normalizedClients].sort((a, b) => {
     const aParsed = parseRelativeTime(a.last_message_timestamp);
     const bParsed = parseRelativeTime(b.last_message_timestamp);
   
@@ -172,7 +193,7 @@ const ClientList = ({
   });
   
   
-  const filteredClients = clients.filter((client) => {
+  const filteredClients = sortedClients.filter((client) => {
     // Filter to show clients with minute-based (priority 1) or hour-based (priority 2) timestamps
 
     // Then apply search filter if there's search text
@@ -187,7 +208,7 @@ const ClientList = ({
   const renderClient = ({ item }) => (
     <ClientListItem
       client={item}
-      isSelected={item.id === selectedClientId}
+      isSelected={item.id === selectedClientId || item.conversationId === selectedClientId || item.username === selectedClientId}
       onPress={() => onSelectClient(item.id)}
       onDelete={() => onDeleteClient(item.id)}
     />
@@ -236,7 +257,7 @@ const ClientList = ({
       <FlatList
         data={filteredClients}
         renderItem={renderClient}
-        keyExtractor={(item) => item.id.toString()}
+        keyExtractor={(item, index) => getClientListKey(item, index)}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
       />

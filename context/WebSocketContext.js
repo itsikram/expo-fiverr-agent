@@ -116,6 +116,14 @@ const getTimeUnitPriority = (timeString) => {
   return { priority: 8, timestamp: 0 };
 };
 
+const getClientListId = (client, index) => {
+  const base = client?.username || client?.conversationId || client?.conversation_id || client?.id;
+  if (base) {
+    return `${String(base)}-${index + 1}`;
+  }
+  return `client-${index + 1}`;
+};
+
 export const WebSocketProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('disconnected'); // 'connecting', 'connected', 'disconnected', 'error'
@@ -161,7 +169,7 @@ export const WebSocketProvider = ({ children }) => {
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
-      ws.onopen = () => {
+      ws.onopen = async () => {
         console.log('[WebSocket] Connection opened');
         setConnectionStatus('connected');
         setIsConnected(true);
@@ -176,6 +184,22 @@ export const WebSocketProvider = ({ children }) => {
           client_type: 'expo',
           session_id: sessionIdRef.current,
         }));
+
+        // Register push token for remote notifications (works when app is closed)
+        try {
+          const pushToken = await notificationService.getExpoPushToken();
+          if (pushToken) {
+            ws.send(JSON.stringify({
+              type: 'register_push_token',
+              pushToken: pushToken,
+            }));
+            console.log('[WebSocket] Push token registered for remote notifications');
+          } else {
+            console.warn('[WebSocket] Could not get push token for registration');
+          }
+        } catch (error) {
+          console.error('[WebSocket] Error registering push token:', error);
+        }
 
         // Start ping interval
         pingIntervalRef.current = setInterval(() => {
@@ -306,12 +330,17 @@ export const WebSocketProvider = ({ children }) => {
     });
   }, [sendMessage]);
 
-  const triggerMessageExtraction = useCallback(() => {
+  const triggerMessageExtraction = useCallback((targetIdentifier) => {
     // Send command to trigger browser extension to fetch messages
-    sendMessage({
+    const payload = {
       type: 'trigger',
       action: 'extract_messages',
-    });
+    };
+    if (targetIdentifier) {
+      payload.conversationId = targetIdentifier;
+      payload.username = targetIdentifier;
+    }
+    sendMessage(payload);
   }, [sendMessage]);
 
   const triggerClientDataExtraction = useCallback(() => {
@@ -367,18 +396,19 @@ export const WebSocketProvider = ({ children }) => {
     });
   }, [sendMessage]);
 
-  const clickClientInFiverr = useCallback((username) => {
+  const clickClientInFiverr = useCallback((identifier) => {
     // Send command to browser extension to click/activate a client in Fiverr
-    if (!username) {
-      console.warn('[WebSocket] clickClientInFiverr: username is required');
+    if (!identifier) {
+      console.warn('[WebSocket] clickClientInFiverr: identifier is required');
       return false;
     }
-    console.log('[WebSocket] Clicking client in Fiverr:', username);
+    console.log('[WebSocket] Clicking client in Fiverr:', identifier);
     
-    // Send click_client command to browser extension
+    // Send click_client command to browser extension with both identifier forms
     sendMessage({
       type: 'click_client',
-      username: username,
+      username: identifier,
+      conversationId: identifier,
       useFirstClient: false,
     });
     
@@ -386,7 +416,8 @@ export const WebSocketProvider = ({ children }) => {
     sendMessage({
       type: 'client_activated',
       data: {
-        username: username,
+        username: identifier,
+        conversationId: identifier,
       },
     });
     
@@ -547,9 +578,11 @@ export const WebSocketProvider = ({ children }) => {
         if (data.data?.clients) {
           // Transform client list to match app format
           const transformedClients = data.data.clients.map((client, index) => {
-            // Build the transformed client object, ensuring last_message_timestamp is always included
+            // Build the transformed client object, ensuring each row has a unique stable id
+            const uniqueId = getClientListId(client, index);
             const transformed = {
-              id: client.conversationId || client.username || index,
+              id: uniqueId,
+              clientKey: uniqueId,
               name: client.name || client.username || 'Unknown',
               username: client.username,
               company: client.company,
@@ -563,6 +596,8 @@ export const WebSocketProvider = ({ children }) => {
               last_message_timestamp: client.last_message_timestamp !== undefined ? client.last_message_timestamp : null,
               ...client, // Include all other properties (this should preserve last_message_timestamp)
             };
+            transformed.id = uniqueId;
+            transformed.clientKey = uniqueId;
             // Ensure last_message_timestamp is set (spread might override with undefined)
             if (client.last_message_timestamp !== undefined) {
               transformed.last_message_timestamp = client.last_message_timestamp;
@@ -810,6 +845,58 @@ export const WebSocketProvider = ({ children }) => {
                 conversationId,
                 messageCount,
                 data: data.data,
+              }
+            }));
+          }
+        }
+        break;
+
+      case 'new_client_detected':
+        {
+          console.log('[WebSocket] New client detected:', data.data);
+          const clientData = data.data || data;
+          const clientName = clientData.name || clientData.clientName || clientData.username;
+          const clientUsername = clientData.username || clientData.clientUsername;
+          const conversationId = clientData.conversationId || clientUsername;
+          
+          // Show notification for new client
+          const appState = AppState.currentState;
+          const isAppInBackground = appState === 'background' || appState === 'inactive';
+          const isConversationSelected = selectedConversationId === conversationId || selectedConversationId === clientUsername;
+          
+          // Show notification if app is in background or conversation is not selected
+          if (isAppInBackground || !isConversationSelected) {
+            notificationService.showMessageNotification({
+              clientName: `🎉 New Client: ${clientName}`,
+              messageText: `You have a new client message from ${clientName}!`,
+              conversationId,
+              username: clientUsername,
+            }).catch((error) => {
+              console.error('[WebSocket] Error showing new client notification:', error);
+            });
+            
+            // Increment badge count
+            notificationService.incrementBadge().catch((error) => {
+              console.error('[WebSocket] Error incrementing badge:', error);
+            });
+          }
+          
+          // Set new client data to show in UI
+          setNewClientData({
+            ...clientData,
+            conversationId: conversationId,
+            username: clientUsername,
+            name: clientName
+          });
+          
+          // Emit event for UI
+          if (typeof window !== 'undefined' && window.dispatchEvent) {
+            window.dispatchEvent(new CustomEvent('newClientDetected', {
+              detail: {
+                clientName,
+                clientUsername,
+                conversationId,
+                clientData: clientData,
               }
             }));
           }
