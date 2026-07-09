@@ -1,12 +1,45 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ActivityIndicator, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, shadows, typography } from '../constants/theme';
+import React from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  ActivityIndicator,
+  Platform,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import {
+  colors,
+  spacing,
+  borderRadius,
+  shadows,
+  typography,
+} from "../constants/theme";
 
-const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefetch, onNavigateToSettings, authUsername, authEmail, onOpenVoiceModal, isMinimized = false, onToggleMinimize }) => {
+const BottomBar = ({
+  onMenuToggle,
+  isMenuOpen,
+  onRefetch,
+  isRefetching,
+  showRefetch,
+  onNavigateToSettings,
+  authUsername,
+  authEmail,
+  onOpenVoiceModal,
+  isMinimized = false,
+  onToggleMinimize,
+  onLogout,
+  onOpenAdminDashboard,
+}) => {
   return (
-    <SafeAreaView style={[styles.safeArea, Platform.OS === 'web' && styles.safeAreaWeb]} edges={['bottom']}>
-      <View style={[styles.container, Platform.OS === 'web' && styles.containerWeb]}>
+    <SafeAreaView
+      style={[styles.safeArea, Platform.OS === "web" && styles.safeAreaWeb]}
+      edges={["bottom"]}
+    >
+      <View
+        style={[styles.container, Platform.OS === "web" && styles.containerWeb]}
+      >
         {!isMinimized ? (
           <>
             <TouchableOpacity
@@ -15,12 +48,12 @@ const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefe
               activeOpacity={0.7}
             >
               <Ionicons
-                name={isMenuOpen ? 'close' : 'menu'}
+                name={isMenuOpen ? "close" : "menu"}
                 size={24}
                 color={colors.text.white}
               />
             </TouchableOpacity>
-            
+
             <View style={styles.rightButtons}>
               {onOpenVoiceModal ? (
                 <TouchableOpacity
@@ -28,16 +61,15 @@ const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefe
                   onPress={onOpenVoiceModal}
                   activeOpacity={0.7}
                 >
-                  <Ionicons
-                    name="mic"
-                    size={24}
-                    color={colors.text.white}
-                  />
+                  <Ionicons name="mic" size={24} color={colors.text.white} />
                 </TouchableOpacity>
               ) : null}
               {showRefetch && (
                 <TouchableOpacity
-                  style={[styles.refetchButton, isRefetching && styles.refetchButtonActive]}
+                  style={[
+                    styles.refetchButton,
+                    isRefetching && styles.refetchButtonActive,
+                  ]}
                   onPress={onRefetch}
                   activeOpacity={0.7}
                   disabled={isRefetching}
@@ -53,23 +85,49 @@ const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefe
                   )}
                 </TouchableOpacity>
               )}
-              
+
               <TouchableOpacity
                 style={styles.settingsButton}
                 onPress={onNavigateToSettings}
                 activeOpacity={0.7}
               >
-                <Ionicons
-                  name="settings"
-                  size={24}
-                  color={colors.text.white}
-                />
+                <Ionicons name="settings" size={24} color={colors.text.white} />
               </TouchableOpacity>
+              {onOpenAdminDashboard ? (
+                <TouchableOpacity
+                  style={styles.adminButton}
+                  onPress={onOpenAdminDashboard}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="shield-checkmark"
+                    size={22}
+                    color={colors.text.white}
+                  />
+                </TouchableOpacity>
+              ) : null}
+              {onLogout ? (
+                <TouchableOpacity
+                  style={styles.logoutButton}
+                  onPress={onLogout}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="log-out-outline"
+                    size={22}
+                    color={colors.text.white}
+                  />
+                </TouchableOpacity>
+              ) : null}
               {(authUsername || authEmail) && (
                 <View style={styles.authInfoContainer}>
                   <Text style={styles.authLabel}>Logged in as</Text>
-                  <Text style={styles.authUsername}>{authUsername || authEmail || 'Unknown'}</Text>
-                  {authEmail ? <Text style={styles.authEmail}>{authEmail}</Text> : null}
+                  <Text style={styles.authUsername}>
+                    {authUsername || authEmail || "Unknown"}
+                  </Text>
+                  {authEmail ? (
+                    <Text style={styles.authEmail}>{authEmail}</Text>
+                  ) : null}
                 </View>
               )}
               {onToggleMinimize && (
@@ -112,7 +170,7 @@ const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefe
 const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: colors.background.card,
-    marginBottom: Platform.OS === 'android' ? -65 : -35,
+    marginBottom: Platform.OS === "android" ? -65 : -35,
     zIndex: 1000,
     elevation: 1000,
   },
@@ -120,9 +178,9 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     backgroundColor: colors.background.card,
@@ -134,8 +192,8 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   rightButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: spacing.sm,
   },
   menuButton: {
@@ -143,8 +201,8 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: borderRadius.full,
     backgroundColor: colors.accent.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     ...shadows.sm,
   },
   menuButtonActive: {
@@ -155,8 +213,8 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: borderRadius.full,
     backgroundColor: colors.accent.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     ...shadows.sm,
   },
   refetchButtonActive: {
@@ -167,8 +225,8 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: borderRadius.full,
     backgroundColor: colors.accent.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     ...shadows.sm,
   },
   settingsButton: {
@@ -176,14 +234,32 @@ const styles = StyleSheet.create({
     height: 48,
     borderRadius: borderRadius.full,
     backgroundColor: colors.accent.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
+    ...shadows.sm,
+  },
+  adminButton: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.accent.warning,
+    justifyContent: "center",
+    alignItems: "center",
+    ...shadows.sm,
+  },
+  logoutButton: {
+    width: 48,
+    height: 48,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.accent.error,
+    justifyContent: "center",
+    alignItems: "center",
     ...shadows.sm,
   },
   minimizedContainer: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: -10,
     marginTop: -10,
   },
@@ -192,20 +268,20 @@ const styles = StyleSheet.create({
     height: 25,
     borderRadius: 10,
     backgroundColor: colors.background.secondary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     ...shadows.sm,
   },
   authInfoContainer: {
     marginLeft: spacing.sm,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
+    alignItems: "flex-start",
+    justifyContent: "center",
     maxWidth: 220,
   },
   authLabel: {
     fontSize: typography.sizes.xs,
     color: colors.text.secondary,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 2,
   },

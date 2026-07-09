@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,27 +10,36 @@ import {
   Dimensions,
   KeyboardAvoidingView,
   Platform,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, typography, shadows } from '../constants/theme';
-import { loadSettings, saveSettings } from '../utils/storage';
-import { useWebSocket } from '../context/WebSocketContext';
-import { useAuth } from '../context/AuthContext';
+  Modal,
+} from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
+import {
+  colors,
+  spacing,
+  borderRadius,
+  typography,
+  shadows,
+} from "../constants/theme";
+import { loadSettings, saveSettings } from "../utils/storage";
+import { useWebSocket } from "../context/WebSocketContext";
+import { useAuth } from "../context/AuthContext";
+import AdminDashboard from "../components/AdminDashboard";
 
 const SettingsScreen = ({ onBack }) => {
   const { navigateToInbox, reloadFiverrTab, isConnected } = useWebSocket();
-  const { username, email, logout, isAuthenticated } = useAuth();
-  const [name, setName] = useState('');
-  const [skills, setSkills] = useState('');
-  const [aboutMe, setAboutMe] = useState('');
-  const [serverAddress, setServerAddress] = useState('');
-  const [openaiApiKey, setOpenaiApiKey] = useState('');
-  const [aiModel, setAiModel] = useState('');
-  const [aiApiUrl, setAiApiUrl] = useState('');
+  const { username, email, logout, isAuthenticated, role } = useAuth();
+  const [name, setName] = useState("");
+  const [skills, setSkills] = useState("");
+  const [aboutMe, setAboutMe] = useState("");
+  const [serverAddress, setServerAddress] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [aiModel, setAiModel] = useState("");
+  const [aiApiUrl, setAiApiUrl] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isApiKeyMasked, setIsApiKeyMasked] = useState(false);
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
 
   // Load settings on mount
   useEffect(() => {
@@ -50,12 +59,17 @@ const SettingsScreen = ({ onBack }) => {
         } else if (settings.serverHost != null) {
           setServerAddress(settings.serverHost);
         }
-        if (settings.aiApiKey || settings.openaiApiKey) {
-          const rawKey = settings.aiApiKey || settings.openaiApiKey;
-          const maskedKey = rawKey.startsWith('sk-')
-            ? 'sk-' + '*'.repeat(rawKey.length - 3)
-            : '*'.repeat(rawKey.length);
-          setOpenaiApiKey(maskedKey);
+        if (
+          settings.geminiApiKey ||
+          settings.aiApiKey ||
+          settings.openaiApiKey
+        ) {
+          const rawKey =
+            settings.geminiApiKey || settings.aiApiKey || settings.openaiApiKey;
+          const maskedKey = rawKey.startsWith("sk-")
+            ? "sk-" + "*".repeat(rawKey.length - 3)
+            : "*".repeat(rawKey.length);
+          setApiKey(maskedKey);
           setIsApiKeyMasked(true);
         }
         if (settings.aiModel) {
@@ -66,19 +80,19 @@ const SettingsScreen = ({ onBack }) => {
         }
       }
     } catch (error) {
-      console.error('[SettingsScreen] Error loading settings:', error);
+      console.error("[SettingsScreen] Error loading settings:", error);
     }
   };
 
   const handleSave = async () => {
     // Validate API key format if provided (and not masked)
-    const apiKeyToSave = openaiApiKey.trim();
+    const apiKeyToSave = apiKey.trim();
 
     setIsSaving(true);
 
     try {
       const serverAddressTrimmed = serverAddress.trim();
-      
+
       const settings = {
         name: name.trim(),
         skills: skills.trim(),
@@ -86,16 +100,17 @@ const SettingsScreen = ({ onBack }) => {
         // Save as serverUrl (full URL with protocol and port)
         // Also keep serverHost for backward compatibility if it's just a host
         serverUrl: serverAddressTrimmed || undefined,
-        serverHost: serverAddressTrimmed && !serverAddressTrimmed.includes('://') 
-          ? serverAddressTrimmed 
-          : undefined,
-        openaiApiKey: isApiKeyMasked ? undefined : (apiKeyToSave || undefined),
-        aiApiKey: isApiKeyMasked ? undefined : (apiKeyToSave || undefined),
+        serverHost:
+          serverAddressTrimmed && !serverAddressTrimmed.includes("://")
+            ? serverAddressTrimmed
+            : undefined,
+        geminiApiKey: isApiKeyMasked ? undefined : apiKeyToSave || undefined,
+        aiApiKey: isApiKeyMasked ? undefined : apiKeyToSave || undefined,
         aiModel: aiModel.trim() || undefined,
         aiApiUrl: aiApiUrl.trim() || undefined,
       };
 
-      Object.keys(settings).forEach(key => {
+      Object.keys(settings).forEach((key) => {
         if (settings[key] === undefined) {
           delete settings[key];
         }
@@ -104,21 +119,17 @@ const SettingsScreen = ({ onBack }) => {
       await saveSettings(settings);
       await loadSettingsData();
 
-      Alert.alert(
-        'Success',
-        'Settings saved successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              if (onBack) onBack();
-            },
+      Alert.alert("Success", "Settings saved successfully!", [
+        {
+          text: "OK",
+          onPress: () => {
+            if (onBack) onBack();
           },
-        ]
-      );
+        },
+      ]);
     } catch (error) {
-      console.error('[SettingsScreen] Error saving settings:', error);
-      Alert.alert('Error', 'Failed to save settings. Please try again.');
+      console.error("[SettingsScreen] Error saving settings:", error);
+      Alert.alert("Error", "Failed to save settings. Please try again.");
     } finally {
       setIsSaving(false);
     }
@@ -129,17 +140,17 @@ const SettingsScreen = ({ onBack }) => {
     if (isApiKeyMasked) {
       setIsApiKeyMasked(false);
       // If user is deleting, start with empty string; otherwise use the new text
-      setOpenaiApiKey(text.length < openaiApiKey.length ? '' : text);
+      setApiKey(text.length < apiKey.length ? "" : text);
     } else {
-      setOpenaiApiKey(text);
+      setApiKey(text);
     }
   };
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 200 : 200}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 200 : 200}
     >
       <LinearGradient
         colors={[colors.background.primary, colors.background.secondary]}
@@ -163,8 +174,10 @@ const SettingsScreen = ({ onBack }) => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Server</Text>
             <Text style={styles.sectionDescription}>
-              Server address (full URL with protocol and port). Used for WebSocket connection.
-              {'\n'}Examples: http://192.168.0.102:8765 or https://fiverr-agent-03vs.onrender.com
+              Server address (full URL with protocol and port). Used for
+              WebSocket connection.
+              {"\n"}Examples: http://192.168.0.102:8765 or
+              https://fiverr-agent-03vs.onrender.com
             </Text>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Server address</Text>
@@ -227,19 +240,36 @@ const SettingsScreen = ({ onBack }) => {
             </View>
           </View>
 
+          {role === "admin" ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Admin Tools</Text>
+              <Text style={styles.sectionDescription}>
+                Manage clients, messages, and user access.
+              </Text>
+              <TouchableOpacity
+                style={styles.primaryButton}
+                onPress={() => setShowAdminDashboard(true)}
+              >
+                <Text style={styles.primaryButtonText}>
+                  Open Admin Dashboard
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           {/* API Configuration Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>API Configuration</Text>
             <Text style={styles.sectionDescription}>
-              Configure your OpenAI API key for AI features
+              Configure your Gemini API key for AI features
             </Text>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>AI API Key</Text>
+              <Text style={styles.label}>API Key (Gemini / OpenAI)</Text>
               <View style={styles.apiKeyContainer}>
                 <TextInput
                   style={[styles.input, styles.apiKeyInput]}
-                  value={openaiApiKey}
+                  value={apiKey}
                   onChangeText={handleApiKeyChange}
                   placeholder="sk-..."
                   placeholderTextColor={colors.text.secondary}
@@ -252,15 +282,15 @@ const SettingsScreen = ({ onBack }) => {
                   onPress={() => setShowApiKey(!showApiKey)}
                 >
                   <Ionicons
-                    name={showApiKey ? 'eye-off' : 'eye'}
+                    name={showApiKey ? "eye-off" : "eye"}
                     size={20}
                     color={colors.text.secondary}
                   />
                 </TouchableOpacity>
               </View>
               <Text style={styles.hint}>
-                Your AI key is stored securely and masked for privacy.
-                Use this for OpenAI-compatible endpoints and Gemini models.
+                Your API key is stored securely and masked for privacy. Use a
+                Gemini or OpenAI key depending on your provider.
               </Text>
             </View>
 
@@ -270,13 +300,15 @@ const SettingsScreen = ({ onBack }) => {
                 style={styles.input}
                 value={aiModel}
                 onChangeText={setAiModel}
-                placeholder="e.g. gemini-1.5 or gpt-4o-mini"
+                placeholder="e.g. gpt-3.5-turbo, gpt-4o-mini, gemini-1.5"
                 placeholderTextColor={colors.text.secondary}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
               <Text style={styles.hint}>
-                Enter the model name to use for AI chat. Gemini models are supported.
+                Enter the model name to use for AI chat. If the current model is
+                unavailable, the app will fall back to a supported OpenAI/Gemini
+                model such as gpt-3.5-turbo.
               </Text>
             </View>
 
@@ -292,7 +324,8 @@ const SettingsScreen = ({ onBack }) => {
                 autoCorrect={false}
               />
               <Text style={styles.hint}>
-                Optional custom API URL for providers like Gemini or other OpenAI-compatible services.
+                Optional custom API URL for Gemini-compatible providers or other
+                OpenAI-compatible endpoints.
               </Text>
             </View>
           </View>
@@ -306,12 +339,19 @@ const SettingsScreen = ({ onBack }) => {
 
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Signed in as</Text>
-              <Text style={styles.infoText}>{username || email || 'Unknown user'}</Text>
-              <Text style={styles.hint}>You are authenticated with the current server.</Text>
+              <Text style={styles.infoText}>
+                {username || email || "Unknown user"}
+              </Text>
+              <Text style={styles.hint}>
+                You are authenticated with the current server.
+              </Text>
             </View>
 
             <TouchableOpacity
-              style={[styles.actionButton, !isAuthenticated && styles.actionButtonDisabled]}
+              style={[
+                styles.actionButton,
+                !isAuthenticated && styles.actionButtonDisabled,
+              ]}
               onPress={async () => {
                 await logout();
                 if (onBack) onBack();
@@ -319,97 +359,126 @@ const SettingsScreen = ({ onBack }) => {
               disabled={!isAuthenticated}
             >
               <LinearGradient
-                colors={isAuthenticated ? [colors.accent.error, colors.accent.danger] : [colors.text.secondary, colors.text.secondary]}
+                colors={
+                  isAuthenticated
+                    ? [colors.accent.error, colors.accent.danger]
+                    : [colors.text.secondary, colors.text.secondary]
+                }
                 style={styles.actionButtonGradient}
               >
-                <Ionicons name="log-out-outline" size={20} color={colors.text.white} style={styles.actionButtonIcon} />
+                <Ionicons
+                  name="log-out-outline"
+                  size={20}
+                  color={colors.text.white}
+                  style={styles.actionButtonIcon}
+                />
                 <Text style={styles.actionButtonText}>Sign Out</Text>
               </LinearGradient>
             </TouchableOpacity>
 
             <Text style={styles.hint}>
               {isAuthenticated
-                ? 'Sign out of the current account and return to the login screen.'
-                : 'No authenticated user is currently signed in.'}
+                ? "Sign out of the current account and return to the login screen."
+                : "No authenticated user is currently signed in."}
             </Text>
 
             <View style={styles.divider} />
 
-          <Text style={styles.sectionTitle}>Browser Actions</Text>
+            <Text style={styles.sectionTitle}>Browser Actions</Text>
             <Text style={styles.sectionDescription}>
               Control the browser extension to navigate to Fiverr pages
             </Text>
 
             <TouchableOpacity
-              style={[styles.actionButton, !isConnected && styles.actionButtonDisabled]}
+              style={[
+                styles.actionButton,
+                !isConnected && styles.actionButtonDisabled,
+              ]}
               onPress={() => {
                 if (isConnected) {
                   navigateToInbox();
                   Alert.alert(
-                    'Success',
-                    'Command sent to navigate to Fiverr inbox page',
-                    [{ text: 'OK' }]
+                    "Success",
+                    "Command sent to navigate to Fiverr inbox page",
+                    [{ text: "OK" }],
                   );
                 } else {
                   Alert.alert(
-                    'Not Connected',
-                    'Please wait for connection to server before using this feature.',
-                    [{ text: 'OK' }]
+                    "Not Connected",
+                    "Please wait for connection to server before using this feature.",
+                    [{ text: "OK" }],
                   );
                 }
               }}
               disabled={!isConnected}
             >
               <LinearGradient
-                colors={isConnected ? [colors.accent.primary, colors.accent.secondary] : [colors.text.secondary, colors.text.secondary]}
+                colors={
+                  isConnected
+                    ? [colors.accent.primary, colors.accent.secondary]
+                    : [colors.text.secondary, colors.text.secondary]
+                }
                 style={styles.actionButtonGradient}
               >
-                <Ionicons name="open-outline" size={20} color={colors.text.white} style={styles.actionButtonIcon} />
-                <Text style={styles.actionButtonText}>
-                  Navigate to Inbox
-                </Text>
+                <Ionicons
+                  name="open-outline"
+                  size={20}
+                  color={colors.text.white}
+                  style={styles.actionButtonIcon}
+                />
+                <Text style={styles.actionButtonText}>Navigate to Inbox</Text>
               </LinearGradient>
             </TouchableOpacity>
             <Text style={styles.hint}>
-              {isConnected 
-                ? 'Click to redirect the active Fiverr tab to the inbox page'
-                : 'Connect to server to use this feature'}
+              {isConnected
+                ? "Click to redirect the active Fiverr tab to the inbox page"
+                : "Connect to server to use this feature"}
             </Text>
 
             <TouchableOpacity
-              style={[styles.actionButton, !isConnected && styles.actionButtonDisabled]}
+              style={[
+                styles.actionButton,
+                !isConnected && styles.actionButtonDisabled,
+              ]}
               onPress={() => {
                 if (isConnected) {
                   reloadFiverrTab();
                   Alert.alert(
-                    'Success',
-                    'Command sent to reload the activated Fiverr tab',
-                    [{ text: 'OK' }]
+                    "Success",
+                    "Command sent to reload the activated Fiverr tab",
+                    [{ text: "OK" }],
                   );
                 } else {
                   Alert.alert(
-                    'Not Connected',
-                    'Please wait for connection to server before using this feature.',
-                    [{ text: 'OK' }]
+                    "Not Connected",
+                    "Please wait for connection to server before using this feature.",
+                    [{ text: "OK" }],
                   );
                 }
               }}
               disabled={!isConnected}
             >
               <LinearGradient
-                colors={isConnected ? [colors.accent.primary, colors.accent.secondary] : [colors.text.secondary, colors.text.secondary]}
+                colors={
+                  isConnected
+                    ? [colors.accent.primary, colors.accent.secondary]
+                    : [colors.text.secondary, colors.text.secondary]
+                }
                 style={styles.actionButtonGradient}
               >
-                <Ionicons name="reload" size={20} color={colors.text.white} style={styles.actionButtonIcon} />
-                <Text style={styles.actionButtonText}>
-                  Reload Fiverr
-                </Text>
+                <Ionicons
+                  name="reload"
+                  size={20}
+                  color={colors.text.white}
+                  style={styles.actionButtonIcon}
+                />
+                <Text style={styles.actionButtonText}>Reload Fiverr</Text>
               </LinearGradient>
             </TouchableOpacity>
             <Text style={styles.hint}>
-              {isConnected 
-                ? 'Click to reload the activated Fiverr tab'
-                : 'Connect to server to use this feature'}
+              {isConnected
+                ? "Click to reload the activated Fiverr tab"
+                : "Connect to server to use this feature"}
             </Text>
           </View>
 
@@ -424,17 +493,23 @@ const SettingsScreen = ({ onBack }) => {
               style={styles.saveButtonGradient}
             >
               <Text style={styles.saveButtonText}>
-                {isSaving ? 'Saving...' : 'Save Settings'}
+                {isSaving ? "Saving..." : "Save Settings"}
               </Text>
             </LinearGradient>
           </TouchableOpacity>
         </ScrollView>
       </LinearGradient>
+
+      <Modal visible={showAdminDashboard} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <AdminDashboard onClose={() => setShowAdminDashboard(false)} />
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const styles = StyleSheet.create({
   container: {
@@ -445,9 +520,9 @@ const styles = StyleSheet.create({
     paddingTop: 40,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
@@ -456,11 +531,11 @@ const styles = StyleSheet.create({
   backButton: {
     width: 40,
     height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   headerTitle: {
-    fontSize: typography.sizes['2xl'],
+    fontSize: typography.sizes["2xl"],
     fontWeight: typography.weights.bold,
     color: colors.text.primary,
   },
@@ -516,8 +591,8 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   apiKeyContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   apiKeyInput: {
     flex: 1,
@@ -530,12 +605,12 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xs,
     color: colors.text.secondary,
     marginTop: spacing.xs,
-    fontStyle: 'italic',
+    fontStyle: "italic",
   },
   saveButton: {
     marginTop: spacing.lg,
     borderRadius: borderRadius.md,
-    overflow: 'hidden',
+    overflow: "hidden",
     ...shadows.md,
   },
   saveButtonDisabled: {
@@ -544,8 +619,8 @@ const styles = StyleSheet.create({
   saveButtonGradient: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   saveButtonText: {
     fontSize: typography.sizes.lg,
@@ -555,7 +630,7 @@ const styles = StyleSheet.create({
   actionButton: {
     marginTop: spacing.sm,
     borderRadius: borderRadius.md,
-    overflow: 'hidden',
+    overflow: "hidden",
     ...shadows.md,
   },
   divider: {
@@ -578,9 +653,9 @@ const styles = StyleSheet.create({
   actionButtonGradient: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
   actionButtonIcon: {
     marginRight: spacing.sm,
@@ -589,6 +664,10 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
     color: colors.text.white,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
   },
 });
 

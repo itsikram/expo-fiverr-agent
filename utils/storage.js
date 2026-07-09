@@ -278,12 +278,15 @@ export const saveSettings = async (settings) => {
       ...existingSettings,
       ...settings,
       // Only update API key if a new one is provided (not masked)
-      openaiApiKey: settings.openaiApiKey !== undefined 
-        ? settings.openaiApiKey 
-        : existingSettings.openaiApiKey,
+      geminiApiKey: settings.geminiApiKey !== undefined
+        ? settings.geminiApiKey
+        : existingSettings.geminiApiKey,
       aiApiKey: settings.aiApiKey !== undefined
         ? settings.aiApiKey
         : existingSettings.aiApiKey,
+      openaiApiKey: settings.openaiApiKey !== undefined
+        ? settings.openaiApiKey
+        : existingSettings.openaiApiKey,
     };
 
     const jsonValue = JSON.stringify(mergedSettings);

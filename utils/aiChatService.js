@@ -239,7 +239,7 @@ export const getAiChatResponse = async ({
   userProfile,
 }) => {
   // Load API key from settings first, then fallback to config
-  let apiKey = AI_CONFIG.OPENAI_API_KEY;
+  let apiKey = AI_CONFIG.AI_API_KEY;
   let apiUrl = AI_CONFIG.AI_API_URL;
   let model = AI_CONFIG.MODEL || AI_CONFIG.DEFAULT_MODEL;
 
@@ -250,12 +250,18 @@ export const getAiChatResponse = async ({
         apiKey = settings.aiApiKey;
       } else if (settings.openaiApiKey && !settings.openaiApiKey.startsWith('*')) {
         apiKey = settings.openaiApiKey;
+      } else if (settings.geminiApiKey && !settings.geminiApiKey.startsWith('*')) {
+        apiKey = settings.geminiApiKey;
       }
       if (settings.aiApiUrl) {
         apiUrl = settings.aiApiUrl;
+      } else if (settings.openaiApiUrl) {
+        apiUrl = settings.openaiApiUrl;
       }
       if (settings.aiModel) {
         model = settings.aiModel;
+      } else if (settings.openaiModel) {
+        model = settings.openaiModel;
       }
     }
   } catch (error) {
@@ -284,10 +290,6 @@ export const getAiChatResponse = async ({
     if (!value || typeof value !== 'string') return AI_CONFIG.DEFAULT_MODEL;
     const trimmed = value.trim();
     if (!trimmed) return AI_CONFIG.DEFAULT_MODEL;
-    if (trimmed.toLowerCase().startsWith('gemini-2.5')) {
-      console.warn('[aiChatService] Gemini 2.5 detected, falling back to default free model.');
-      return AI_CONFIG.DEFAULT_MODEL;
-    }
     return trimmed;
   };
 
@@ -331,23 +333,45 @@ export const getAiChatResponse = async ({
     if (!response.ok) {
       const errorText = await response.text();
       const message = errorText.substring(0, 200);
-      const isModelError = response.status === 404 || /model.*does not exist|model_not_found|invalid_request_error/i.test(message);
+      const isModelError =
+        response.status === 404 ||
+        /model.*does not exist|model_not_found|invalid_request_error/i.test(message);
       throw { status: response.status, message, isModelError };
     }
 
     return response.json();
   };
 
+  const modelCandidates = [
+    model,
+    ...AI_CONFIG.FALLBACK_MODELS.filter((m) => m !== model),
+  ];
+
   let json;
-  try {
-    json = await requestAiResponse(model);
-  } catch (error) {
-    if (error?.isModelError && model !== AI_CONFIG.DEFAULT_MODEL) {
-      console.warn(`[aiChatService] Model ${model} failed, retrying with default model ${AI_CONFIG.DEFAULT_MODEL}.`);
-      json = await requestAiResponse(AI_CONFIG.DEFAULT_MODEL);
-    } else {
-      throw new Error(`OpenAI API error (${error.status || 'unknown'}): ${error.message || 'Unknown error'}`);
+  let lastError;
+  for (const candidate of modelCandidates) {
+    try {
+      console.log(`[aiChatService] Attempting AI request with model: ${candidate}`);
+      json = await requestAiResponse(candidate);
+      model = candidate;
+      break;
+    } catch (error) {
+      lastError = error;
+      if (!error?.isModelError) {
+        // Stop retrying on non-model errors, use the underlying error.
+        throw new Error(`AI API error (${error.status || 'unknown'}): ${error.message || 'Unknown error'}`);
+      }
+      console.warn(
+        `[aiChatService] Model ${candidate} failed with model error; trying next fallback.`,
+        error.message,
+      );
     }
+  }
+
+  if (!json) {
+    throw new Error(
+      `AI API error (${lastError?.status || 'unknown'}): ${lastError?.message || 'Unable to generate a response.'}`,
+    );
   }
 
   const choice = json.choices && json.choices[0];

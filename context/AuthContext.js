@@ -1,19 +1,29 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { authLogin, authRegister, authMe, authLogout } from '../utils/authService';
-import { saveAuthData, loadAuthData, clearAuthData } from '../utils/storage';
+import React, { createContext, useContext, useEffect, useState } from "react";
+import {
+  authLogin,
+  authRegister,
+  authMe,
+  authLogout,
+} from "../utils/authService";
+import { saveAuthData, loadAuthData, clearAuthData } from "../utils/storage";
 
 const AuthContext = createContext(null);
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
+    throw new Error("useAuth must be used within AuthProvider");
   }
   return context;
 };
 
 export const AuthProvider = ({ children }) => {
-  const [auth, setAuth] = useState({ token: null, username: null, email: null });
+  const [auth, setAuth] = useState({
+    token: null,
+    username: null,
+    email: null,
+    role: "user",
+  });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [authError, setAuthError] = useState(null);
@@ -29,19 +39,23 @@ export const AuthProvider = ({ children }) => {
               token: savedAuth.token,
               username: user.username || savedAuth.username || null,
               email: user.email || savedAuth.email || null,
+              role: user.role || savedAuth.role || "user",
             });
             setIsAuthenticated(true);
           } catch (error) {
-            console.warn('[AuthContext] Stored token validation failed:', error.message);
+            console.warn(
+              "[AuthContext] Stored token validation failed:",
+              error.message,
+            );
             await clearAuthData();
-            setAuth({ token: null, username: null, email: null });
+            setAuth({ token: null, username: null, email: null, role: "user" });
             setIsAuthenticated(false);
           }
         }
       } catch (error) {
-        console.error('[AuthContext] Error initializing auth:', error);
-        setAuthError(error.message || 'Failed to initialize auth');
-        setAuth({ token: null, username: null, email: null });
+        console.error("[AuthContext] Error initializing auth:", error);
+        setAuthError(error.message || "Failed to initialize auth");
+        setAuth({ token: null, username: null, email: null, role: "user" });
         setIsAuthenticated(false);
       } finally {
         setIsAuthReady(true);
@@ -58,6 +72,7 @@ export const AuthProvider = ({ children }) => {
         token: result.token,
         username: result.username,
         email: result.email,
+        role: result.role || "user",
       };
       await saveAuthData(authData);
       setAuth(authData);
@@ -77,6 +92,7 @@ export const AuthProvider = ({ children }) => {
         token: result.token,
         username: result.username,
         email: result.email,
+        role: result.role || "user",
       };
       await saveAuthData(authData);
       setAuth(authData);
@@ -95,10 +111,10 @@ export const AuthProvider = ({ children }) => {
         await authLogout(auth.token);
       }
     } catch (error) {
-      console.warn('[AuthContext] Logout request failed:', error.message);
+      console.warn("[AuthContext] Logout request failed:", error.message);
     }
     await clearAuthData();
-    setAuth({ token: null, username: null, email: null });
+    setAuth({ token: null, username: null, email: null, role: "user" });
     setIsAuthenticated(false);
   };
 
@@ -108,6 +124,7 @@ export const AuthProvider = ({ children }) => {
         token: auth.token,
         username: auth.username,
         email: auth.email,
+        role: auth.role,
         isAuthenticated,
         isAuthReady,
         authError,

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -10,11 +10,13 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import MessageBubble from './MessageBubble';
-import { colors, spacing, borderRadius, typography } from '../constants/theme';
-import { useWebSocket } from '../context/WebSocketContext';
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import MessageBubble from "./MessageBubble";
+import { useAuth } from "../context/AuthContext";
+import { updateAdminMessage, deleteAdminMessage } from "../utils/adminService";
+import { colors, spacing, borderRadius, typography } from "../constants/theme";
+import { useWebSocket } from "../context/WebSocketContext";
 
 const MessagesTab = ({
   messages = [],
@@ -34,6 +36,64 @@ const MessagesTab = ({
   const [isSending, setIsSending] = useState(false);
   const sendingStartTimeRef = useRef(null); // Track when sending started for minimum display time
   const { cancelOptimisticMessage } = useWebSocket();
+  const { token, role } = useAuth();
+  const isAdmin = role === "admin";
+
+  const handleAdminEdit = async (message) => {
+    if (!isAdmin || !token) return;
+    const id = message._id || message.id;
+    if (!id) return;
+    // Web prompt for quick edit
+    if (
+      Platform.OS === "web" &&
+      typeof window !== "undefined" &&
+      window.prompt
+    ) {
+      const newText = window.prompt("Edit message text", message.text || "");
+      if (newText === null) return;
+      try {
+        await updateAdminMessage(token, id, { text: newText });
+        Alert.alert("Saved", "Message updated");
+      } catch (error) {
+        console.error("[MessagesTab] Failed to update message", error);
+        Alert.alert("Error", error?.message || "Failed to update message");
+      }
+    } else {
+      Alert.alert(
+        "Not supported",
+        "Editing messages is currently supported on web only.",
+      );
+    }
+  };
+
+  const handleAdminDelete = async (message) => {
+    if (!isAdmin || !token) return;
+    const id = message._id || message.id;
+    if (!id) return;
+    Alert.alert(
+      "Delete message",
+      "Are you sure you want to delete this message?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteAdminMessage(token, id);
+              Alert.alert("Deleted", "Message deleted");
+            } catch (error) {
+              console.error("[MessagesTab] Failed to delete message", error);
+              Alert.alert(
+                "Error",
+                error?.message || "Failed to delete message",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
@@ -50,13 +110,15 @@ const MessagesTab = ({
   useEffect(() => {
     if (sendingMessages.length > 0 && messages.length > 0) {
       // Check if any of the messages we were sending now have a time (meaning they were sent successfully)
-      const updatedSendingMessages = sendingMessages.filter(sendingMsg => {
-        const sentMessage = messages.find(m => 
-          (m.text === sendingMsg.text || m.content === sendingMsg.text) && m.time
+      const updatedSendingMessages = sendingMessages.filter((sendingMsg) => {
+        const sentMessage = messages.find(
+          (m) =>
+            (m.text === sendingMsg.text || m.content === sendingMsg.text) &&
+            m.time,
         );
         return !sentMessage; // Keep messages that haven't been confirmed yet
       });
-      
+
       if (updatedSendingMessages.length !== sendingMessages.length) {
         // Message was confirmed as sent
         const startTime = sendingStartTimeRef.current;
@@ -65,7 +127,7 @@ const MessagesTab = ({
           const elapsedTime = Date.now() - startTime;
           const minDisplayTime = 30000; // 30 seconds in milliseconds
           const remainingTime = Math.max(0, minDisplayTime - elapsedTime);
-          
+
           if (remainingTime > 0) {
             // Still need to wait for minimum display time
             setTimeout(() => {
@@ -102,16 +164,16 @@ const MessagesTab = ({
     const startTime = Date.now();
     setIsSending(true);
     sendingStartTimeRef.current = startTime; // Record start time for minimum display
-    
+
     // Add temporary sending message
     const tempMessage = {
       text: textToSend,
-      sender: 'me',
+      sender: "me",
       isFromMe: true,
       time: null, // No time means it's still sending
     };
-    setSendingMessages(prev => [...prev, { text: textToSend }]);
-    
+    setSendingMessages((prev) => [...prev, { text: textToSend }]);
+
     // Call the onSend callback
     if (onSend) {
       const success = onSend();
@@ -119,7 +181,8 @@ const MessagesTab = ({
       if (success === false) {
         // Cancel optimistic message if send failed
         if (client && cancelOptimisticMessage) {
-          const conversationId = client?.conversationId || client?.username || client?.id;
+          const conversationId =
+            client?.conversationId || client?.username || client?.id;
           if (conversationId) {
             cancelOptimisticMessage(textToSend, conversationId);
           }
@@ -128,11 +191,13 @@ const MessagesTab = ({
         const elapsedTime = Date.now() - startTime;
         const minDisplayTime = 30000; // 30 seconds in milliseconds
         const remainingTime = Math.max(0, minDisplayTime - elapsedTime);
-        
+
         setTimeout(() => {
           // Only reset if we're still in sending state (not cancelled)
           if (sendingStartTimeRef.current === startTime) {
-            setSendingMessages(prev => prev.filter(msg => msg.text !== textToSend));
+            setSendingMessages((prev) =>
+              prev.filter((msg) => msg.text !== textToSend),
+            );
             setIsSending(false);
             sendingStartTimeRef.current = null;
           }
@@ -143,11 +208,13 @@ const MessagesTab = ({
       const elapsedTime = Date.now() - startTime;
       const minDisplayTime = 30000; // 30 seconds in milliseconds
       const remainingTime = Math.max(0, minDisplayTime - elapsedTime);
-      
+
       setTimeout(() => {
         // Only reset if we're still in sending state (not cancelled)
         if (sendingStartTimeRef.current === startTime) {
-          setSendingMessages(prev => prev.filter(msg => msg.text !== textToSend));
+          setSendingMessages((prev) =>
+            prev.filter((msg) => msg.text !== textToSend),
+          );
           setIsSending(false);
           sendingStartTimeRef.current = null;
         }
@@ -166,7 +233,8 @@ const MessagesTab = ({
       return;
     }
 
-    const conversationId = client?.conversationId || client?.username || client?.id;
+    const conversationId =
+      client?.conversationId || client?.username || client?.id;
     if (!conversationId) {
       return;
     }
@@ -177,18 +245,20 @@ const MessagesTab = ({
     }
 
     // Remove from sending messages and reset state immediately when user clicks stop
-    setSendingMessages(prev => prev.filter(msg => msg.text !== lastSendingMessage.text));
+    setSendingMessages((prev) =>
+      prev.filter((msg) => msg.text !== lastSendingMessage.text),
+    );
     setIsSending(false);
     sendingStartTimeRef.current = null; // Clear start time reference
-    
-    Alert.alert('Cancelled', 'Message sending cancelled');
+
+    Alert.alert("Cancelled", "Message sending cancelled");
   };
 
   return (
     <KeyboardAvoidingView
       style={styles.tabContent}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 215 : 200}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 215 : 200}
     >
       <ScrollView
         ref={scrollViewRef}
@@ -197,7 +267,7 @@ const MessagesTab = ({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {isFetchingMessages ? (
+        {isFetchingMessages && messages.length === 0 ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.accent.primary} />
             <Text style={styles.loadingText}>Loading messages...</Text>
@@ -225,35 +295,41 @@ const MessagesTab = ({
             {/* Show all regular messages */}
             {messages.map((message, index) => {
               // Check if this message is currently being sent (no time means it's still sending)
-              const messageText = message.text || message.content || '';
-              const isMessageSending = !message.time && sendingMessages.some(sm => sm.text === messageText);
-              
+              const messageText = message.text || message.content || "";
+              const isMessageSending =
+                !message.time &&
+                sendingMessages.some((sm) => sm.text === messageText);
+
               return (
                 <MessageBubble
                   key={`msg-${index}`}
                   message={message}
-                  isFromMe={message.sender === 'me' || message.isFromMe}
+                  isFromMe={message.sender === "me" || message.isFromMe}
                   isSending={isMessageSending}
+                  showAdminActions={isAdmin}
+                  onEdit={handleAdminEdit}
+                  onDelete={handleAdminDelete}
                 />
               );
             })}
             {/* Show temporary sending messages that aren't in the messages array yet */}
             {sendingMessages.map((sendingMsg, index) => {
               // Only show if this message isn't already in the messages array
-              const existsInMessages = messages.some(m => 
-                (m.text === sendingMsg.text || m.content === sendingMsg.text)
+              const existsInMessages = messages.some(
+                (m) =>
+                  m.text === sendingMsg.text || m.content === sendingMsg.text,
               );
-              
+
               if (existsInMessages) {
                 return null;
               }
-              
+
               return (
                 <MessageBubble
                   key={`sending-${index}`}
                   message={{
                     text: sendingMsg.text,
-                    sender: 'me',
+                    sender: "me",
                     isFromMe: true,
                     time: null,
                   }}
@@ -279,7 +355,11 @@ const MessagesTab = ({
                 style={styles.exportButton}
                 onPress={onExportPdf}
               >
-                <Ionicons name="download-outline" size={20} color={colors.text.white} />
+                <Ionicons
+                  name="download-outline"
+                  size={20}
+                  color={colors.text.white}
+                />
               </TouchableOpacity>
             )}
 
@@ -301,7 +381,10 @@ const MessagesTab = ({
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                style={[styles.sendButton, (!messageText.trim()) && styles.sendButtonDisabled]}
+                style={[
+                  styles.sendButton,
+                  !messageText.trim() && styles.sendButtonDisabled,
+                ]}
                 onPress={handleSend}
                 disabled={!messageText.trim()}
               >
@@ -354,8 +437,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: spacing.lg,
     backgroundColor: colors.background.card,
     borderTopWidth: 1,
@@ -363,14 +446,14 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   minimizedFooter: {
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
   },
   minimizeButton: {
     padding: spacing.xs,
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.background.secondary || 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: colors.background.secondary || "rgba(255, 255, 255, 0.1)",
   },
   translateButton: {
     padding: spacing.sm,
@@ -378,17 +461,17 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     width: 44,
     height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   refetchButton: {
     padding: spacing.sm,
-    backgroundColor: colors.accent.info || '#3b82f6',
+    backgroundColor: colors.accent.info || "#3b82f6",
     borderRadius: borderRadius.md,
     width: 44,
     height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   refetchButtonDisabled: {
     opacity: 0.6,
@@ -412,8 +495,8 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     width: 44,
     height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   exportButton: {
     padding: spacing.sm,
@@ -421,19 +504,19 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     width: 44,
     height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   sendButtonDisabled: {
     opacity: 0.5,
   },
   stopButton: {
-    backgroundColor: colors.accent.error || '#dc3545',
+    backgroundColor: colors.accent.error || "#dc3545",
   },
   emptyState: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingVertical: spacing.xxxl * 2,
     paddingHorizontal: spacing.xl,
   },
@@ -450,14 +533,14 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: typography.sizes.base,
     color: colors.text.muted,
-    textAlign: 'center',
+    textAlign: "center",
     lineHeight: 24,
     marginBottom: spacing.xl,
   },
   loadingHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: spacing.md,
     paddingVertical: spacing.sm,
     backgroundColor: colors.background.secondary,
@@ -473,8 +556,8 @@ const styles = StyleSheet.create({
   loadingContainer: {
     flex: 1,
     minHeight: 300,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: spacing.lg,
   },
   loadingText: {
@@ -483,8 +566,8 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
   },
   fetchButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: spacing.xl,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.xl,
