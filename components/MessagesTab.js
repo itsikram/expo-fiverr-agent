@@ -26,6 +26,7 @@ const MessagesTab = ({
   isFetchingMessages = false,
   isFooterMinimized = false,
   onToggleFooterMinimize,
+  onExportPdf,
   client = null,
 }) => {
   const scrollViewRef = useRef(null);
@@ -196,30 +197,26 @@ const MessagesTab = ({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {messages.length === 0 ? (
+        {isFetchingMessages ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.accent.primary} />
+            <Text style={styles.loadingText}>Loading messages...</Text>
+          </View>
+        ) : messages.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>💬</Text>
             <Text style={styles.emptyTitle}>No Messages Yet</Text>
             <Text style={styles.emptyText}>
-              Click 'Fetch Messages' to retrieve messages for this client.
+              Click "Fetch Messages" to retrieve messages for this client.
             </Text>
             {onFetchMessages && (
               <TouchableOpacity
-                style={[styles.fetchButton, isFetchingMessages && styles.fetchButtonDisabled]}
+                style={styles.fetchButton}
                 onPress={onFetchMessages}
-                disabled={isFetchingMessages}
+                disabled={false}
               >
-                {isFetchingMessages ? (
-                  <>
-                    <ActivityIndicator size="small" color={colors.text.white} />
-                    <Text style={styles.fetchButtonText}>Fetching...</Text>
-                  </>
-                ) : (
-                  <>
-                    <Ionicons name="refresh" size={20} color={colors.text.white} />
-                    <Text style={styles.fetchButtonText}>Fetch Messages</Text>
-                  </>
-                )}
+                <Ionicons name="refresh" size={20} color={colors.text.white} />
+                <Text style={styles.fetchButtonText}>Fetch Messages</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -277,6 +274,14 @@ const MessagesTab = ({
             >
               <Ionicons name="language" size={20} color={colors.text.white} />
             </TouchableOpacity>
+            {onExportPdf && (
+              <TouchableOpacity
+                style={styles.exportButton}
+                onPress={onExportPdf}
+              >
+                <Ionicons name="download-outline" size={20} color={colors.text.white} />
+              </TouchableOpacity>
+            )}
 
             <TextInput
               style={styles.messageInput}
@@ -410,6 +415,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  exportButton: {
+    padding: spacing.sm,
+    backgroundColor: colors.accent.secondary,
+    borderRadius: borderRadius.md,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sendButtonDisabled: {
     opacity: 0.5,
   },
@@ -439,6 +453,34 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 24,
     marginBottom: spacing.xl,
+  },
+  loadingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.background.secondary,
+    borderRadius: borderRadius.md,
+  },
+  loadingHeaderIndicator: {
+    marginRight: spacing.sm,
+  },
+  loadingHeaderText: {
+    fontSize: typography.sizes.base,
+    color: colors.text.primary,
+  },
+  loadingContainer: {
+    flex: 1,
+    minHeight: 300,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.lg,
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    fontSize: typography.sizes.base,
+    color: colors.text.secondary,
   },
   fetchButton: {
     flexDirection: 'row',

@@ -4,7 +4,10 @@
 
 export const AI_CONFIG = {
   OPENAI_API_KEY: process.env.EXPO_PUBLIC_OPENAI_API_KEY || '',
-  MODEL: process.env.EXPO_PUBLIC_OPENAI_MODEL || 'gpt-4o-mini',
+  MODEL: process.env.EXPO_PUBLIC_OPENAI_MODEL || 'gemini-1.5',
+  DEFAULT_MODEL: 'gemini-1.5',
+  AI_API_URL:
+    process.env.EXPO_PUBLIC_AI_API_URL || 'https://api.openai.com/v1/chat/completions',
 };
 
 // User profile information for AI context

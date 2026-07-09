@@ -78,19 +78,38 @@ export const SERVER_CONFIG = {
       const { loadSettings: loadStorage } = await import('../utils/storage');
       const settings = await loadStorage();
       
+      const normalizeServerUrl = (url) => {
+        if (!url) return null;
+        const trimmed = url.trim().replace(/\/+$/, '');
+        if (/^https?:\/\//i.test(trimmed)) {
+          return trimmed;
+        }
+        if (/^wss?:\/\//i.test(trimmed)) {
+          try {
+            const parsed = new URL(trimmed);
+            if (parsed.protocol === 'wss:') parsed.protocol = 'https:';
+            if (parsed.protocol === 'ws:') parsed.protocol = 'http:';
+            return parsed.toString().replace(/\/+$/, '');
+          } catch (error) {
+            return null;
+          }
+        }
+        const host = trimmed.split('/')[0];
+        const isLocal = isLocalHost(host);
+        return `${isLocal ? 'http' : 'https'}://${trimmed}`;
+      };
+
       // Support both serverUrl (full URL) and serverHost (backward compatibility)
       const serverUrl = settings?.serverUrl?.trim();
       const serverHost = settings?.serverHost?.trim();
       
       if (serverUrl) {
-        // Full URL provided (e.g., http://192.168.0.102:8765)
-        this.serverUrl = serverUrl;
+        // Full URL or host-like string provided (e.g., localhost:8765 or http://...)
+        this.serverUrl = normalizeServerUrl(serverUrl) || DEFAULT_SERVER_URL;
       } else if (serverHost) {
         // Just host provided (backward compatibility)
-        // Determine if it's local or remote
-        const isLocal = isLocalHost(serverHost);
-        const protocol = isLocal ? 'http' : 'https';
-        this.serverUrl = `${protocol}://${serverHost}`;
+        const normalized = normalizeServerUrl(serverHost);
+        this.serverUrl = normalized || DEFAULT_SERVER_URL;
       } else {
         this.serverUrl = DEFAULT_SERVER_URL;
       }

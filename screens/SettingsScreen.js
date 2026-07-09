@@ -16,14 +16,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/theme';
 import { loadSettings, saveSettings } from '../utils/storage';
 import { useWebSocket } from '../context/WebSocketContext';
+import { useAuth } from '../context/AuthContext';
 
 const SettingsScreen = ({ onBack }) => {
   const { navigateToInbox, reloadFiverrTab, isConnected } = useWebSocket();
+  const { username, email, logout, isAuthenticated } = useAuth();
   const [name, setName] = useState('');
   const [skills, setSkills] = useState('');
   const [aboutMe, setAboutMe] = useState('');
   const [serverAddress, setServerAddress] = useState('');
   const [openaiApiKey, setOpenaiApiKey] = useState('');
+  const [aiModel, setAiModel] = useState('');
+  const [aiApiUrl, setAiApiUrl] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isApiKeyMasked, setIsApiKeyMasked] = useState(false);
@@ -46,13 +50,19 @@ const SettingsScreen = ({ onBack }) => {
         } else if (settings.serverHost != null) {
           setServerAddress(settings.serverHost);
         }
-        if (settings.openaiApiKey) {
-          // Mask the API key for display
-          const maskedKey = settings.openaiApiKey.startsWith('sk-') 
-            ? 'sk-' + '*'.repeat(settings.openaiApiKey.length - 3)
-            : '*'.repeat(settings.openaiApiKey.length);
+        if (settings.aiApiKey || settings.openaiApiKey) {
+          const rawKey = settings.aiApiKey || settings.openaiApiKey;
+          const maskedKey = rawKey.startsWith('sk-')
+            ? 'sk-' + '*'.repeat(rawKey.length - 3)
+            : '*'.repeat(rawKey.length);
           setOpenaiApiKey(maskedKey);
           setIsApiKeyMasked(true);
+        }
+        if (settings.aiModel) {
+          setAiModel(settings.aiModel);
+        }
+        if (settings.aiApiUrl) {
+          setAiApiUrl(settings.aiApiUrl);
         }
       }
     } catch (error) {
@@ -63,10 +73,6 @@ const SettingsScreen = ({ onBack }) => {
   const handleSave = async () => {
     // Validate API key format if provided (and not masked)
     const apiKeyToSave = openaiApiKey.trim();
-    if (apiKeyToSave && !isApiKeyMasked && !apiKeyToSave.startsWith('sk-')) {
-      Alert.alert('Validation Error', 'OpenAI API key should start with "sk-"');
-      return;
-    }
 
     setIsSaving(true);
 
@@ -84,6 +90,9 @@ const SettingsScreen = ({ onBack }) => {
           ? serverAddressTrimmed 
           : undefined,
         openaiApiKey: isApiKeyMasked ? undefined : (apiKeyToSave || undefined),
+        aiApiKey: isApiKeyMasked ? undefined : (apiKeyToSave || undefined),
+        aiModel: aiModel.trim() || undefined,
+        aiApiUrl: aiApiUrl.trim() || undefined,
       };
 
       Object.keys(settings).forEach(key => {
@@ -226,7 +235,7 @@ const SettingsScreen = ({ onBack }) => {
             </Text>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>OpenAI API Key</Text>
+              <Text style={styles.label}>AI API Key</Text>
               <View style={styles.apiKeyContainer}>
                 <TextInput
                   style={[styles.input, styles.apiKeyInput]}
@@ -250,14 +259,83 @@ const SettingsScreen = ({ onBack }) => {
                 </TouchableOpacity>
               </View>
               <Text style={styles.hint}>
-                Your API key is stored securely and masked for privacy
+                Your AI key is stored securely and masked for privacy.
+                Use this for OpenAI-compatible endpoints and Gemini models.
+              </Text>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>AI Model</Text>
+              <TextInput
+                style={styles.input}
+                value={aiModel}
+                onChangeText={setAiModel}
+                placeholder="e.g. gemini-1.5 or gpt-4o-mini"
+                placeholderTextColor={colors.text.secondary}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Text style={styles.hint}>
+                Enter the model name to use for AI chat. Gemini models are supported.
+              </Text>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>AI API URL (optional)</Text>
+              <TextInput
+                style={styles.input}
+                value={aiApiUrl}
+                onChangeText={setAiApiUrl}
+                placeholder="https://api.openai.com/v1/chat/completions"
+                placeholderTextColor={colors.text.secondary}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Text style={styles.hint}>
+                Optional custom API URL for providers like Gemini or other OpenAI-compatible services.
               </Text>
             </View>
           </View>
 
           {/* Browser Actions Section */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Browser Actions</Text>
+            <Text style={styles.sectionTitle}>Account</Text>
+            <Text style={styles.sectionDescription}>
+              Manage your logged in user and sign out when needed.
+            </Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Signed in as</Text>
+              <Text style={styles.infoText}>{username || email || 'Unknown user'}</Text>
+              <Text style={styles.hint}>You are authenticated with the current server.</Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.actionButton, !isAuthenticated && styles.actionButtonDisabled]}
+              onPress={async () => {
+                await logout();
+                if (onBack) onBack();
+              }}
+              disabled={!isAuthenticated}
+            >
+              <LinearGradient
+                colors={isAuthenticated ? [colors.accent.error, colors.accent.danger] : [colors.text.secondary, colors.text.secondary]}
+                style={styles.actionButtonGradient}
+              >
+                <Ionicons name="log-out-outline" size={20} color={colors.text.white} style={styles.actionButtonIcon} />
+                <Text style={styles.actionButtonText}>Sign Out</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+
+            <Text style={styles.hint}>
+              {isAuthenticated
+                ? 'Sign out of the current account and return to the login screen.'
+                : 'No authenticated user is currently signed in.'}
+            </Text>
+
+            <View style={styles.divider} />
+
+          <Text style={styles.sectionTitle}>Browser Actions</Text>
             <Text style={styles.sectionDescription}>
               Control the browser extension to navigate to Fiverr pages
             </Text>
@@ -479,6 +557,20 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     overflow: 'hidden',
     ...shadows.md,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border.light,
+    marginVertical: spacing.lg,
+  },
+  infoText: {
+    color: colors.text.primary,
+    fontSize: typography.sizes.base,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background.secondary,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border.light,
   },
   actionButtonDisabled: {
     opacity: 0.5,

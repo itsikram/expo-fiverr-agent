@@ -3,6 +3,55 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const fallbackStorage = typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
+
+const storageSetItem = async (key, value) => {
+  try {
+    return await AsyncStorage.setItem(key, value);
+  } catch (error) {
+    if (fallbackStorage) {
+      fallbackStorage.setItem(key, value);
+      return;
+    }
+    throw error;
+  }
+};
+
+const storageGetItem = async (key) => {
+  try {
+    return await AsyncStorage.getItem(key);
+  } catch (error) {
+    if (fallbackStorage) {
+      return fallbackStorage.getItem(key);
+    }
+    throw error;
+  }
+};
+
+const storageRemoveItem = async (key) => {
+  try {
+    return await AsyncStorage.removeItem(key);
+  } catch (error) {
+    if (fallbackStorage) {
+      fallbackStorage.removeItem(key);
+      return;
+    }
+    throw error;
+  }
+};
+
+const storageMultiRemove = async (keys) => {
+  try {
+    return await AsyncStorage.multiRemove(keys);
+  } catch (error) {
+    if (fallbackStorage) {
+      keys.forEach((key) => fallbackStorage.removeItem(key));
+      return;
+    }
+    throw error;
+  }
+};
+
 const STORAGE_KEYS = {
   CLIENTS: '@fiverr_expo:clients',
   MESSAGES: '@fiverr_expo:messages',
@@ -10,6 +59,7 @@ const STORAGE_KEYS = {
   LAST_SYNC: '@fiverr_expo:last_sync',
   AI_CHAT_HISTORY: '@fiverr_expo:ai_chat_history',
   SETTINGS: '@fiverr_expo:settings',
+  AUTH: '@fiverr_expo:auth',
 };
 
 /**
@@ -18,7 +68,7 @@ const STORAGE_KEYS = {
 export const saveClients = async (clients) => {
   try {
     const jsonValue = JSON.stringify(clients);
-    await AsyncStorage.setItem(STORAGE_KEYS.CLIENTS, jsonValue);
+    await storageSetItem(STORAGE_KEYS.CLIENTS, jsonValue);
     console.log('[Storage] Saved clients:', clients.length);
     return true;
   } catch (error) {
@@ -32,7 +82,7 @@ export const saveClients = async (clients) => {
  */
 export const loadClients = async () => {
   try {
-    const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.CLIENTS);
+    const jsonValue = await storageGetItem(STORAGE_KEYS.CLIENTS);
     if (jsonValue != null) {
       const clients = JSON.parse(jsonValue);
       console.log('[Storage] Loaded clients:', clients.length);
@@ -51,7 +101,7 @@ export const loadClients = async () => {
 export const saveMessages = async (messages) => {
   try {
     const jsonValue = JSON.stringify(messages);
-    await AsyncStorage.setItem(STORAGE_KEYS.MESSAGES, jsonValue);
+    await storageSetItem(STORAGE_KEYS.MESSAGES, jsonValue);
     const messageCount = Object.keys(messages).length;
     console.log('[Storage] Saved messages for', messageCount, 'conversations');
     return true;
@@ -66,7 +116,7 @@ export const saveMessages = async (messages) => {
  */
 export const loadMessages = async () => {
   try {
-    const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.MESSAGES);
+    const jsonValue = await storageGetItem(STORAGE_KEYS.MESSAGES);
     if (jsonValue != null) {
       const messages = JSON.parse(jsonValue);
       const conversationCount = Object.keys(messages).length;
@@ -86,7 +136,7 @@ export const loadMessages = async () => {
 export const saveClientData = async (clientData) => {
   try {
     const jsonValue = JSON.stringify(clientData);
-    await AsyncStorage.setItem(STORAGE_KEYS.CLIENT_DATA, jsonValue);
+    await storageSetItem(STORAGE_KEYS.CLIENT_DATA, jsonValue);
     const clientCount = Object.keys(clientData).length;
     console.log('[Storage] Saved client data for', clientCount, 'clients');
     return true;
@@ -101,7 +151,7 @@ export const saveClientData = async (clientData) => {
  */
 export const loadClientData = async () => {
   try {
-    const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.CLIENT_DATA);
+    const jsonValue = await storageGetItem(STORAGE_KEYS.CLIENT_DATA);
     if (jsonValue != null) {
       const clientData = JSON.parse(jsonValue);
       const clientCount = Object.keys(clientData).length;
@@ -121,7 +171,7 @@ export const loadClientData = async () => {
 export const saveLastSync = async () => {
   try {
     const timestamp = new Date().toISOString();
-    await AsyncStorage.setItem(STORAGE_KEYS.LAST_SYNC, timestamp);
+    await storageSetItem(STORAGE_KEYS.LAST_SYNC, timestamp);
     return true;
   } catch (error) {
     console.error('[Storage] Error saving last sync:', error);
@@ -134,7 +184,7 @@ export const saveLastSync = async () => {
  */
 export const loadLastSync = async () => {
   try {
-    const timestamp = await AsyncStorage.getItem(STORAGE_KEYS.LAST_SYNC);
+    const timestamp = await storageGetItem(STORAGE_KEYS.LAST_SYNC);
     return timestamp;
   } catch (error) {
     console.error('[Storage] Error loading last sync:', error);
@@ -155,7 +205,7 @@ export const saveAIChatHistory = async (clientId, chatMessages) => {
     
     // Save back to storage
     const jsonValue = JSON.stringify(allHistories);
-    await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT_HISTORY, jsonValue);
+    await storageSetItem(STORAGE_KEYS.AI_CHAT_HISTORY, jsonValue);
     console.log('[Storage] Saved AI chat history for client:', clientId, '-', chatMessages.length, 'messages');
     return true;
   } catch (error) {
@@ -184,7 +234,7 @@ export const loadAIChatHistory = async (clientId) => {
  */
 export const loadAllAIChatHistories = async () => {
   try {
-    const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.AI_CHAT_HISTORY);
+    const jsonValue = await storageGetItem(STORAGE_KEYS.AI_CHAT_HISTORY);
     if (jsonValue != null) {
       const histories = JSON.parse(jsonValue);
       const clientCount = Object.keys(histories).length;
@@ -206,7 +256,7 @@ export const clearAIChatHistory = async (clientId) => {
     const allHistories = await loadAllAIChatHistories();
     delete allHistories[clientId];
     const jsonValue = JSON.stringify(allHistories);
-    await AsyncStorage.setItem(STORAGE_KEYS.AI_CHAT_HISTORY, jsonValue);
+    await storageSetItem(STORAGE_KEYS.AI_CHAT_HISTORY, jsonValue);
     console.log('[Storage] Cleared AI chat history for client:', clientId);
     return true;
   } catch (error) {
@@ -231,10 +281,13 @@ export const saveSettings = async (settings) => {
       openaiApiKey: settings.openaiApiKey !== undefined 
         ? settings.openaiApiKey 
         : existingSettings.openaiApiKey,
+      aiApiKey: settings.aiApiKey !== undefined
+        ? settings.aiApiKey
+        : existingSettings.aiApiKey,
     };
 
     const jsonValue = JSON.stringify(mergedSettings);
-    await AsyncStorage.setItem(STORAGE_KEYS.SETTINGS, jsonValue);
+    await storageSetItem(STORAGE_KEYS.SETTINGS, jsonValue);
     console.log('[Storage] Saved settings');
     return true;
   } catch (error) {
@@ -248,7 +301,7 @@ export const saveSettings = async (settings) => {
  */
 export const loadSettings = async () => {
   try {
-    const jsonValue = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);
+    const jsonValue = await storageGetItem(STORAGE_KEYS.SETTINGS);
     if (jsonValue != null) {
       const settings = JSON.parse(jsonValue);
       console.log('[Storage] Loaded settings');
@@ -262,17 +315,65 @@ export const loadSettings = async () => {
 };
 
 /**
+ * Save auth data to storage
+ */
+export const saveAuthData = async (authData) => {
+  try {
+    const jsonValue = JSON.stringify(authData || {});
+    await storageSetItem(STORAGE_KEYS.AUTH, jsonValue);
+    console.log('[Storage] Saved auth data');
+    return true;
+  } catch (error) {
+    console.error('[Storage] Error saving auth data:', error);
+    return false;
+  }
+};
+
+/**
+ * Load auth data from storage
+ */
+export const loadAuthData = async () => {
+  try {
+    const jsonValue = await storageGetItem(STORAGE_KEYS.AUTH);
+    if (jsonValue != null) {
+      const authData = JSON.parse(jsonValue);
+      console.log('[Storage] Loaded auth data');
+      return authData;
+    }
+    return null;
+  } catch (error) {
+    console.error('[Storage] Error loading auth data:', error);
+    return null;
+  }
+};
+
+/**
+ * Clear auth data from storage
+ */
+export const clearAuthData = async () => {
+  try {
+    await storageRemoveItem(STORAGE_KEYS.AUTH);
+    console.log('[Storage] Cleared auth data');
+    return true;
+  } catch (error) {
+    console.error('[Storage] Error clearing auth data:', error);
+    return false;
+  }
+};
+
+/**
  * Clear all stored data
  */
 export const clearAllStorage = async () => {
   try {
-    await AsyncStorage.multiRemove([
+    await storageMultiRemove([
       STORAGE_KEYS.CLIENTS,
       STORAGE_KEYS.MESSAGES,
       STORAGE_KEYS.CLIENT_DATA,
       STORAGE_KEYS.LAST_SYNC,
       STORAGE_KEYS.AI_CHAT_HISTORY,
       STORAGE_KEYS.SETTINGS,
+      STORAGE_KEYS.AUTH,
     ]);
     console.log('[Storage] Cleared all stored data');
     return true;

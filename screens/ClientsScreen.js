@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, Dimensions, Modal, Pla
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useWebSocket } from '../context/WebSocketContext';
+import { useAuth } from '../context/AuthContext';
 import ClientList from '../components/ClientList';
 import ProfileSelector from '../components/ProfileSelector';
 import ClientDetailsScreen from './ClientDetailsScreen';
@@ -26,6 +27,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     selectedSellerProfile,
     setSelectedSellerProfile,
     selectedConversationId,
+    loadingConversationId,
+    isLoadingMessages,
     setSelectedConversationId,
     requestAllData,
     requestClientList,
@@ -37,6 +40,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     sendMessageToClient,
     deleteClient,
   } = useWebSocket();
+  const { username, email } = useAuth();
 
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Open sidebar by default
@@ -453,6 +457,11 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
               messages={selectedMessages}
               onFetchMessages={handleFetchMessages}
               onSendMessage={sendMessageToClient}
+              isLoadingMessages={
+                isLoadingMessages &&
+                selectedClient &&
+                loadingConversationId === (selectedClient.conversationId || selectedClient.username || selectedClient.id)
+              }
             />
           ) : (
             <LinearGradient
@@ -502,6 +511,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         isRefetching={isRefetching}
         showRefetch={!!selectedClient}
         onNavigateToSettings={onNavigateToSettings}
+        authUsername={username}
+        authEmail={email}
         onOpenVoiceModal={handleOpenVoiceModal}
         isMinimized={isBottomBarMinimized}
         onToggleMinimize={() => setIsBottomBarMinimized(!isBottomBarMinimized)}
@@ -643,6 +654,56 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     backgroundColor: colors.accent.primary,
     borderRadius: 8,
+  },
+  userBar: {
+    width: '100%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: colors.background.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  userTitle: {
+    fontSize: typography.sizes.xs,
+    color: colors.text.secondary,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  userName: {
+    fontSize: typography.sizes.lg,
+    color: colors.text.primary,
+    fontWeight: typography.weights.semibold,
+  },
+  userEmail: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+    marginTop: 2,
+  },
+  userBar: {
+    width: '100%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: colors.background.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  userTitle: {
+    fontSize: typography.sizes.xs,
+    color: colors.text.secondary,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  userName: {
+    fontSize: typography.sizes.lg,
+    color: colors.text.primary,
+    fontWeight: typography.weights.semibold,
+  },
+  userEmail: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+    marginTop: 2,
   },
   retryButtonText: {
     color: colors.text.white,

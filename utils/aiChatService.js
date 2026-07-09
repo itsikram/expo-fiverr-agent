@@ -240,10 +240,23 @@ export const getAiChatResponse = async ({
 }) => {
   // Load API key from settings first, then fallback to config
   let apiKey = AI_CONFIG.OPENAI_API_KEY;
+  let apiUrl = AI_CONFIG.AI_API_URL;
+  let model = AI_CONFIG.MODEL || AI_CONFIG.DEFAULT_MODEL;
+
   try {
     const settings = await loadSettings();
-    if (settings && settings.openaiApiKey && !settings.openaiApiKey.startsWith('*')) {
-      apiKey = settings.openaiApiKey;
+    if (settings) {
+      if (settings.aiApiKey && !settings.aiApiKey.startsWith('*')) {
+        apiKey = settings.aiApiKey;
+      } else if (settings.openaiApiKey && !settings.openaiApiKey.startsWith('*')) {
+        apiKey = settings.openaiApiKey;
+      }
+      if (settings.aiApiUrl) {
+        apiUrl = settings.aiApiUrl;
+      }
+      if (settings.aiModel) {
+        model = settings.aiModel;
+      }
     }
   } catch (error) {
     console.warn('[aiChatService] Error loading API key from settings:', error);
@@ -251,7 +264,7 @@ export const getAiChatResponse = async ({
 
   if (!apiKey) {
     throw new Error(
-      'OpenAI API key is not configured. Please set it in Settings or in config/ai.js.'
+      'AI API key is not configured. Please set it in Settings or in config/ai.js.'
     );
   }
 
@@ -263,17 +276,34 @@ export const getAiChatResponse = async ({
     throw new Error('No client selected.');
   }
 
+  if (!model || !model.trim()) {
+    model = AI_CONFIG.DEFAULT_MODEL;
+  }
+
+  const normalizeModel = (value) => {
+    if (!value || typeof value !== 'string') return AI_CONFIG.DEFAULT_MODEL;
+    const trimmed = value.trim();
+    if (!trimmed) return AI_CONFIG.DEFAULT_MODEL;
+    if (trimmed.toLowerCase().startsWith('gemini-2.5')) {
+      console.warn('[aiChatService] Gemini 2.5 detected, falling back to default free model.');
+      return AI_CONFIG.DEFAULT_MODEL;
+    }
+    return trimmed;
+  };
+
+  model = normalizeModel(model);
+
+  // Ensure messages is an array
+  const allMessages = Array.isArray(messages) ? messages : [];
+
   // Log message count for debugging
-  const messageCount = messages && Array.isArray(messages) ? messages.length : 0;
+  const messageCount = allMessages.length;
   console.log(`[aiChatService] Generating AI response with ${messageCount} Fiverr messages from Messages tab`);
   if (messageCount > 0) {
-    const latestMessage = messages[messages.length - 1];
+    const latestMessage = allMessages[messageCount - 1];
     console.log(`[aiChatService] Latest message: ${(latestMessage?.text || latestMessage?.content || '').substring(0, 50)}...`);
   }
 
-  // Ensure messages is an array and not empty
-  const allMessages = Array.isArray(messages) && messages.length > 0 ? messages : [];
-  
   const systemMessage = buildSystemMessage(client, allMessages, userProfile);
   const apiMessages = [
     { role: 'system', content: systemMessage },
@@ -281,30 +311,45 @@ export const getAiChatResponse = async ({
     { role: 'user', content: userMessage },
   ];
 
-  const body = {
-    model: AI_CONFIG.MODEL,
-    messages: apiMessages,
-    temperature: 0.7,
-    max_tokens: 1000,
+  const requestAiResponse = async (selectedModel) => {
+    const body = {
+      model: selectedModel,
+      messages: apiMessages,
+      temperature: 0.7,
+      max_tokens: 1000,
+    };
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      const message = errorText.substring(0, 200);
+      const isModelError = response.status === 404 || /model.*does not exist|model_not_found|invalid_request_error/i.test(message);
+      throw { status: response.status, message, isModelError };
+    }
+
+    return response.json();
   };
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `OpenAI API error (${response.status}): ${errorText.substring(0, 200)}`
-    );
+  let json;
+  try {
+    json = await requestAiResponse(model);
+  } catch (error) {
+    if (error?.isModelError && model !== AI_CONFIG.DEFAULT_MODEL) {
+      console.warn(`[aiChatService] Model ${model} failed, retrying with default model ${AI_CONFIG.DEFAULT_MODEL}.`);
+      json = await requestAiResponse(AI_CONFIG.DEFAULT_MODEL);
+    } else {
+      throw new Error(`OpenAI API error (${error.status || 'unknown'}): ${error.message || 'Unknown error'}`);
+    }
   }
 
-  const json = await response.json();
   const choice = json.choices && json.choices[0];
   const content = choice && choice.message && choice.message.content;
 

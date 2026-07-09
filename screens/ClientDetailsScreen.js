@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,9 +18,10 @@ import TranslationModal from '../components/TranslationModal';
 import AIChatTab from '../components/AIChatTab';
 import MessagesTab from '../components/MessagesTab';
 import { useWebSocket } from '../context/WebSocketContext';
+import { exportClientMessagesPdf } from '../utils/pdfExport';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
-const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMessage }) => {
+const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMessage, isLoadingMessages }) => {
   const { isConnected, fetchClientDetails, clientData, navigateToInbox } = useWebSocket();
   const [activeTab, setActiveTab] = useState('messages');
   const [messageText, setMessageText] = useState('');
@@ -341,6 +343,16 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
     }, 30000); // 30 second timeout
   };
 
+  const handleExportMessages = async () => {
+    try {
+      await exportClientMessagesPdf(client, messages);
+      Alert.alert('Export complete', 'The PDF file download should begin shortly.');
+    } catch (error) {
+      console.error('[ClientDetailsScreen] PDF export failed:', error);
+      Alert.alert('Export failed', error?.message || 'Unable to export messages to PDF.');
+    }
+  };
+
   const renderMessagesTab = () => (
     <MessagesTab
       messages={messages}
@@ -349,10 +361,11 @@ const ClientDetailsScreen = ({ client, messages = [], onFetchMessages, onSendMes
       onOpenTranslationModal={() => setIsTranslationModalVisible(true)}
       onSend={handleSendMessage}
       onFetchMessages={handleFetchMessages}
-      isFetchingMessages={isFetchingMessages}
+      isFetchingMessages={isFetchingMessages || isLoadingMessages}
       isFooterMinimized={isFooterMinimized}
       onToggleFooterMinimize={() => setIsFooterMinimized(!isFooterMinimized)}
       client={client}
+      onExportPdf={Platform.OS === 'web' ? handleExportMessages : undefined}
     />
   );
 

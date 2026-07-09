@@ -131,6 +131,8 @@ export const WebSocketProvider = ({ children }) => {
   const [messages, setMessages] = useState({}); // Keyed by conversationId or username
   const [clientData, setClientData] = useState({}); // Keyed by username/conversationId
   const [selectedConversationId, setSelectedConversationId] = useState(null);
+  const [loadingConversationId, setLoadingConversationId] = useState(null);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [newClientData, setNewClientData] = useState(null); // New client data that doesn't exist in clients list
   const [sellerProfile, setSellerProfile] = useState(null); // { profileName, username, updated_at, online } - current from extension
   const [sellerProfiles, setSellerProfiles] = useState([]); // all unique profiles by username
@@ -310,6 +312,8 @@ export const WebSocketProvider = ({ children }) => {
     if (conversationIdOrUsername) {
       payload.conversationId = conversationIdOrUsername;
       payload.username = conversationIdOrUsername;
+      setLoadingConversationId(conversationIdOrUsername);
+      setIsLoadingMessages(true);
     }
     sendMessage(payload);
   }, [sendMessage]);
@@ -781,6 +785,15 @@ export const WebSocketProvider = ({ children }) => {
             });
             return updatedMessages;
           });
+
+          if (
+            loadingConversationId &&
+            (loadingConversationId === conversationId || loadingConversationId === usernameKey)
+          ) {
+            setLoadingConversationId(null);
+            setIsLoadingMessages(false);
+          }
+
           // Save sync timestamp
           saveLastSync();
         }
@@ -1123,6 +1136,10 @@ export const WebSocketProvider = ({ children }) => {
     selectedSellerProfile, // profile user selected in app
     setSelectedSellerProfile,
     selectedConversationId,
+    loadingConversationId,
+    isLoadingMessages,
+    loadingConversationId,
+    isLoadingMessages,
     setSelectedConversationId,
     connect,
     disconnect,

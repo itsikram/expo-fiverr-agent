@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, StyleSheet, AppState } from 'react-native';
+import { View, StyleSheet, AppState, ActivityIndicator, Text } from 'react-native';
 import { WebSocketProvider, useWebSocket } from './context/WebSocketContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import ClientsScreen from './screens/ClientsScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import AuthScreen from './screens/AuthScreen';
 import { colors } from './constants/theme';
 import { SERVER_CONFIG } from './config/server';
 import notificationService from './utils/notificationService';
@@ -125,7 +127,8 @@ function AppContent({ currentScreen, onNavigateToSettings, onNavigateToClients }
   );
 }
 
-export default function App() {
+function AppWrapper() {
+  const { isAuthenticated, isAuthReady } = useAuth();
   const [currentScreen, setCurrentScreen] = useState('clients'); // 'clients' or 'settings'
 
   // Load server settings on mount
@@ -141,14 +144,35 @@ export default function App() {
     setCurrentScreen('clients');
   };
 
+  if (!isAuthReady) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.accent.primary} />
+        <Text style={styles.loadingText}>Loading authentication...</Text>
+      </View>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <AuthScreen />;
+  }
+
   return (
-    <WebSocketProvider>
-      <AppContent
-        currentScreen={currentScreen}
-        onNavigateToSettings={handleNavigateToSettings}
-        onNavigateToClients={handleNavigateToClients}
-      />
-    </WebSocketProvider>
+    <AppContent
+      currentScreen={currentScreen}
+      onNavigateToSettings={handleNavigateToSettings}
+      onNavigateToClients={handleNavigateToClients}
+    />
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <WebSocketProvider>
+        <AppWrapper />
+      </WebSocketProvider>
+    </AuthProvider>
   );
 }
 
@@ -158,5 +182,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.primary,
     maxHeight: '100vh',
     maxWidth: '100vw',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.background.primary,
+  },
+  loadingText: {
+    marginTop: 16,
+    color: colors.text.secondary,
+    fontSize: 16,
   },
 });

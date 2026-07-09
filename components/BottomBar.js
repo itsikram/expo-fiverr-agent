@@ -1,9 +1,9 @@
 import React from 'react';
-import { View, TouchableOpacity, StyleSheet, SafeAreaView, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ActivityIndicator, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, shadows } from '../constants/theme';
+import { colors, spacing, borderRadius, shadows, typography } from '../constants/theme';
 
-const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefetch, onNavigateToSettings, onOpenVoiceModal, isMinimized = false, onToggleMinimize }) => {
+const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefetch, onNavigateToSettings, authUsername, authEmail, onOpenVoiceModal, isMinimized = false, onToggleMinimize }) => {
   return (
     <SafeAreaView style={[styles.safeArea, Platform.OS === 'web' && styles.safeAreaWeb]} edges={['bottom']}>
       <View style={[styles.container, Platform.OS === 'web' && styles.containerWeb]}>
@@ -65,7 +65,13 @@ const BottomBar = ({ onMenuToggle, isMenuOpen, onRefetch, isRefetching, showRefe
                   color={colors.text.white}
                 />
               </TouchableOpacity>
-              
+              {(authUsername || authEmail) && (
+                <View style={styles.authInfoContainer}>
+                  <Text style={styles.authLabel}>Logged in as</Text>
+                  <Text style={styles.authUsername}>{authUsername || authEmail || 'Unknown'}</Text>
+                  {authEmail ? <Text style={styles.authEmail}>{authEmail}</Text> : null}
+                </View>
+              )}
               {onToggleMinimize && (
                 <TouchableOpacity
                   style={styles.minimizeButton}
@@ -189,6 +195,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     ...shadows.sm,
+  },
+  authInfoContainer: {
+    marginLeft: spacing.sm,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    maxWidth: 220,
+  },
+  authLabel: {
+    fontSize: typography.sizes.xs,
+    color: colors.text.secondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  authUsername: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.white,
+  },
+  authEmail: {
+    fontSize: typography.sizes.xs,
+    color: colors.text.secondary,
   },
 });
 
