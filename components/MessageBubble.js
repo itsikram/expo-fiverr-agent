@@ -80,36 +80,42 @@ const MessageBubble = ({
     isHovered && styles.adminActionButtonHovered,
   ];
 
+  const renderAdminActions = shouldShowAdminActions ? (
+    <View
+      style={[
+        styles.adminActions,
+        isFromMe ? styles.adminActionsRight : styles.adminActionsLeft,
+      ]}
+    >
+      {onEdit ? (
+        <TouchableOpacity
+          onPress={() => onEdit(message)}
+          style={actionButtonStyle}
+        >
+          <Ionicons
+            name="pencil"
+            size={14}
+            color={isHovered ? colors.text.white : colors.text.secondary}
+          />
+        </TouchableOpacity>
+      ) : null}
+      {onDelete ? (
+        <TouchableOpacity
+          onPress={() => onDelete(message)}
+          style={actionButtonStyle}
+        >
+          <Ionicons
+            name="trash"
+            size={14}
+            color={isHovered ? colors.text.white : colors.text.secondary}
+          />
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  ) : null;
+
   const renderBody = () => (
     <>
-      {shouldShowAdminActions ? (
-        <View style={styles.adminActions}>
-          {onEdit ? (
-            <TouchableOpacity
-              onPress={() => onEdit(message)}
-              style={actionButtonStyle}
-            >
-              <Ionicons
-                name="pencil"
-                size={14}
-                color={isHovered ? colors.text.white : colors.text.secondary}
-              />
-            </TouchableOpacity>
-          ) : null}
-          {onDelete ? (
-            <TouchableOpacity
-              onPress={() => onDelete(message)}
-              style={actionButtonStyle}
-            >
-              <Ionicons
-                name="trash"
-                size={14}
-                color={isHovered ? colors.text.white : colors.text.secondary}
-              />
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      ) : null}
       {textContent ? (
         <Text style={isFromMe ? styles.textRight : styles.textLeft}>
           {textContent}
@@ -188,6 +194,7 @@ const MessageBubble = ({
         onFocus={Platform.OS === "web" ? () => setIsHovered(true) : undefined}
         onBlur={Platform.OS === "web" ? () => setIsHovered(false) : undefined}
       >
+        {renderAdminActions}
         <LinearGradient
           colors={[colors.accent.primary, colors.accent.secondary]}
           start={{ x: 0, y: 0 }}
@@ -212,6 +219,7 @@ const MessageBubble = ({
       onFocus={Platform.OS === "web" ? () => setIsHovered(true) : undefined}
       onBlur={Platform.OS === "web" ? () => setIsHovered(false) : undefined}
     >
+      {renderAdminActions}
       <View style={styles.bubbleLeft}>{renderBody()}</View>
     </View>
   );
@@ -343,13 +351,20 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs / 2,
   },
   adminActions: {
-    position: "absolute",
-    top: 6,
-    right: 6,
     flexDirection: "row",
     gap: 8,
+    marginBottom: spacing.xs,
+    alignSelf: "flex-start",
     zIndex: 20,
     pointerEvents: "box-none",
+  },
+  adminActionsRight: {
+    alignSelf: "flex-end",
+    marginRight: spacing.md,
+  },
+  adminActionsLeft: {
+    alignSelf: "flex-start",
+    marginLeft: spacing.md,
   },
   adminActionButton: {
     padding: 6,

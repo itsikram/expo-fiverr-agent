@@ -39,6 +39,68 @@ const MessagesTab = ({
   const { token, role } = useAuth();
   const isAdmin = role === "admin";
 
+  const visibleMessages = React.useMemo(() => {
+    const rawMessages = Array.isArray(messages) ? messages : [];
+    if (!client || rawMessages.length === 0) {
+      return rawMessages;
+    }
+
+    const normalizeValue = (value) => {
+      if (value === null || value === undefined || value === "") {
+        return "";
+      }
+      if (typeof value === "object") {
+        return "";
+      }
+      return String(value)
+        .trim()
+        .toLowerCase()
+        .replace(/^@/, "")
+        .replace(/[^a-z0-9]+/g, "");
+    };
+
+    const targetValues = [
+      client?.conversationId,
+      client?.conversation_id,
+      client?.username,
+      client?.clientUsername,
+      client?.client,
+      client?.id,
+      client?._id,
+      client?.clientKey,
+      client?.name,
+      client?.displayName,
+      client?.profileName,
+    ]
+      .map(normalizeValue)
+      .filter(Boolean);
+
+    return rawMessages.filter((message) => {
+      if (!message) return false;
+
+      const candidateValues = [
+        message?.conversationId,
+        message?.conversation_id,
+        message?.clientId,
+        message?.client_id,
+        message?.username,
+        message?.clientUsername,
+        message?.senderUsername,
+        message?.sender_username,
+        message?.sender,
+        message?.from,
+        message?.recipient,
+      ]
+        .map(normalizeValue)
+        .filter(Boolean);
+
+      const isMatch = candidateValues.some((value) => targetValues.includes(value));
+      if (isMatch) return true;
+
+      return message?.sender === "me" || message?.isFromMe;
+    });
+  }, [messages, client]);
+
   const handleAdminEdit = async (message) => {
     if (!isAdmin || !token) return;
     const id = message._id || message.id;
@@ -97,18 +159,18 @@ const MessagesTab = ({
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
-    if (messages.length > 0 && scrollViewRef.current) {
+    if (visibleMessages.length > 0 && scrollViewRef.current) {
       // Use a small delay to ensure the message is rendered
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 150);
     }
-  }, [messages.length, messages]);
+  }, [visibleMessages.length, visibleMessages]);
 
   // Clear sending state when a new message appears (message was successfully sent)
   // But ensure stop button displays for minimum 30 seconds
   useEffect(() => {
-    if (sendingMessages.length > 0 && messages.length > 0) {
+    if (sendingMessages.length > 0 && visibleMessages.length > 0) {
       // Check if any of the messages we were sending now have a time (meaning they were sent successfully)
       const updatedSendingMessages = sendingMessages.filter((sendingMsg) => {
         const sentMessage = messages.find(
@@ -267,12 +329,12 @@ const MessagesTab = ({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {isFetchingMessages && messages.length === 0 ? (
+        {isFetchingMessages && visibleMessages.length === 0 ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.accent.primary} />
             <Text style={styles.loadingText}>Loading messages...</Text>
           </View>
-        ) : messages.length === 0 ? (
+        ) : visibleMessages.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>💬</Text>
             <Text style={styles.emptyTitle}>No Messages Yet</Text>
@@ -293,7 +355,7 @@ const MessagesTab = ({
         ) : (
           <>
             {/* Show all regular messages */}
-            {messages.map((message, index) => {
+            {visibleMessages.map((message, index) => {
               // Check if this message is currently being sent (no time means it's still sending)
               const messageText = message.text || message.content || "";
               const isMessageSending =
@@ -315,7 +377,7 @@ const MessagesTab = ({
             {/* Show temporary sending messages that aren't in the messages array yet */}
             {sendingMessages.map((sendingMsg, index) => {
               // Only show if this message isn't already in the messages array
-              const existsInMessages = messages.some(
+              const existsInMessages = visibleMessages.some(
                 (m) =>
                   m.text === sendingMsg.text || m.content === sendingMsg.text,
               );

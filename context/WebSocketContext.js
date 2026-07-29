@@ -170,12 +170,13 @@ const getTimeUnitPriority = (timeString) => {
 
 const getClientListId = (client, index) => {
   const base =
+    client?._id ||
+    client?.id ||
     client?.username ||
     client?.conversationId ||
-    client?.conversation_id ||
-    client?.id;
+    client?.conversation_id;
   if (base) {
-    return `${String(base)}-${index + 1}`;
+    return `${String(base)}`;
   }
   return `client-${index + 1}`;
 };
@@ -281,11 +282,21 @@ const getClientLookupVariants = (value) => {
 };
 
 const doesClientMatchAssignedIds = (client, assignedIds) => {
-  const exactAssignedUsernames = (assignedIds || [])
-    .map((item) => normalizeClientLookupValue(item))
-    .filter(Boolean);
+  if (!Array.isArray(assignedIds) || assignedIds.length === 0) {
+    return false;
+  }
 
-  const candidateValues = [
+  const normalizedAssignedIds = new Set(
+    assignedIds
+      .flatMap((item) => getClientLookupVariants(item))
+      .filter(Boolean),
+  );
+
+  if (normalizedAssignedIds.size === 0) {
+    return false;
+  }
+
+  const candidateKeys = [
     client?._id,
     client?.id,
     client?.clientKey,
@@ -294,19 +305,14 @@ const doesClientMatchAssignedIds = (client, assignedIds) => {
     client?.username,
     client?.clientUsername,
     client?.client,
-    client?.profile?.username,
-    client?.user?.username,
     client?.name,
     client?.displayName,
-    client?.fullName,
     client?.profileName,
     client?.sellerUsername,
     client?.seller_username,
-    client?.email,
-    client?.clientEmail,
-  ];
-
-  const candidateKeys = candidateValues
+    client?.profile?.username,
+    client?.user?.username,
+  ]
     .flatMap((item) => getClientLookupVariants(item))
     .filter(Boolean);
 
@@ -314,46 +320,9 @@ const doesClientMatchAssignedIds = (client, assignedIds) => {
     return false;
   }
 
-  if (exactAssignedUsernames.length > 0) {
-    const exactMatch = candidateKeys.some((candidateKey) =>
-      exactAssignedUsernames.includes(candidateKey),
-    );
-    if (exactMatch) {
-      return true;
-    }
-  }
-
-  const normalizedAssignedIds = assignedIds
-    .flatMap((item) => getClientLookupVariants(item))
-    .filter(Boolean);
-
-  if (normalizedAssignedIds.length === 0) {
-    return false;
-  }
-
-  const isCandidateMatch = (candidateKey, assignedId) => {
-    if (!candidateKey || !assignedId) {
-      return false;
-    }
-
-    if (candidateKey === assignedId) {
-      return true;
-    }
-
-    if (candidateKey === assignedId.replace(/^@/, "")) {
-      return true;
-    }
-
-    return (
-      candidateKey.includes(assignedId) || assignedId.includes(candidateKey)
-    );
-  };
-
-  return candidateKeys.some((candidateKey) => {
-    return normalizedAssignedIds.some((assignedId) =>
-      isCandidateMatch(candidateKey, assignedId),
-    );
-  });
+  return candidateKeys.some((candidateKey) =>
+    normalizedAssignedIds.has(candidateKey),
+  );
 };
 
 const filterClientsForCurrentUser = (
@@ -427,9 +396,8 @@ const getMessageStorageKeys = (source) => {
     source.username,
     source.clientUsername,
     source.client,
-    source.id,
     source.clientId,
-    source._id,
+    source.clientKey,
   ];
 
   return Array.from(
@@ -440,6 +408,24 @@ const getMessageStorageKeys = (source) => {
         .filter(Boolean),
     ),
   );
+};
+
+const getCanonicalMessageStorageKey = (source) => {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  const key =
+    source.conversationId ||
+    source.conversation_id ||
+    source.clientKey ||
+    source.username ||
+    source.clientUsername ||
+    source.client ||
+    source.clientId ||
+    null;
+
+  return key ? String(key) : null;
 };
 
 const mergeConversationMessages = (
@@ -505,6 +491,8 @@ export const WebSocketProvider = ({ children }) => {
   const [selectedSellerProfile, setSelectedSellerProfile] = useState(null); // profile user selected in app (for display/context)
   const [assignedClientIds, setAssignedClientIds] = useState([]);
   const [isAssignmentsLoaded, setIsAssignmentsLoaded] = useState(false);
+  const assignedClientIdsRef = useRef([]);
+  const isAssignmentsLoadedRef = useRef(false);
   const { token, role } = useAuth();
   const fetchDetailsCallbacksRef = useRef({}); // Track callbacks for fetch_details requests
 
@@ -520,27 +508,131 @@ export const WebSocketProvider = ({ children }) => {
   const isInitialLoadRef = useRef(true);
   const saveMessagesTimeoutRef = useRef(null);
   const saveClientDataTimeoutRef = useRef(null);
+  const requestThrottleRef = useRef({
+    allData: null,
+    clientList: null,
+    messages: new Map(),
+    clientData: new Map(),
+    triggers: new Map(),
+  });
+
+  const shouldThrottleRequest = useCallback((type, key, ttlMs = 2500) => {
+    const now = Date.now();
+    const throttle = requestThrottleRef.current;
+
+    if (type === "allData") {
+      if (throttle.allData && now - throttle.allData < ttlMs) {
+        return true;
+      }
+      throttle.allData = now;
+      return false;
+    }
+
+    if (type === "clientList") {
+      if (throttle.clientList && now - throttle.clientList < ttlMs) {
+        return true;
+      }
+      throttle.clientList = now;
+      return false;
+    }
+
+    if (type === "messages") {
+      const lastRequestAt = throttle.messages.get(key || "default");
+      if (lastRequestAt && now - lastRequestAt < ttlMs) {
+        return true;
+      }
+      throttle.messages.set(key || "default", now);
+      setTimeout(() => {
+        const latest = throttle.messages.get(key || "default");
+        if (latest === now) {
+          throttle.messages.delete(key || "default");
+        }
+      }, ttlMs + 500);
+      return false;
+    }
+
+    if (type === "clientData") {
+      const lastRequestAt = throttle.clientData.get(key || "default");
+      if (lastRequestAt && now - lastRequestAt < ttlMs) {
+        return true;
+      }
+      throttle.clientData.set(key || "default", now);
+      setTimeout(() => {
+        const latest = throttle.clientData.get(key || "default");
+        if (latest === now) {
+          throttle.clientData.delete(key || "default");
+        }
+      }, ttlMs + 500);
+      return false;
+    }
+
+    if (type === "trigger") {
+      const lastRequestAt = throttle.triggers.get(key || "default");
+      if (lastRequestAt && now - lastRequestAt < ttlMs) {
+        return true;
+      }
+      throttle.triggers.set(key || "default", now);
+      setTimeout(() => {
+        const latest = throttle.triggers.get(key || "default");
+        if (latest === now) {
+          throttle.triggers.delete(key || "default");
+        }
+      }, ttlMs + 500);
+      return false;
+    }
+
+    return false;
+  }, []);
+
+  const clearThrottle = useCallback((type, key) => {
+    const throttle = requestThrottleRef.current;
+    if (type === "allData") {
+      throttle.allData = null;
+      return;
+    }
+    if (type === "clientList") {
+      throttle.clientList = null;
+      return;
+    }
+    if (type === "messages") {
+      throttle.messages.delete(key || "default");
+      return;
+    }
+    if (type === "clientData") {
+      throttle.clientData.delete(key || "default");
+      return;
+    }
+    if (type === "trigger") {
+      throttle.triggers.delete(key || "default");
+    }
+  }, []);
 
   const loadAssignments = useCallback(async () => {
     if (!token || isAdminRole) {
+      assignedClientIdsRef.current = [];
+      isAssignmentsLoadedRef.current = true;
       setAssignedClientIds([]);
       setIsAssignmentsLoaded(true);
       return [];
     }
 
+    isAssignmentsLoadedRef.current = false;
     setIsAssignmentsLoaded(false);
 
     try {
       const result = await getMyAssignments(token);
       const ids = (result.clientIds || []).filter(Boolean);
+      assignedClientIdsRef.current = ids;
       setAssignedClientIds(ids);
       console.log("[WebSocket] Loaded assigned client IDs:", ids);
       return ids;
     } catch (error) {
       console.warn("[WebSocket] Unable to load assigned client IDs:", error);
+      assignedClientIdsRef.current = [];
       setAssignedClientIds([]);
       return [];
     } finally {
+      isAssignmentsLoadedRef.current = true;
       setIsAssignmentsLoaded(true);
     }
   }, [token, isAdminRole]);
@@ -564,34 +656,6 @@ export const WebSocketProvider = ({ children }) => {
       isMounted = false;
     };
   }, [loadAssignments]);
-
-  useEffect(() => {
-    if (isAdminRole || !isAssignmentsLoaded) {
-      return;
-    }
-
-    setClients((prevClients) => {
-      const filteredClients = filterClientsForCurrentUser(
-        prevClients,
-        assignedClientIds,
-        isAdminRole,
-        isAssignmentsLoaded,
-      );
-
-      const isSameList =
-        prevClients.length === filteredClients.length &&
-        prevClients.every((client, index) => {
-          const filteredClient = filteredClients[index];
-          return (
-            client.id === filteredClient?.id &&
-            client.conversationId === filteredClient?.conversationId &&
-            client.username === filteredClient?.username
-          );
-        });
-
-      return isSameList ? prevClients : filteredClients;
-    });
-  }, [assignedClientIds, isAdminRole, isAssignmentsLoaded]);
 
   const connect = useCallback(async () => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -768,24 +832,39 @@ export const WebSocketProvider = ({ children }) => {
   }, []);
 
   const requestAllData = useCallback(() => {
+    if (shouldThrottleRequest("allData")) {
+      console.log("[WebSocket] Throttling duplicate request_all_data");
+      return false;
+    }
+
     sendMessage({ type: "request_all_data" });
-  }, [sendMessage]);
+    return true;
+  }, [sendMessage, shouldThrottleRequest]);
 
   const requestClientList = useCallback(() => {
+    if (shouldThrottleRequest("clientList")) {
+      console.log("[WebSocket] Throttling duplicate request_client_list");
+      return false;
+    }
+
     sendMessage({ type: "request_client_list" });
-  }, [sendMessage]);
+    return true;
+  }, [sendMessage, shouldThrottleRequest]);
 
   const requestMessages = useCallback(
     (conversationIdOrUsername) => {
       const payload = { type: "request_messages" };
       const clientKey = getClientKey(conversationIdOrUsername);
-      const hasCachedMessages = Boolean(
-        clientKey &&
-        Array.isArray(messages[clientKey]) &&
-        messages[clientKey].length > 0,
-      );
 
-      if (clientKey && !hasCachedMessages) {
+      if (shouldThrottleRequest("messages", clientKey || "default")) {
+        console.log(
+          "[WebSocket] Throttling duplicate request_messages for:",
+          clientKey,
+        );
+        return false;
+      }
+
+      if (clientKey) {
         payload.conversationId = clientKey;
         payload.username = clientKey;
         setLoadingConversationId(clientKey);
@@ -796,32 +875,58 @@ export const WebSocketProvider = ({ children }) => {
       }
 
       sendMessage(payload);
+      return true;
     },
-    [messages, sendMessage],
+    [sendMessage, shouldThrottleRequest],
   );
 
   const requestClientData = useCallback(
     (usernameOrConversationId) => {
       const clientKey = getClientKey(usernameOrConversationId);
+      const hasCachedClientData = Boolean(clientKey && clientData[clientKey]);
+
+      if (hasCachedClientData) {
+        return false;
+      }
+
+      if (shouldThrottleRequest("clientData", clientKey || "default")) {
+        console.log(
+          "[WebSocket] Throttling duplicate request_client_data for:",
+          clientKey,
+        );
+        return false;
+      }
+
       sendMessage({
         type: "request_client_data",
         username: clientKey,
         conversationId: clientKey,
       });
+      return true;
     },
-    [sendMessage],
+    [clientData, sendMessage, shouldThrottleRequest],
   );
 
   const triggerClientListExtraction = useCallback(() => {
+    if (shouldThrottleRequest("trigger", "extract_client_list")) {
+      return false;
+    }
+
     // Send command to trigger browser extension to fetch client list
     sendMessage({
       type: "trigger",
       action: "extract_client_list",
     });
-  }, [sendMessage]);
+    return true;
+  }, [sendMessage, shouldThrottleRequest]);
 
   const triggerMessageExtraction = useCallback(
     (targetIdentifier) => {
+      const requestKey = targetIdentifier || "default";
+      if (shouldThrottleRequest("trigger", `extract_messages:${requestKey}`)) {
+        return false;
+      }
+
       // Send command to trigger browser extension to fetch messages
       const payload = {
         type: "trigger",
@@ -832,8 +937,9 @@ export const WebSocketProvider = ({ children }) => {
         payload.username = targetIdentifier;
       }
       sendMessage(payload);
+      return true;
     },
-    [sendMessage],
+    [sendMessage, shouldThrottleRequest],
   );
 
   const triggerClientDataExtraction = useCallback(() => {
@@ -900,7 +1006,24 @@ export const WebSocketProvider = ({ children }) => {
   );
 
   const clickClientInFiverr = useCallback(
-    (identifier) => {
+    (identifierOrPayload) => {
+      const payload =
+        typeof identifierOrPayload === "string"
+          ? {
+              identifier: identifierOrPayload,
+              username: identifierOrPayload,
+              conversationId: identifierOrPayload,
+            }
+          : identifierOrPayload || {};
+
+      const identifier =
+        payload.identifier ||
+        payload.conversationId ||
+        payload.username ||
+        null;
+      const username = payload.username || identifier;
+      const conversationId = payload.conversationId || identifier;
+
       // Send command to browser extension to click/activate a client in Fiverr
       if (!identifier) {
         console.warn("[WebSocket] clickClientInFiverr: identifier is required");
@@ -908,24 +1031,13 @@ export const WebSocketProvider = ({ children }) => {
       }
       console.log("[WebSocket] Clicking client in Fiverr:", identifier);
 
-      // Send click_client command to browser extension with both identifier forms
-      sendMessage({
+      // Send click_client command to browser extension with the most specific identifier available
+      return sendMessage({
         type: "click_client",
-        username: identifier,
-        conversationId: identifier,
+        username,
+        conversationId,
         useFirstClient: false,
       });
-
-      // Also notify desktop app to select this client
-      sendMessage({
-        type: "client_activated",
-        data: {
-          username: identifier,
-          conversationId: identifier,
-        },
-      });
-
-      return true;
     },
     [sendMessage],
   );
@@ -1122,105 +1234,129 @@ export const WebSocketProvider = ({ children }) => {
           console.log("[WebSocket] Sync complete:", data.message);
           break;
 
-        case "client_list_data":
-          const incomingClients = Array.isArray(data.data?.clients)
-            ? data.data.clients
-            : [];
+        case "client_list_data": {
+          const incomingClientsRaw = data.data?.clients;
+          const incomingClients = Array.isArray(incomingClientsRaw)
+            ? incomingClientsRaw
+            : null;
 
-          if (incomingClients.length === 0) {
+          if (incomingClients === null) {
             console.log(
-              "[WebSocket] Ignoring empty client list payload; keeping existing clients.",
+              "[WebSocket] Ignoring invalid client list payload; keeping existing clients.",
+              data,
             );
             break;
           }
 
-          {
-            // Transform client list to match app format
-            const transformedClients = incomingClients.map((client, index) => {
-              // Build the transformed client object, ensuring each row has a unique stable id
-              const uniqueId = getClientListId(client, index);
-              const transformed = {
-                id: uniqueId,
-                clientKey: uniqueId,
-                name: client.name || client.username || "Unknown",
-                username: client.username,
-                company: client.company,
-                country: client.country,
-                language: client.language,
-                review_avg_rating: client.review_avg_rating,
-                review_count: client.review_count,
-                conversationId: client.conversationId,
-                avatarUrl: client.avatarUrl || client.avatar_url || null,
-                // Explicitly preserve last_message_timestamp from original client data
-                last_message_timestamp:
-                  client.last_message_timestamp !== undefined
-                    ? client.last_message_timestamp
-                    : null,
-                ...client, // Include all other properties (this should preserve last_message_timestamp)
-              };
-              transformed.id = uniqueId;
-              transformed.clientKey = uniqueId;
-              // Ensure last_message_timestamp is set (spread might override with undefined)
-              if (client.last_message_timestamp !== undefined) {
-                transformed.last_message_timestamp =
-                  client.last_message_timestamp;
-              }
-              return transformed;
-            });
+          clearThrottle("clientList");
+          console.log(
+            "[WebSocket] Received client_list_data; clients length=",
+            incomingClients.length,
+          );
 
-            // Log transformed clients to verify timestamp is included
-            if (transformedClients.length > 0) {
-              console.log(
-                "[WebSocket] Sample transformed client:",
-                JSON.stringify(transformedClients[0], null, 2),
-              );
-              console.log(
-                "[WebSocket] Clients with timestamps:",
-                transformedClients.filter((c) => c.last_message_timestamp)
-                  .length,
-                "out of",
-                transformedClients.length,
-              );
+          // Transform client list to match app format
+          const transformedClients = incomingClients.map((client, index) => {
+            // Build the transformed client object, ensuring each row has a unique stable id
+            const uniqueId = getClientListId(client, index);
+            const transformed = {
+              id: uniqueId,
+              clientKey: uniqueId,
+              name: client.name || client.username || "Unknown",
+              username: client.username,
+              company: client.company,
+              country: client.country,
+              language: client.language,
+              review_avg_rating: client.review_avg_rating,
+              review_count: client.review_count,
+              conversationId: client.conversationId,
+              avatarUrl: client.avatarUrl || client.avatar_url || null,
+              // Explicitly preserve last_message_timestamp from original client data
+              last_message_timestamp:
+                client.last_message_timestamp !== undefined
+                  ? client.last_message_timestamp
+                  : null,
+              ...client, // Include all other properties (this should preserve last_message_timestamp)
+            };
+            transformed.id = uniqueId;
+            transformed.clientKey = uniqueId;
+            // Ensure last_message_timestamp is set (spread might override with undefined)
+            if (client.last_message_timestamp !== undefined) {
+              transformed.last_message_timestamp =
+                client.last_message_timestamp;
+            }
+            return transformed;
+          });
+
+          // Log transformed clients to verify timestamp is included
+          if (transformedClients.length > 0) {
+            console.log(
+              "[WebSocket] Sample transformed client:",
+              JSON.stringify(transformedClients[0], null, 2),
+            );
+            console.log(
+              "[WebSocket] Clients with timestamps:",
+              transformedClients.filter((c) => c.last_message_timestamp).length,
+              "out of",
+              transformedClients.length,
+            );
+          } else {
+            console.log(
+              "[WebSocket] Received an empty filtered client list; clearing clients state.",
+            );
+          }
+
+          const effectiveAssignmentsLoaded = isAssignmentsLoadedRef.current;
+          const effectiveAssignedIds = assignedClientIdsRef.current;
+          const visibleClients =
+            isAdminRole ||
+            !effectiveAssignmentsLoaded ||
+            effectiveAssignedIds.length === 0
+              ? transformedClients
+              : filterClientsForCurrentUser(
+                  transformedClients,
+                  effectiveAssignedIds,
+                  isAdminRole,
+                  effectiveAssignmentsLoaded,
+                );
+
+          // Sort extracted clients by time unit priority (minutes > hours > days > weeks > months)
+          const sortedClients = visibleClients.sort((a, b) => {
+            // Sort by time unit priority (minutes > hours > days > weeks > months)
+            const timeA = getTimeUnitPriority(a.last_message_timestamp);
+            const timeB = getTimeUnitPriority(b.last_message_timestamp);
+
+            // Sort by priority (lower number = higher priority)
+            if (timeA.priority !== timeB.priority) {
+              return timeA.priority - timeB.priority;
             }
 
-            // Sort extracted clients by time unit priority (minutes > hours > days > weeks > months)
-            const sortedClients = transformedClients.sort((a, b) => {
-              // Sort by time unit priority (minutes > hours > days > weeks > months)
-              const timeA = getTimeUnitPriority(a.last_message_timestamp);
-              const timeB = getTimeUnitPriority(b.last_message_timestamp);
+            // If same priority, sort by timestamp (most recent first)
+            if (timeA.timestamp > 0 && timeB.timestamp > 0) {
+              return timeB.timestamp - timeA.timestamp; // Descending order (newest first)
+            }
 
-              // Sort by priority (lower number = higher priority)
-              if (timeA.priority !== timeB.priority) {
-                return timeA.priority - timeB.priority;
-              }
+            // If only one has a valid timestamp, prioritize it
+            if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
+            if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
 
-              // If same priority, sort by timestamp (most recent first)
-              if (timeA.timestamp > 0 && timeB.timestamp > 0) {
-                return timeB.timestamp - timeA.timestamp; // Descending order (newest first)
-              }
+            // If neither has a timestamp, maintain original order
+            return 0;
+          });
 
-              // If only one has a valid timestamp, prioritize it
-              if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
-              if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
-
-              // If neither has a timestamp, maintain original order
-              return 0;
-            });
-
-            setClients(
-              filterClientsForCurrentUser(
-                sortedClients,
-                assignedClientIds,
-                isAdminRole,
-                isAssignmentsLoaded,
-              ),
-            );
-            // Save sync timestamp
-            saveLastSync();
-          }
+          setClients(sortedClients);
+          // Save sync timestamp
+          saveLastSync();
           break;
+        }
 
         case "client_data":
+          clearThrottle(
+            "clientData",
+            data.data?.username ||
+              data.data?.conversationId ||
+              data.data?.id ||
+              "default",
+          );
           console.log("[WebSocket] Received client data:", {
             username: data.data?.username,
             name: data.data?.name,
@@ -1230,6 +1366,25 @@ export const WebSocketProvider = ({ children }) => {
             conversationId: data.data?.conversationId,
           });
           if (data.data) {
+            const shouldIgnoreClientData =
+              !isAdminRole &&
+              isAssignmentsLoadedRef.current &&
+              assignedClientIdsRef.current.length > 0 &&
+              !doesClientMatchAssignedIds(
+                data.data,
+                assignedClientIdsRef.current,
+              );
+
+            if (shouldIgnoreClientData) {
+              console.log(
+                "[WebSocket] Ignoring client data for unauthorized client:",
+                data.data?.username ||
+                  data.data?.conversationId ||
+                  data.data?.id,
+              );
+              break;
+            }
+
             const key =
               data.data.username || data.data.conversationId || "default";
             console.log("[WebSocket] Storing client data with key:", key);
@@ -1337,12 +1492,7 @@ export const WebSocketProvider = ({ children }) => {
                 return 0;
               });
 
-              return filterClientsForCurrentUser(
-                sortedClients,
-                assignedClientIds,
-                isAdminRole,
-                isAssignmentsLoaded,
-              );
+              return sortedClients;
             });
 
             // Clear any pending fetch callback for this username
@@ -1358,6 +1508,25 @@ export const WebSocketProvider = ({ children }) => {
         case "message_data":
           if (data.data?.messages) {
             const clientPayload = data.data.clients?.[0] || data.data;
+            const shouldIgnoreMessageData =
+              !isAdminRole &&
+              isAssignmentsLoadedRef.current &&
+              assignedClientIdsRef.current.length > 0 &&
+              !doesClientMatchAssignedIds(
+                clientPayload,
+                assignedClientIdsRef.current,
+              );
+
+            if (shouldIgnoreMessageData) {
+              console.log(
+                "[WebSocket] Ignoring message data for unauthorized client:",
+                clientPayload?.username ||
+                  clientPayload?.conversationId ||
+                  clientPayload?.id,
+              );
+              break;
+            }
+
             const conversationId =
               data.data.conversationId ||
               data.data.conversation_id ||
@@ -1376,6 +1545,8 @@ export const WebSocketProvider = ({ children }) => {
               break;
             }
 
+            clearThrottle("messages", conversationId);
+
             const usernameKey =
               clientPayload?.username ||
               data.data.username ||
@@ -1386,10 +1557,19 @@ export const WebSocketProvider = ({ children }) => {
               data.data.messages.find(
                 (m) => !m.isFromMe && (m.senderUsername || m.sender),
               )?.sender;
+            const canonicalKey =
+              getCanonicalMessageStorageKey(clientPayload) ||
+              getCanonicalMessageStorageKey(data.data) ||
+              conversationId ||
+              usernameKey;
+            if (!canonicalKey) {
+              break;
+            }
+
             const storageKeys = Array.from(
               new Set(
                 [
-                  conversationId,
+                  canonicalKey,
                   usernameKey,
                   ...getMessageStorageKeys(clientPayload),
                   ...getMessageStorageKeys(data.data),
@@ -1417,20 +1597,20 @@ export const WebSocketProvider = ({ children }) => {
                 existingMessages,
                 transformedMessages,
               );
-              const updatedMessages = { ...prev };
-              storageKeys.forEach((key) => {
-                updatedMessages[key] = mergedMessages;
-              });
+              const updatedMessages = {
+                ...prev,
+                [canonicalKey]: mergedMessages,
+              };
 
               saveMessages(updatedMessages).then((success) => {
                 if (success) {
                   console.log(
                     "[WebSocket] Saved messages to storage for conversation:",
-                    conversationId,
-                    usernameKey ? `and ${usernameKey}` : "",
+                    canonicalKey,
                   );
                 }
               });
+
               return updatedMessages;
             });
 
@@ -1471,9 +1651,13 @@ export const WebSocketProvider = ({ children }) => {
             data.data?.conversationId,
           );
           // Request updated messages for this conversation
-          if (data.data?.conversationId) {
-            requestClientData(data.data.conversationId);
-            requestMessages();
+          if (data.data?.conversationId || data.data?.username) {
+            const targetIdentifier =
+              data.data?.conversationId ||
+              data.data?.username ||
+              data.data?.clientUsername;
+            requestClientData(targetIdentifier);
+            requestMessages(targetIdentifier);
 
             // Show popup/alert for new message
             const clientUsername =
@@ -1617,8 +1801,9 @@ export const WebSocketProvider = ({ children }) => {
 
         case "client_activated":
           console.log("[WebSocket] Client activated:", data.data?.username);
-          // Request updated client list
-          requestClientList();
+          // Client activation is handled locally when a user selects a conversation.
+          // Avoid refreshing the whole client list on every activation event to
+          // prevent unnecessary refresh loops.
           break;
 
         case "seller_profile":

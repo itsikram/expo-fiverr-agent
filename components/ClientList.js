@@ -258,6 +258,8 @@ const ClientList = ({
     );
   });
 
+  console.log("filteredClients", filteredClients);
+
   const renderClient = ({ item }) => (
     <ClientListItem
       client={item}
