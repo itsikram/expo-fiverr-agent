@@ -231,6 +231,75 @@ const buildChatHistoryMessages = (chatHistory = []) => {
   });
 };
 
+const isMaskedKey = (value) =>
+  typeof value === 'string' && value.includes('*');
+
+const isGeminiKey = (value) =>
+  typeof value === 'string' && value.startsWith('AIza');
+
+const isOpenAiKey = (value) =>
+  typeof value === 'string' && value.startsWith('sk-');
+
+const isGeminiModel = (value) =>
+  typeof value === 'string' && /^gemini/i.test(value.trim());
+
+const isOpenAiModel = (value) =>
+  typeof value === 'string' && /^gpt/i.test(value.trim());
+
+const isGeminiUrl = (value) =>
+  typeof value === 'string' &&
+  /generativelanguage\.googleapis\.com/i.test(value);
+
+const resolveAiConfig = (settings = {}) => {
+  let apiKey = AI_CONFIG.AI_API_KEY;
+  let apiUrl = AI_CONFIG.AI_API_URL;
+  let model = AI_CONFIG.MODEL || AI_CONFIG.DEFAULT_MODEL;
+
+  if (settings.geminiApiKey && !isMaskedKey(settings.geminiApiKey)) {
+    apiKey = settings.geminiApiKey;
+  } else if (settings.aiApiKey && !isMaskedKey(settings.aiApiKey)) {
+    apiKey = settings.aiApiKey;
+  } else if (settings.openaiApiKey && !isMaskedKey(settings.openaiApiKey)) {
+    apiKey = settings.openaiApiKey;
+  }
+
+  if (settings.aiApiUrl) {
+    apiUrl = settings.aiApiUrl;
+  } else if (settings.openaiApiUrl) {
+    apiUrl = settings.openaiApiUrl;
+  }
+
+  if (settings.aiModel) {
+    model = settings.aiModel;
+  } else if (settings.openaiModel) {
+    model = settings.openaiModel;
+  }
+
+  const usingGemini =
+    isGeminiUrl(apiUrl) ||
+    isGeminiModel(model) ||
+    isGeminiKey(apiKey) ||
+    (!isOpenAiKey(apiKey) && !isOpenAiModel(model) && !/api\.openai\.com/i.test(apiUrl || ''));
+
+  if (usingGemini) {
+    if (!apiUrl || /api\.openai\.com/i.test(apiUrl)) {
+      apiUrl = AI_CONFIG.GEMINI_OPENAI_URL;
+    }
+    if (!model || isOpenAiModel(model)) {
+      model = AI_CONFIG.DEFAULT_MODEL;
+    }
+  } else if (!apiUrl) {
+    apiUrl = AI_CONFIG.OPENAI_API_URL;
+  }
+
+  return {
+    apiKey,
+    apiUrl,
+    model: (model || AI_CONFIG.DEFAULT_MODEL).trim(),
+    usingGemini,
+  };
+};
+
 export const getAiChatResponse = async ({
   userMessage,
   client,
@@ -238,34 +307,17 @@ export const getAiChatResponse = async ({
   chatHistory,
   userProfile,
 }) => {
-  // Load API key from settings first, then fallback to config
   let apiKey = AI_CONFIG.AI_API_KEY;
   let apiUrl = AI_CONFIG.AI_API_URL;
   let model = AI_CONFIG.MODEL || AI_CONFIG.DEFAULT_MODEL;
+  let usingGemini = true;
 
   try {
     const settings = await loadSettings();
-    if (settings) {
-      if (settings.aiApiKey && !settings.aiApiKey.startsWith('*')) {
-        apiKey = settings.aiApiKey;
-      } else if (settings.openaiApiKey && !settings.openaiApiKey.startsWith('*')) {
-        apiKey = settings.openaiApiKey;
-      } else if (settings.geminiApiKey && !settings.geminiApiKey.startsWith('*')) {
-        apiKey = settings.geminiApiKey;
-      }
-      if (settings.aiApiUrl) {
-        apiUrl = settings.aiApiUrl;
-      } else if (settings.openaiApiUrl) {
-        apiUrl = settings.openaiApiUrl;
-      }
-      if (settings.aiModel) {
-        model = settings.aiModel;
-      } else if (settings.openaiModel) {
-        model = settings.openaiModel;
-      }
-    }
+    ({ apiKey, apiUrl, model, usingGemini } = resolveAiConfig(settings || {}));
   } catch (error) {
     console.warn('[aiChatService] Error loading API key from settings:', error);
+    ({ apiKey, apiUrl, model, usingGemini } = resolveAiConfig({}));
   }
 
   if (!apiKey) {
@@ -297,9 +349,11 @@ export const getAiChatResponse = async ({
 
   // Ensure messages is an array
   const allMessages = Array.isArray(messages) ? messages : [];
-
-  // Log message count for debugging
   const messageCount = allMessages.length;
+
+  console.log(
+    `[aiChatService] Using ${usingGemini ? 'Gemini' : 'OpenAI'} provider with model: ${model}`,
+  );
   console.log(`[aiChatService] Generating AI response with ${messageCount} Fiverr messages from Messages tab`);
   if (messageCount > 0) {
     const latestMessage = allMessages[messageCount - 1];
@@ -342,9 +396,12 @@ export const getAiChatResponse = async ({
     return response.json();
   };
 
+  const fallbackModels = usingGemini
+    ? AI_CONFIG.GEMINI_FALLBACK_MODELS
+    : AI_CONFIG.OPENAI_FALLBACK_MODELS;
   const modelCandidates = [
     model,
-    ...AI_CONFIG.FALLBACK_MODELS.filter((m) => m !== model),
+    ...fallbackModels.filter((m) => m !== model),
   ];
 
   let json;

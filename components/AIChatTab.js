@@ -587,7 +587,7 @@ Example (return exactly this format, no other text):
       const errorResponse = {
         text:
           error.message ||
-          'AI error: Unable to generate a response. Please check your OpenAI API key and network.',
+          'AI error: Unable to generate a response. Please check your Gemini API key and network.',
         sender: 'ai',
         time: new Date().toISOString(),
       };
@@ -662,7 +662,7 @@ Example (return exactly this format, no other text):
       const errorResponse = {
         text:
           error.message ||
-          'AI error: Unable to generate a response. Please check your OpenAI API key and network.',
+          'AI error: Unable to generate a response. Please check your Gemini API key and network.',
         sender: 'ai',
         time: new Date().toISOString(),
       };

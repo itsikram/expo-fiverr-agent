@@ -1,6 +1,6 @@
 // AI configuration for Expo app
 // NOTE: For security, do NOT commit real API keys to version control.
-// The API key is loaded from environment variables (see .env file)
+// Get a free Gemini key at https://aistudio.google.com/apikey
 
 export const AI_CONFIG = {
   AI_API_KEY:
@@ -9,22 +9,29 @@ export const AI_CONFIG = {
     process.env.EXPO_PUBLIC_OPENAI_API_KEY ||
     '',
   MODEL:
+    process.env.EXPO_PUBLIC_GEMINI_MODEL ||
     process.env.EXPO_PUBLIC_AI_MODEL ||
     process.env.EXPO_PUBLIC_OPENAI_MODEL ||
-    'gpt-3.5-turbo',
-  DEFAULT_MODEL: 'gpt-3.5-turbo',
-  FALLBACK_MODELS: [
-    'gpt-3.5-turbo',
-    'gpt-4o-mini',
-    'gemini-1.5-mini',
-    'gemini-1.5',
-    'gemini-1.0',
+    'gemini-2.5-flash',
+  DEFAULT_MODEL: 'gemini-2.5-flash',
+  GEMINI_FALLBACK_MODELS: [
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro',
   ],
+  OPENAI_FALLBACK_MODELS: [
+    'gpt-4o-mini',
+    'gpt-3.5-turbo',
+  ],
+  GEMINI_OPENAI_URL:
+    'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+  OPENAI_API_URL: 'https://api.openai.com/v1/chat/completions',
   AI_API_URL:
     process.env.EXPO_PUBLIC_GEMINI_API_URL ||
     process.env.EXPO_PUBLIC_AI_API_URL ||
     process.env.EXPO_PUBLIC_OPENAI_API_URL ||
-    'https://api.openai.com/v1/chat/completions',
+    'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
 };
 
 // User profile information for AI context

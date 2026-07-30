@@ -67,13 +67,17 @@ const SettingsScreen = ({ onBack }) => {
           const rawKey =
             settings.geminiApiKey || settings.aiApiKey || settings.openaiApiKey;
           const maskedKey = rawKey.startsWith("sk-")
-            ? "sk-" + "*".repeat(rawKey.length - 3)
+            ? "sk-" + "*".repeat(Math.max(rawKey.length - 3, 8))
+            : rawKey.startsWith("AIza")
+            ? "AIza" + "*".repeat(Math.max(rawKey.length - 4, 8))
             : "*".repeat(rawKey.length);
           setApiKey(maskedKey);
           setIsApiKeyMasked(true);
         }
         if (settings.aiModel) {
           setAiModel(settings.aiModel);
+        } else {
+          setAiModel("gemini-2.5-flash");
         }
         if (settings.aiApiUrl) {
           setAiApiUrl(settings.aiApiUrl);
@@ -261,17 +265,17 @@ const SettingsScreen = ({ onBack }) => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>API Configuration</Text>
             <Text style={styles.sectionDescription}>
-              Configure your Gemini API key for AI features
+              Configure your free Gemini API key for AI features
             </Text>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>API Key (Gemini / OpenAI)</Text>
+              <Text style={styles.label}>Gemini API Key</Text>
               <View style={styles.apiKeyContainer}>
                 <TextInput
                   style={[styles.input, styles.apiKeyInput]}
                   value={apiKey}
                   onChangeText={handleApiKeyChange}
-                  placeholder="sk-..."
+                  placeholder="AIza..."
                   placeholderTextColor={colors.text.secondary}
                   secureTextEntry={!showApiKey}
                   autoCapitalize="none"
@@ -289,8 +293,8 @@ const SettingsScreen = ({ onBack }) => {
                 </TouchableOpacity>
               </View>
               <Text style={styles.hint}>
-                Your API key is stored securely and masked for privacy. Use a
-                Gemini or OpenAI key depending on your provider.
+                Get a free key from Google AI Studio (aistudio.google.com/apikey).
+                Your key is stored locally and masked for privacy.
               </Text>
             </View>
 
@@ -300,15 +304,14 @@ const SettingsScreen = ({ onBack }) => {
                 style={styles.input}
                 value={aiModel}
                 onChangeText={setAiModel}
-                placeholder="e.g. gpt-3.5-turbo, gpt-4o-mini, gemini-1.5"
+                placeholder="gemini-2.5-flash"
                 placeholderTextColor={colors.text.secondary}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
               <Text style={styles.hint}>
-                Enter the model name to use for AI chat. If the current model is
-                unavailable, the app will fall back to a supported OpenAI/Gemini
-                model such as gpt-3.5-turbo.
+                Default is gemini-2.5-flash. If unavailable, the app tries other
+                Gemini models automatically.
               </Text>
             </View>
 
@@ -318,14 +321,14 @@ const SettingsScreen = ({ onBack }) => {
                 style={styles.input}
                 value={aiApiUrl}
                 onChangeText={setAiApiUrl}
-                placeholder="https://api.openai.com/v1/chat/completions"
+                placeholder="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
                 placeholderTextColor={colors.text.secondary}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
               <Text style={styles.hint}>
-                Optional custom API URL for Gemini-compatible providers or other
-                OpenAI-compatible endpoints.
+                Leave blank to use the default Gemini endpoint. Only change this
+                if you use a custom provider.
               </Text>
             </View>
           </View>
