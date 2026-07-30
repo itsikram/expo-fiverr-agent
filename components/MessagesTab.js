@@ -16,7 +16,11 @@ import MessageBubble from "./MessageBubble";
 import { useAuth } from "../context/AuthContext";
 import { updateAdminMessage, deleteAdminMessage } from "../utils/adminService";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
-import { useWebSocket } from "../context/WebSocketContext";
+import {
+  useWebSocket,
+  getMessageTimestamp,
+} from "../context/WebSocketContext";
+import { getClientConversationId } from "../utils/clientIdentity";
 
 const MessagesTab = ({
   messages = [],
@@ -39,67 +43,26 @@ const MessagesTab = ({
   const { token, role } = useAuth();
   const isAdmin = role === "admin";
 
+  const activeConversationKey = React.useMemo(
+    () => getClientConversationId(client),
+    [client],
+  );
+
+  // Reset transient send UI when the selected client/conversation changes.
+  useEffect(() => {
+    setSendingMessages([]);
+    setIsSending(false);
+    sendingStartTimeRef.current = null;
+  }, [activeConversationKey, client?.listRowId, client?.id]);
+
+  // Parent already passes strictly filtered messages for the selected client.
   const visibleMessages = React.useMemo(() => {
-    const rawMessages = Array.isArray(messages) ? messages : [];
-    if (!client || rawMessages.length === 0) {
-      return rawMessages;
-    }
+    if (!Array.isArray(messages)) return [];
 
-    const normalizeValue = (value) => {
-      if (value === null || value === undefined || value === "") {
-        return "";
-      }
-      if (typeof value === "object") {
-        return "";
-      }
-      return String(value)
-        .trim()
-        .toLowerCase()
-        .replace(/^@/, "")
-        .replace(/[^a-z0-9]+/g, "");
-    };
-
-    const targetValues = [
-      client?.conversationId,
-      client?.conversation_id,
-      client?.username,
-      client?.clientUsername,
-      client?.client,
-      client?.id,
-      client?._id,
-      client?.clientKey,
-      client?.name,
-      client?.displayName,
-      client?.profileName,
-    ]
-      .map(normalizeValue)
-      .filter(Boolean);
-
-    return rawMessages.filter((message) => {
-      if (!message) return false;
-
-      const candidateValues = [
-        message?.conversationId,
-        message?.conversation_id,
-        message?.clientId,
-        message?.client_id,
-        message?.username,
-        message?.clientUsername,
-        message?.senderUsername,
-        message?.sender_username,
-        message?.sender,
-        message?.from,
-        message?.recipient,
-      ]
-        .map(normalizeValue)
-        .filter(Boolean);
-
-      const isMatch = candidateValues.some((value) => targetValues.includes(value));
-      if (isMatch) return true;
-
-      return message?.sender === "me" || message?.isFromMe;
-    });
-  }, [messages, client]);
+    return [...messages].sort(
+      (a, b) => getMessageTimestamp(a) - getMessageTimestamp(b),
+    );
+  }, [messages]);
 
   const handleAdminEdit = async (message) => {
     if (!isAdmin || !token) return;
@@ -356,15 +319,18 @@ const MessagesTab = ({
           <>
             {/* Show all regular messages */}
             {visibleMessages.map((message, index) => {
-              // Check if this message is currently being sent (no time means it's still sending)
               const messageText = message.text || message.content || "";
               const isMessageSending =
                 !message.time &&
                 sendingMessages.some((sm) => sm.text === messageText);
+              const messageKey =
+                message.id ||
+                message._id ||
+                `${messageText}|${message.sender || "client"}|${message.time || message.timestamp || index}`;
 
               return (
                 <MessageBubble
-                  key={`msg-${index}`}
+                  key={messageKey}
                   message={message}
                   isFromMe={message.sender === "me" || message.isFromMe}
                   isSending={isMessageSending}

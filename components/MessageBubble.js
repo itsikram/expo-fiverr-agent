@@ -13,6 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
 import { formatTime } from "../utils/formatTime";
+import { collapseDuplicateParagraphs } from "../utils/clientIdentity";
 
 const openLink = async (url) => {
   if (!url) return;
@@ -72,7 +73,9 @@ const MessageBubble = ({
 }) => {
   const attachments = Array.isArray(message.images) ? message.images : [];
   const links = Array.isArray(message.links) ? message.links : [];
-  const textContent = message.text || message.content || "";
+  const textContent = collapseDuplicateParagraphs(
+    message.text || message.content || "",
+  );
   const [isHovered, setIsHovered] = useState(false);
   const shouldShowAdminActions = showAdminActions && (onEdit || onDelete);
   const actionButtonStyle = [

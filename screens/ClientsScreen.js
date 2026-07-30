@@ -11,7 +11,17 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useWebSocket } from "../context/WebSocketContext";
+import {
+  useWebSocket,
+  normalizeClientLookupValue,
+  getMessageTimestamp,
+} from "../context/WebSocketContext";
+import {
+  findClientByListRowId,
+  findMessagesForClient,
+  getClientConversationId,
+  getListRowId,
+} from "../utils/clientIdentity";
 import { useAuth } from "../context/AuthContext";
 import ClientList from "../components/ClientList";
 import ProfileSelector from "../components/ProfileSelector";
@@ -72,9 +82,19 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   const [isAssignmentsLoaded, setIsAssignmentsLoaded] = useState(false);
   const prevClientsCountRef = React.useRef(0);
   const prevMessagesKeysRef = React.useRef(new Set());
+  const prevSelectedMessageCountRef = React.useRef(-1);
   const isFetchingClientsRef = React.useRef(false);
   const isFetchingMessagesRef = React.useRef(false);
-  const pendingClientSelectionTimeoutRef = React.useRef(null);
+  const pendingClientSelectionTimeoutsRef = React.useRef([]);
+
+  const clearPendingClientSelectionTimeouts = React.useCallback(() => {
+    pendingClientSelectionTimeoutsRef.current.forEach(clearTimeout);
+    pendingClientSelectionTimeoutsRef.current = [];
+  }, []);
+
+  React.useEffect(() => clearPendingClientSelectionTimeouts, [
+    clearPendingClientSelectionTimeouts,
+  ]);
 
   const refreshAssignments = async () => {
     const isAdminRole =
@@ -151,11 +171,14 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       return null;
     }
 
-    return String(value)
-      .trim()
-      .toLowerCase()
-      .replace(/^@/, "")
-      .replace(/[^a-z0-9]+/g, "");
+    const str = String(value).trim().toLowerCase().replace(/^@/, "");
+    const stripped = str.replace(
+      /^(user|client|conversation|conv|seller|profile|inbox|chat)[_:-]?/i,
+      "",
+    );
+    const target = stripped || str;
+
+    return target.replace(/[^a-z0-9]+/g, "");
   };
 
   const getClientLookupVariants = (value) => {
@@ -246,15 +269,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     typeof role === "string" &&
     (role === "admin" || role.toLowerCase().includes("admin"));
 
-  const normalizeClientListId = (client, index) => {
-    return (
-      client?.id ||
-      client?.clientKey ||
-      client?.conversationId ||
-      client?.username ||
-      `client-${index}`
-    );
-  };
+  const normalizeClientListId = (client, index) => getListRowId(client, index);
 
   const visibleClients = React.useMemo(() => {
     const baseList = isAdminRole
@@ -298,6 +313,11 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         return null;
       }
 
+      const byListRow = findClientByListRowId(identifier, clientsList);
+      if (byListRow) {
+        return byListRow;
+      }
+
       const normalizedIdentifier = normalizeClientLookupValue(identifier);
       if (!normalizedIdentifier) {
         return null;
@@ -315,12 +335,13 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
           client._id,
         ].filter(Boolean);
 
-        return candidateValues.some((candidate) =>
-          normalizeClientLookupValue(candidate) === normalizedIdentifier,
+        return candidateValues.some(
+          (candidate) =>
+            normalizeClientLookupValue(candidate) === normalizedIdentifier,
         );
       });
     },
-    [normalizeClientLookupValue, visibleClients],
+    [visibleClients],
   );
 
   const selectedClient = findClientByIdentifier(selectedClientId);
@@ -367,12 +388,10 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         if (includeMessages) {
           if (selectedOnly && selectedClientRef.current) {
             const client = selectedClientRef.current;
-            const conversationId =
-              client.conversationId || client.username || client.id;
+            const conversationId = getClientConversationId(client);
             if (conversationId) {
               requestClientData(conversationId);
-              requestMessages(conversationId);
-              triggerMessageExtraction(conversationId);
+              requestMessages(conversationId, { force: true });
             }
           } else if (!selectedOnly) {
             requestAllData();
@@ -399,31 +418,15 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         return;
       }
 
-      const selectedClientKey = selectedClientRef.current
-        ? selectedClientRef.current.conversationId ||
-          selectedClientRef.current.username ||
-          selectedClientRef.current.id
-        : null;
-
       targets.forEach((client) => {
-        const conversationId =
-          client.conversationId || client.username || client.id;
+        const conversationId = getClientConversationId(client);
         if (!conversationId) {
           return;
         }
 
         requestClientData(conversationId);
         if (includeMessages) {
-          requestMessages(conversationId);
-
-          // Only trigger browser extraction for the selected client to avoid activating
-          // multiple conversations during list refresh or bulk sync.
-          if (
-            selectedOnly ||
-            (selectedClientKey && conversationId === selectedClientKey)
-          ) {
-            triggerMessageExtraction(conversationId);
-          }
+          requestMessages(conversationId, { force: selectedOnly });
         }
       });
     },
@@ -480,53 +483,41 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
   }, [clients.length, hasInitialDataLoaded]);
 
-  // Show snackbar when messages are fetched
+  // Show snackbar when messages are fetched for the selected client
   useEffect(() => {
-    if (hasInitialDataLoaded && isFetchingMessagesRef.current) {
-      const currentMessageKeys = new Set(Object.keys(messages));
-      const prevMessageKeys = prevMessagesKeysRef.current;
-
-      // Check if new conversations were added or messages were updated
-      const hasNewConversations = Array.from(currentMessageKeys).some(
-        (key) => !prevMessageKeys.has(key),
-      );
-      const hasAnyMessages = currentMessageKeys.size > 0;
-
-      // Show snackbar if messages were fetched (new conversations or any messages exist)
-      if (
-        hasNewConversations ||
-        (hasAnyMessages && prevMessageKeys.size === 0)
-      ) {
-        const conversationCount = currentMessageKeys.size;
-        const totalMessages = Object.values(messages).reduce(
-          (sum, msgs) => sum + (msgs?.length || 0),
-          0,
-        );
-        if (selectedClient) {
-          // If a specific client is selected, show message count for that conversation
-          const conversationId =
-            selectedClient.conversationId ||
-            selectedClient.username ||
-            selectedClient.id;
-          const clientMessages = messages[conversationId] || [];
-          setSnackbarMessage(
-            `Fetched ${clientMessages.length} message${clientMessages.length !== 1 ? "s" : ""} from ${selectedClient.name || selectedClient.username}`,
-          );
-        } else {
-          setSnackbarMessage(
-            `Fetched messages from ${conversationCount} conversation${conversationCount !== 1 ? "s" : ""}`,
-          );
-        }
-        setSnackbarType("success");
-        setSnackbarVisible(true);
-        isFetchingMessagesRef.current = false;
+    if (!hasInitialDataLoaded || !isFetchingMessagesRef.current || !selectedClient) {
+      if (hasInitialDataLoaded) {
+        prevMessagesKeysRef.current = new Set(Object.keys(messages));
       }
-
-      prevMessagesKeysRef.current = currentMessageKeys;
-    } else if (hasInitialDataLoaded) {
-      // Update the ref even if not fetching, to track state
-      prevMessagesKeysRef.current = new Set(Object.keys(messages));
+      return;
     }
+
+    const activeConversationKey = getClientConversationId(selectedClient);
+    if (!activeConversationKey) {
+      return;
+    }
+
+    const clientMessages = findMessagesForClient(
+      messages,
+      selectedClient,
+      activeConversationKey,
+    );
+    const prevCount = prevSelectedMessageCountRef.current;
+    const countChanged = clientMessages.length !== prevCount;
+
+    if (countChanged) {
+      setSnackbarMessage(
+        clientMessages.length > 0
+          ? `Fetched ${clientMessages.length} message${clientMessages.length !== 1 ? "s" : ""} from ${selectedClient.name || selectedClient.username}`
+          : `No messages found for ${selectedClient.name || selectedClient.username}`,
+      );
+      setSnackbarType(clientMessages.length > 0 ? "success" : "info");
+      setSnackbarVisible(true);
+      isFetchingMessagesRef.current = false;
+    }
+
+    prevSelectedMessageCountRef.current = clientMessages.length;
+    prevMessagesKeysRef.current = new Set(Object.keys(messages));
   }, [messages, hasInitialDataLoaded, selectedClient]);
 
   // Show modal when new client data is received (only after initial data is loaded)
@@ -582,161 +573,170 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     setIsNewClientModalVisible(false);
   };
 
-  // Get messages for selected client
+  // Get messages for selected client only (strict conversation ownership).
+  const activeConversationKey =
+    selectedConversationId || getClientConversationId(selectedClient);
+
   const selectedMessages = React.useMemo(() => {
-    if (!selectedClient) return [];
+    if (!selectedClient || !activeConversationKey) return [];
 
-    const selectedClientKey =
-      selectedClient.conversationId ||
-      selectedClient.username ||
-      selectedClient.id ||
-      selectedClient.clientKey;
+    return findMessagesForClient(
+      messages,
+      selectedClient,
+      activeConversationKey,
+    );
+  }, [selectedClient, selectedConversationId, activeConversationKey, messages]);
 
-    const currentLoadingForSelected =
-      isLoadingMessages &&
-      loadingConversationId &&
-      normalizeClientLookupValue(loadingConversationId) ===
-        normalizeClientLookupValue(selectedClientKey);
-
-    if (currentLoadingForSelected) {
+  // While switching clients, hide messages tagged for a different conversation.
+  const displayMessages = React.useMemo(() => {
+    if (!selectedClient || !activeConversationKey) {
       return [];
     }
 
-    const candidateKeys = [
-      selectedConversationId,
-      selectedClient.conversationId,
-      selectedClient.conversation_id,
-      selectedClient.username,
-      selectedClient.clientUsername,
-      selectedClient.client,
-      selectedClient.id,
-      selectedClient._id,
-      selectedClient.clientKey,
-    ]
-      .filter(Boolean)
-      .map((value) => String(value));
+    const activeNorm = normalizeClientLookupValue(activeConversationKey);
+    const isLoadingThisConversation =
+      isLoadingMessages &&
+      loadingConversationId &&
+      normalizeClientLookupValue(loadingConversationId) === activeNorm;
 
-    const exactMatchKey = candidateKeys.find((key) => {
-      return Array.isArray(messages[key]) && messages[key].length > 0;
-    });
-    if (exactMatchKey) {
-      return messages[exactMatchKey] || [];
+    if (!isLoadingThisConversation) {
+      return selectedMessages;
     }
 
-    const normalizedCandidates = new Set(
-      candidateKeys
-        .map((value) => normalizeClientLookupValue(value))
-        .filter(Boolean),
-    );
-
-    const normalizedMatchKey = Object.keys(messages).find((key) => {
-      const normalizedKey = normalizeClientLookupValue(key);
-      return normalizedKey && normalizedCandidates.has(normalizedKey);
+    return selectedMessages.filter((message) => {
+      const conv = message?.conversationId || message?.conversation_id;
+      if (!conv) {
+        return Boolean(message?.optimistic);
+      }
+      return normalizeClientLookupValue(conv) === activeNorm;
     });
-
-    return normalizedMatchKey && Array.isArray(messages[normalizedMatchKey])
-      ? messages[normalizedMatchKey]
-      : [];
   }, [
     selectedClient,
-    messages,
-    selectedConversationId,
+    activeConversationKey,
+    selectedMessages,
     isLoadingMessages,
     loadingConversationId,
   ]);
 
-  // Same flow as selecting a client: activate in browser, then extract quickly.
-  const EXTRACTION_DELAY_MS = 300;
+  // Inbox activation + extraction is handled by click_client in the extension.
+  // Only fetch cached/server messages here — do not trigger extraction early.
+  const activateClientAndLoadMessages = React.useCallback(
+    (client) => {
+      if (!client) {
+        return false;
+      }
 
-  const handleFetchMessages = () => {
-    if (!selectedClient || !isConnected) {
-      if (selectedClient)
-        requestMessages(
-          selectedClient.conversationId ||
-            selectedClient.username ||
-            selectedClient.id,
+      const conversationId = getClientConversationId(client);
+      const username = client.username;
+      const targetIdentifier = conversationId || username;
+
+      if (!targetIdentifier) {
+        console.warn(
+          "[ClientsScreen] Cannot activate client without username/conversationId:",
+          client,
         );
-      return;
-    }
-    const conversationId =
-      selectedClient.conversationId ||
-      selectedClient.username ||
-      selectedClient.id;
-    const username = selectedClient.username;
-    const targetIdentifier = conversationId || username || selectedClient.id;
-    isFetchingMessagesRef.current = true;
+        return false;
+      }
 
-    if (username) {
+      prevSelectedMessageCountRef.current = -1;
+      isFetchingMessagesRef.current = true;
+      setSelectedConversationId(targetIdentifier);
+      requestClientData(targetIdentifier);
+
+      // Show cached/server messages immediately while the extension loads the inbox.
+      requestMessages(targetIdentifier, { force: true });
+
+      if (!isConnected) {
+        return true;
+      }
+
+      clearPendingClientSelectionTimeouts();
+
+      console.log(
+        "[ClientsScreen] Activating client in Fiverr inbox:",
+        targetIdentifier,
+      );
       clickClientInFiverr({
         identifier: targetIdentifier,
         conversationId,
         username,
       });
-      setTimeout(() => {
-        triggerMessageExtraction(targetIdentifier);
-        requestMessages(targetIdentifier);
-      }, EXTRACTION_DELAY_MS);
-    } else {
-      triggerMessageExtraction(targetIdentifier);
-      requestMessages(targetIdentifier);
+
+      // Fallback: if the extension missed extraction, retry once after inbox has had time to load.
+      const fallbackTimeoutId = setTimeout(() => {
+        const activeClient = selectedClientRef.current;
+        const activeTarget = activeClient
+          ? getClientConversationId(activeClient)
+          : null;
+        if (activeTarget !== targetIdentifier) {
+          return;
+        }
+        requestMessages(targetIdentifier, { force: true });
+      }, 18000);
+      pendingClientSelectionTimeoutsRef.current.push(fallbackTimeoutId);
+
+      return true;
+    },
+    [
+      clearPendingClientSelectionTimeouts,
+      clickClientInFiverr,
+      isConnected,
+      requestClientData,
+      requestMessages,
+    ],
+  );
+
+  const handleFetchMessages = () => {
+    if (!selectedClient) {
+      return;
     }
+
+    const targetIdentifier = getClientConversationId(selectedClient);
+    if (!targetIdentifier) {
+      console.warn(
+        "[ClientsScreen] Fetch messages aborted: client has no username/conversationId",
+        selectedClient,
+      );
+      Alert.alert(
+        "Cannot Fetch Messages",
+        "This client has no username or conversation ID. Try refreshing the client list.",
+      );
+      return;
+    }
+
+    activateClientAndLoadMessages(selectedClient);
   };
 
   const handleSelectClient = (clientId) => {
-    setSelectedClientId(clientId);
-    setIsSidebarOpen(false); // Close sidebar when client is selected
-
-    if (pendingClientSelectionTimeoutRef.current) {
-      clearTimeout(pendingClientSelectionTimeoutRef.current);
-      pendingClientSelectionTimeoutRef.current = null;
-    }
-
     const client = findClientByIdentifier(clientId, visibleClients);
-    if (client) {
-      const conversationId =
-        client.conversationId || client.username || client.id;
-      const username = client.username;
-      const targetIdentifier = conversationId || username || client.id;
-      const normalizedConversationId = String(conversationId || "").trim();
+    const conversationKey = client ? getClientConversationId(client) : null;
 
-      setSelectedConversationId(normalizedConversationId || targetIdentifier);
-      requestClientData(targetIdentifier);
-      isFetchingMessagesRef.current = true;
+    setSelectedClientId(clientId);
+    setIsSidebarOpen(false);
 
-      if (targetIdentifier && isConnected) {
-        console.log(
-          "[ClientsScreen] Activating client in browser:",
-          targetIdentifier,
-        );
-        clickClientInFiverr({
-          identifier: targetIdentifier,
-          conversationId,
-          username,
-        });
-        pendingClientSelectionTimeoutRef.current = setTimeout(() => {
-          triggerMessageExtraction(targetIdentifier);
-          requestMessages(targetIdentifier);
-          pendingClientSelectionTimeoutRef.current = null;
-        }, EXTRACTION_DELAY_MS);
-      } else {
-        triggerMessageExtraction(targetIdentifier);
-        requestMessages(targetIdentifier);
-      }
+    if (conversationKey) {
+      setSelectedConversationId(conversationKey);
     }
+
+    if (!client) {
+      return;
+    }
+
+    clearPendingClientSelectionTimeouts();
+    activateClientAndLoadMessages(client);
   };
 
   const handleDeleteClient = (clientId) => {
-    // Find the client to show its name in the confirmation
-    const clientToDelete = visibleClients.find((c) => {
-      return (
-        c.id === clientId ||
-        c.conversationId === clientId ||
-        c.username === clientId
-      );
-    });
+    const clientToDelete = findClientByIdentifier(clientId, visibleClients);
 
     const clientName =
       clientToDelete?.name || clientToDelete?.username || "this client";
+
+    const deleteKey =
+      clientToDelete?.username ||
+      clientToDelete?.conversationId ||
+      clientToDelete?.id ||
+      clientId;
 
     // Handle delete logic
     Alert.alert(
@@ -748,15 +748,14 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
           text: "Delete",
           style: "destructive",
           onPress: () => {
-            console.log("[ClientsScreen] Deleting client:", clientId);
+            console.log("[ClientsScreen] Deleting client:", deleteKey);
 
-            // Delete the client using the context function
-            const deleted = deleteClient(clientId);
+            const deleted = deleteClient(deleteKey);
 
             if (deleted) {
-              // Clear selected client if it's the one being deleted
               if (selectedClientId === clientId) {
                 setSelectedClientId(null);
+                setSelectedConversationId(null);
               }
 
               Alert.alert("Success", "Client has been removed.");
@@ -791,6 +790,18 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         includeMessages: true,
         selectedOnly: true,
       });
+
+      const currentClient = selectedClientRef.current;
+      if (currentClient && isConnected) {
+        const targetIdentifier = getClientConversationId(currentClient);
+        if (targetIdentifier) {
+          clickClientInFiverr({
+            identifier: targetIdentifier,
+            conversationId: currentClient.conversationId,
+            username: currentClient.username,
+          });
+        }
+      }
     } catch (error) {
       console.warn("[ClientsScreen] Refetch failed:", error);
     } finally {
@@ -812,11 +823,9 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
 
     const currentClient = selectedClient || selectedClientRef.current || null;
-    const targetIdentifier =
-      currentClient?.conversationId ||
-      currentClient?.username ||
-      currentClient?.id ||
-      selectedConversationId;
+    const conversationId = getClientConversationId(currentClient);
+    const username = currentClient?.username;
+    const targetIdentifier = conversationId || username;
 
     if (!targetIdentifier) {
       Alert.alert(
@@ -830,8 +839,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     isFetchingMessagesRef.current = true;
 
     try {
-      triggerMessageExtraction(targetIdentifier);
-      requestMessages(targetIdentifier);
+      activateClientAndLoadMessages(currentClient);
     } catch (error) {
       console.warn(
         "[ClientsScreen] Reload current client messages failed:",
@@ -1001,17 +1009,15 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         <View style={styles.details}>
           {selectedClient ? (
             <ClientDetailsScreen
+              key={activeConversationKey || selectedClientId}
               client={selectedClient}
-              messages={selectedMessages}
+              messages={displayMessages}
               onFetchMessages={handleFetchMessages}
               onSendMessage={sendMessageToClient}
               isLoadingMessages={
                 isLoadingMessages &&
                 selectedClient &&
-                loadingConversationId ===
-                  (selectedClient.conversationId ||
-                    selectedClient.username ||
-                    selectedClient.id)
+                loadingConversationId === getClientConversationId(selectedClient)
               }
             />
           ) : (

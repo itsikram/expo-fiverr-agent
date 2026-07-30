@@ -23,6 +23,15 @@ function AppContent({
 }) {
   const appState = useRef(AppState.currentState);
 
+  // Purge legacy local storage messages on mount
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        window.localStorage.removeItem("@fiverr_expo:messages");
+      } catch (e) {}
+    }
+  }, []);
+
   // Initialize notifications and set up listeners
   useEffect(() => {
     let isMounted = true;

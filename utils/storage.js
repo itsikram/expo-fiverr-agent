@@ -5,6 +5,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const fallbackStorage = typeof window !== 'undefined' && window.localStorage ? window.localStorage : null;
 
+if (fallbackStorage) {
+  try {
+    fallbackStorage.removeItem('@fiverr_expo:messages');
+  } catch (e) {}
+}
+
 const storageSetItem = async (key, value) => {
   try {
     return await AsyncStorage.setItem(key, value);
@@ -99,35 +105,18 @@ export const loadClients = async () => {
  * Save messages to storage
  */
 export const saveMessages = async (messages) => {
-  try {
-    const jsonValue = JSON.stringify(messages);
-    await storageSetItem(STORAGE_KEYS.MESSAGES, jsonValue);
-    const messageCount = Object.keys(messages).length;
-    console.log('[Storage] Saved messages for', messageCount, 'conversations');
-    return true;
-  } catch (error) {
-    console.error('[Storage] Error saving messages:', error);
-    return false;
-  }
+  // Messages persistence in local storage is disabled per project requirement.
+  // Messages are managed strictly in-memory and retrieved from server/MongoDB.
+  return true;
 };
 
 /**
- * Load messages from storage
+ * Load messages from storage (Disabled)
  */
 export const loadMessages = async () => {
-  try {
-    const jsonValue = await storageGetItem(STORAGE_KEYS.MESSAGES);
-    if (jsonValue != null) {
-      const messages = JSON.parse(jsonValue);
-      const conversationCount = Object.keys(messages).length;
-      console.log('[Storage] Loaded messages for', conversationCount, 'conversations');
-      return messages;
-    }
-    return {};
-  } catch (error) {
-    console.error('[Storage] Error loading messages:', error);
-    return {};
-  }
+  // Clear any legacy messages saved in storage
+  storageRemoveItem(STORAGE_KEYS.MESSAGES).catch(() => {});
+  return {};
 };
 
 /**

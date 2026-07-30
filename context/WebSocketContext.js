@@ -19,6 +19,12 @@ import {
 } from "../utils/storage";
 import notificationService from "../utils/notificationService";
 import { useAuth } from "./AuthContext";
+import {
+  getClientConversationId,
+  isGenericClientKey,
+  dedupeMessages,
+  collapseDuplicateParagraphs,
+} from "../utils/clientIdentity";
 
 const WebSocketContext = createContext(null);
 
@@ -184,17 +190,32 @@ const getClientListId = (client, index) => {
 const getClientKey = (clientOrIdentifier) => {
   if (!clientOrIdentifier) return null;
   if (typeof clientOrIdentifier === "string") {
-    return clientOrIdentifier;
+    const trimmed = String(clientOrIdentifier).trim();
+    return isGenericClientKey(trimmed) ? null : trimmed;
   }
-  return (
-    clientOrIdentifier.username ||
-    clientOrIdentifier.conversationId ||
-    clientOrIdentifier.id ||
-    null
-  );
+  return getClientConversationId(clientOrIdentifier);
 };
 
-const normalizeClientLookupValue = (value) => {
+const getCanonicalMessageStorageKey = (source) => {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  const candidates = [
+    source.username,
+    source.clientUsername,
+    source.conversationId,
+    source.conversation_id,
+    source.client,
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).trim())
+    .filter((value) => !isGenericClientKey(value));
+
+  return candidates[0] || null;
+};
+
+export const normalizeClientLookupValue = (value) => {
   if (value === null || value === undefined || value === "") {
     return null;
   }
@@ -224,11 +245,14 @@ const normalizeClientLookupValue = (value) => {
     return null;
   }
 
-  return String(value)
-    .trim()
-    .toLowerCase()
-    .replace(/^@/, "")
-    .replace(/[^a-z0-9]+/g, "");
+  const str = String(value).trim().toLowerCase().replace(/^@/, "");
+  const stripped = str.replace(
+    /^(user|client|conversation|conv|seller|profile|inbox|chat)[_:-]?/i,
+    "",
+  );
+  const target = stripped || str;
+
+  return target.replace(/[^a-z0-9]+/g, "");
 };
 
 const getClientLookupVariants = (value) => {
@@ -372,7 +396,7 @@ const filterClientsForCurrentUser = (
   return filteredClients;
 };
 
-const getMessageTimestamp = (message) => {
+export const getMessageTimestamp = (message) => {
   if (!message) return 0;
   const raw =
     message.time ||
@@ -381,8 +405,19 @@ const getMessageTimestamp = (message) => {
     message.created_at ||
     message.createdAt;
   if (!raw) return 0;
+  if (typeof raw === "number") return raw;
+
   const parsed = new Date(raw);
-  return isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+  if (!isNaN(parsed.getTime())) {
+    return parsed.getTime();
+  }
+
+  const priorityInfo = getTimeUnitPriority(raw);
+  if (priorityInfo && priorityInfo.timestamp > 0) {
+    return priorityInfo.timestamp;
+  }
+
+  return 0;
 };
 
 const getMessageStorageKeys = (source) => {
@@ -410,68 +445,11 @@ const getMessageStorageKeys = (source) => {
   );
 };
 
-const getCanonicalMessageStorageKey = (source) => {
-  if (!source || typeof source !== "object") {
-    return null;
-  }
-
-  const key =
-    source.conversationId ||
-    source.conversation_id ||
-    source.clientKey ||
-    source.username ||
-    source.clientUsername ||
-    source.client ||
-    source.clientId ||
-    null;
-
-  return key ? String(key) : null;
-};
-
 const mergeConversationMessages = (
   existingMessages = [],
   incomingMessages = [],
 ) => {
-  const byKey = new Map();
-  const addMessage = (message, index) => {
-    if (!message) return;
-    const normalized = {
-      ...message,
-      id:
-        message.id ||
-        message._id ||
-        message.messageId ||
-        `${message.time || message.timestamp || message.date || Date.now()}-${index}`,
-      text: message.text || message.content || message.message || "",
-      sender: message.sender || (message.isFromMe ? "me" : "client"),
-      isFromMe:
-        message.isFromMe !== undefined
-          ? Boolean(message.isFromMe)
-          : message.sender === "me",
-      time:
-        message.time ||
-        message.timestamp ||
-        message.date ||
-        message.created_at ||
-        message.createdAt,
-    };
-
-    const key =
-      normalized.id ||
-      `${normalized.time || ""}-${normalized.text || ""}-${normalized.sender || ""}-${index}`;
-    if (!byKey.has(key)) {
-      byKey.set(key, normalized);
-    }
-  };
-
-  (existingMessages || []).forEach((message, index) =>
-    addMessage(message, index),
-  );
-  (incomingMessages || []).forEach((message, index) =>
-    addMessage(message, index),
-  );
-
-  return Array.from(byKey.values()).sort(
+  return dedupeMessages([...(existingMessages || []), ...(incomingMessages || [])]).sort(
     (a, b) => getMessageTimestamp(a) - getMessageTimestamp(b),
   );
 };
@@ -485,6 +463,7 @@ export const WebSocketProvider = ({ children }) => {
   const [selectedConversationId, setSelectedConversationId] = useState(null);
   const [loadingConversationId, setLoadingConversationId] = useState(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const loadingConversationIdRef = useRef(null);
   const [newClientData, setNewClientData] = useState(null); // New client data that doesn't exist in clients list
   const [sellerProfile, setSellerProfile] = useState(null); // { profileName, username, updated_at, online } - current from extension
   const [sellerProfiles, setSellerProfiles] = useState([]); // all unique profiles by username
@@ -852,11 +831,15 @@ export const WebSocketProvider = ({ children }) => {
   }, [sendMessage, shouldThrottleRequest]);
 
   const requestMessages = useCallback(
-    (conversationIdOrUsername) => {
+    (conversationIdOrUsername, options = {}) => {
+      const { force = false } = options;
       const payload = { type: "request_messages" };
       const clientKey = getClientKey(conversationIdOrUsername);
 
-      if (shouldThrottleRequest("messages", clientKey || "default")) {
+      if (
+        !force &&
+        shouldThrottleRequest("messages", clientKey || "default")
+      ) {
         console.log(
           "[WebSocket] Throttling duplicate request_messages for:",
           clientKey,
@@ -864,12 +847,18 @@ export const WebSocketProvider = ({ children }) => {
         return false;
       }
 
+      if (force && clientKey) {
+        clearThrottle("messages", clientKey);
+      }
+
       if (clientKey) {
         payload.conversationId = clientKey;
         payload.username = clientKey;
+        loadingConversationIdRef.current = clientKey;
         setLoadingConversationId(clientKey);
         setIsLoadingMessages(true);
       } else {
+        loadingConversationIdRef.current = null;
         setLoadingConversationId(null);
         setIsLoadingMessages(false);
       }
@@ -877,7 +866,7 @@ export const WebSocketProvider = ({ children }) => {
       sendMessage(payload);
       return true;
     },
-    [sendMessage, shouldThrottleRequest],
+    [clearThrottle, sendMessage, shouldThrottleRequest],
   );
 
   const requestClientData = useCallback(
@@ -921,13 +910,21 @@ export const WebSocketProvider = ({ children }) => {
   }, [sendMessage, shouldThrottleRequest]);
 
   const triggerMessageExtraction = useCallback(
-    (targetIdentifier) => {
+    (targetIdentifier, options = {}) => {
+      const { force = false } = options;
       const requestKey = targetIdentifier || "default";
-      if (shouldThrottleRequest("trigger", `extract_messages:${requestKey}`)) {
+      if (
+        !force &&
+        shouldThrottleRequest("trigger", `extract_messages:${requestKey}`)
+      ) {
         return false;
       }
 
-      // Send command to trigger browser extension to fetch messages
+      if (force && targetIdentifier) {
+        clearThrottle("trigger", `extract_messages:${requestKey}`);
+      }
+
+      // Explicit extraction only — request_messages returns cached data without extracting.
       const payload = {
         type: "trigger",
         action: "extract_messages",
@@ -939,7 +936,7 @@ export const WebSocketProvider = ({ children }) => {
       sendMessage(payload);
       return true;
     },
-    [sendMessage, shouldThrottleRequest],
+    [clearThrottle, sendMessage, shouldThrottleRequest],
   );
 
   const triggerClientDataExtraction = useCallback(() => {
@@ -1016,26 +1013,32 @@ export const WebSocketProvider = ({ children }) => {
             }
           : identifierOrPayload || {};
 
-      const identifier =
-        payload.identifier ||
-        payload.conversationId ||
+      const rawId =
         payload.username ||
-        null;
-      const username = payload.username || identifier;
-      const conversationId = payload.conversationId || identifier;
+        payload.conversationId ||
+        payload.identifier ||
+        "";
 
-      // Send command to browser extension to click/activate a client in Fiverr
-      if (!identifier) {
-        console.warn("[WebSocket] clickClientInFiverr: identifier is required");
+      const cleanId = String(rawId)
+        .trim()
+        .replace(/^@/, "")
+        .replace(
+          /^(user|client|conversation|conv|seller|profile|inbox|chat)[_:-]?/i,
+          "",
+        );
+
+      if (!cleanId) {
+        console.warn(
+          "[WebSocket] clickClientInFiverr: valid username identifier is required",
+        );
         return false;
       }
-      console.log("[WebSocket] Clicking client in Fiverr:", identifier);
+      console.log("[WebSocket] Clicking client in Fiverr:", cleanId);
 
-      // Send click_client command to browser extension with the most specific identifier available
       return sendMessage({
         type: "click_client",
-        username,
-        conversationId,
+        username: cleanId,
+        conversationId: cleanId,
         useFirstClient: false,
       });
     },
@@ -1055,6 +1058,7 @@ export const WebSocketProvider = ({ children }) => {
       isFromMe: true,
       time: now,
       timestamp: now,
+      conversationId: conversationId,
       optimistic: true, // Flag to identify optimistic messages
     };
 
@@ -1506,7 +1510,7 @@ export const WebSocketProvider = ({ children }) => {
           break;
 
         case "message_data":
-          if (data.data?.messages) {
+          if (data.data && Array.isArray(data.data.messages)) {
             const clientPayload = data.data.clients?.[0] || data.data;
             const shouldIgnoreMessageData =
               !isAdminRole &&
@@ -1566,78 +1570,153 @@ export const WebSocketProvider = ({ children }) => {
               break;
             }
 
+            const isGenericKey = (val) => {
+              if (!val) return true;
+              const norm = String(val)
+                .trim()
+                .toLowerCase()
+                .replace(/^@/, "")
+                .replace(/[^a-z0-9]+/g, "");
+              return (
+                !norm ||
+                [
+                  "conversation",
+                  "default",
+                  "undefined",
+                  "null",
+                  "messages",
+                  "client",
+                  "objectobject",
+                ].includes(norm)
+              );
+            };
+
+            const storageIdentity =
+              usernameKey && !isGenericKey(String(usernameKey))
+                ? String(usernameKey)
+                : String(canonicalKey);
+
             const storageKeys = Array.from(
               new Set(
-                [
-                  canonicalKey,
-                  usernameKey,
-                  ...getMessageStorageKeys(clientPayload),
-                  ...getMessageStorageKeys(data.data),
-                ]
+                [storageIdentity, String(canonicalKey)]
                   .filter(Boolean)
-                  .map((value) => String(value)),
+                  .filter((key) => !isGenericKey(key)),
               ),
             );
 
-            const transformedMessages = data.data.messages.map((msg) => ({
-              text: msg.text || msg.content || msg.message,
-              sender: msg.isFromMe ? "me" : "client",
-              isFromMe: msg.isFromMe,
-              time: msg.timestamp || msg.time || msg.date,
-              ...msg,
-            }));
+            const validStorageNorms = new Set(
+              storageKeys
+                .map((k) => normalizeClientLookupValue(k))
+                .filter(Boolean),
+            );
+
+            const transformedMessages = data.data.messages
+              .filter((msg) => {
+                if (!msg) return false;
+
+                if (msg.isFromMe || msg.sender === "me") {
+                  return true;
+                }
+
+                const msgConv =
+                  msg.conversationId ||
+                  msg.conversation_id ||
+                  msg.clientUsername ||
+                  msg.clientId ||
+                  msg.client_id;
+                const msgConvNorm = normalizeClientLookupValue(msgConv);
+                if (msgConvNorm && !validStorageNorms.has(msgConvNorm)) {
+                  return false;
+                }
+
+                return true;
+              })
+              .map((msg) => {
+                const taggedConversationId = storageIdentity;
+                const taggedClientUsername = usernameKey
+                  ? String(usernameKey)
+                  : taggedConversationId;
+
+                return {
+                  ...msg,
+                  text: collapseDuplicateParagraphs(
+                    msg.text || msg.content || msg.message || "",
+                  ),
+                  sender: msg.isFromMe
+                    ? "me"
+                    : msg.senderUsername || msg.sender || "client",
+                  isFromMe: Boolean(msg.isFromMe),
+                  time: msg.timestamp || msg.time || msg.date,
+                  conversationId: taggedConversationId,
+                  clientUsername: msg.clientUsername || taggedClientUsername,
+                };
+              });
 
             setMessages((prev) => {
-              const existingMessages =
-                storageKeys
-                  .map((key) => prev[key])
-                  .find((messagesForKey) => Array.isArray(messagesForKey)) ||
-                [];
-              const mergedMessages = mergeConversationMessages(
-                existingMessages,
+              const updatedMessages = { ...prev };
+              const storageNorm = normalizeClientLookupValue(storageIdentity);
+              const storageKey = String(storageIdentity);
+
+              const existing = Array.isArray(prev[storageKey]) ? prev[storageKey] : [];
+              const keepOptimistic = existing.filter((message) => {
+                if (!message?.optimistic) {
+                  return false;
+                }
+                const messageConv =
+                  message.conversationId || message.conversation_id;
+                if (!messageConv) {
+                  return true;
+                }
+                return (
+                  normalizeClientLookupValue(messageConv) === storageNorm
+                );
+              });
+
+              updatedMessages[storageKey] = mergeConversationMessages(
+                keepOptimistic,
                 transformedMessages,
               );
-              const updatedMessages = {
-                ...prev,
-                [canonicalKey]: mergedMessages,
-              };
 
-              saveMessages(updatedMessages).then((success) => {
-                if (success) {
-                  console.log(
-                    "[WebSocket] Saved messages to storage for conversation:",
-                    canonicalKey,
-                  );
+              // Drop duplicate buckets for the same client to prevent repeated rendering.
+              Object.keys(updatedMessages).forEach((key) => {
+                if (key === storageKey) {
+                  return;
+                }
+                const keyNorm = normalizeClientLookupValue(key);
+                if (keyNorm && validStorageNorms.has(keyNorm)) {
+                  delete updatedMessages[key];
                 }
               });
 
               return updatedMessages;
             });
 
-            const shouldClearLoading = () => {
-              if (!loadingConversationId) return false;
-              const keyCandidates = new Set(
-                [
-                  getClientKey(conversationId),
-                  getClientKey(usernameKey),
-                  getClientKey(selectedConversationId),
-                  ...storageKeys.map((key) => getClientKey(key)),
-                ].filter(Boolean),
-              );
-              return keyCandidates.has(getClientKey(loadingConversationId));
-            };
+            // Only clear the loading indicator if this payload actually belongs to the
+            // conversation currently being loaded; otherwise an unrelated background sync
+            // (e.g. from bulk client refresh) could prematurely hide the loading spinner
+            // for the conversation the user is actually waiting on.
+            const currentlyLoadingKey = loadingConversationIdRef.current;
+            const currentlyLoadingNorm = currentlyLoadingKey
+              ? normalizeClientLookupValue(currentlyLoadingKey)
+              : null;
+            const shouldClearLoading =
+              !currentlyLoadingNorm || validStorageNorms.has(currentlyLoadingNorm);
 
-            if (shouldClearLoading()) {
+            if (shouldClearLoading) {
               console.log(
-                "[WebSocket] Clearing loading state for conversation:",
-                loadingConversationId,
-                "received conversation:",
+                "[WebSocket] Clearing loading state for conversation. received conversation:",
                 conversationId,
                 "usernameKey:",
                 usernameKey,
               );
+              loadingConversationIdRef.current = null;
               setLoadingConversationId(null);
               setIsLoadingMessages(false);
+            } else {
+              console.log(
+                "[WebSocket] Received message_data for a different conversation; keeping loading state for:",
+                currentlyLoadingKey,
+              );
             }
 
             // Save sync timestamp
@@ -2003,39 +2082,13 @@ export const WebSocketProvider = ({ children }) => {
     ],
   );
 
-  // Load stored data on mount (messages and client data only, not clients)
+  // Load stored data on mount (client data only, messages are retrieved in-memory/server)
   useEffect(() => {
     const loadStoredData = async () => {
       console.log("[WebSocket] Loading stored data...");
-      const [storedMessages, storedClientData] = await Promise.all([
-        loadMessages(),
-        loadClientData(),
-      ]);
+      const storedClientData = await loadClientData();
 
-      if (Object.keys(storedMessages).length > 0) {
-        const sortByTime = (a, b) => {
-          const parse = (ts) => {
-            if (!ts) return 0;
-            const d = new Date(ts);
-            return isNaN(d.getTime()) ? 0 : d.getTime();
-          };
-          return parse(a.time) - parse(b.time);
-        };
-        const sorted = Object.fromEntries(
-          Object.entries(storedMessages).map(([k, arr]) => [
-            k,
-            [...(Array.isArray(arr) ? arr : [])].sort(sortByTime),
-          ]),
-        );
-        setMessages(sorted);
-        console.log(
-          "[WebSocket] Loaded messages for",
-          Object.keys(storedMessages).length,
-          "conversations from storage",
-        );
-      }
-
-      if (Object.keys(storedClientData).length > 0) {
+      if (storedClientData && Object.keys(storedClientData).length > 0) {
         setClientData(storedClientData);
         console.log(
           "[WebSocket] Loaded client data for",
@@ -2049,34 +2102,6 @@ export const WebSocketProvider = ({ children }) => {
 
     loadStoredData();
   }, []);
-
-  // Save clients to storage whenever they change
-
-  // Save messages to storage whenever they change
-  useEffect(() => {
-    if (isInitialLoadRef.current) return; // Don't save on initial load
-
-    // Debounce saves to avoid too many writes
-    if (saveMessagesTimeoutRef.current) {
-      clearTimeout(saveMessagesTimeoutRef.current);
-    }
-
-    saveMessagesTimeoutRef.current = setTimeout(() => {
-      saveMessages(messages).then((success) => {
-        if (success) {
-          console.log("[WebSocket] Auto-saved messages to storage");
-        } else {
-          console.error("[WebSocket] Failed to save messages to storage");
-        }
-      });
-    }, 500);
-
-    return () => {
-      if (saveMessagesTimeoutRef.current) {
-        clearTimeout(saveMessagesTimeoutRef.current);
-      }
-    };
-  }, [messages]);
 
   // Save client data to storage whenever it changes
   useEffect(() => {
@@ -2126,8 +2151,6 @@ export const WebSocketProvider = ({ children }) => {
     selectedSellerProfile, // profile user selected in app
     setSelectedSellerProfile,
     selectedConversationId,
-    loadingConversationId,
-    isLoadingMessages,
     loadingConversationId,
     isLoadingMessages,
     setSelectedConversationId,

@@ -13,16 +13,10 @@ import { Ionicons } from "@expo/vector-icons";
 import ClientListItem from "./ClientListItem";
 import ProfileSelector from "./ProfileSelector";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
+import { getListRowId, isListRowSelected } from "../utils/clientIdentity";
 
 const getClientListKey = (client, index) => {
-  return (
-    client._id ||
-    client.id ||
-    client.clientKey ||
-    client.conversationId ||
-    client.username ||
-    `client-${index}`
-  );
+  return getListRowId(client, index);
 };
 
 // Helper function to get time unit priority for sorting
@@ -163,50 +157,6 @@ const getTimeUnitPriority = (timeString) => {
   return { priority: 8, timestamp: 0 };
 };
 
-const unitRank = {
-  minute: 0,
-  hour: 1,
-  day: 2,
-  week: 3,
-  month: 4,
-  year: 5,
-};
-
-function parseRelativeTime(value) {
-  if (typeof value !== "string" || !value.trim()) {
-    return { num: 0, unit: "unknown" };
-  }
-
-  const parts = value.trim().split(" ");
-  const numStr = parts[0];
-  const unitRaw = parts[1] || "";
-  const num = parseInt(numStr, 10) || 0;
-
-  let unit = unitRaw.toLowerCase();
-
-  // remove plural s
-  if (unit.endsWith("s")) {
-    unit = unit.slice(0, -1);
-  }
-
-  return { num, unit };
-}
-// Function to convert relative time to timestamp
-function getTimestamp(relative) {
-  const now = new Date();
-  const [numStr, unit] = relative.split(" ");
-  const num = parseInt(numStr);
-
-  if (unit.startsWith("minute")) now.setMinutes(now.getMinutes() - num);
-  else if (unit.startsWith("hour")) now.setHours(now.getHours() - num);
-  else if (unit.startsWith("day")) now.setDate(now.getDate() - num);
-  else if (unit.startsWith("week")) now.setDate(now.getDate() - num * 7);
-  else if (unit.startsWith("month")) now.setMonth(now.getMonth() - num);
-  else if (unit.startsWith("year")) now.setFullYear(now.getFullYear() - num);
-
-  return now.getTime(); // milliseconds timestamp
-}
-
 const ClientList = ({
   clients,
   selectedClientId,
@@ -220,26 +170,35 @@ const ClientList = ({
 
   const normalizedClients = useMemo(() => {
     return (clients || []).map((client, index) => {
-      const uniqueId = getClientListKey(client, index);
+      const listRowId = getListRowId(client, index);
       return {
         ...client,
-        id: uniqueId,
-        clientKey: uniqueId,
+        id: listRowId,
+        listRowId,
+        clientKey: listRowId,
       };
     });
   }, [clients]);
 
   const sortedClients = [...normalizedClients].sort((a, b) => {
-    const aParsed = parseRelativeTime(a.last_message_timestamp);
-    const bParsed = parseRelativeTime(b.last_message_timestamp);
+    // Sort by time unit priority (minutes > hours > days > weeks > months), matching
+    // the ordering already applied upstream in WebSocketContext so the list doesn't
+    // get re-scrambled by a weaker, ISO-timestamp-unaware comparator.
+    const timeA = getTimeUnitPriority(a.last_message_timestamp);
+    const timeB = getTimeUnitPriority(b.last_message_timestamp);
 
-    // sort by unit priority
-    if (unitRank[aParsed.unit] !== unitRank[bParsed.unit]) {
-      return unitRank[aParsed.unit] - unitRank[bParsed.unit];
+    if (timeA.priority !== timeB.priority) {
+      return timeA.priority - timeB.priority;
     }
 
-    // same unit → smaller number first
-    return aParsed.num - bParsed.num;
+    if (timeA.timestamp > 0 && timeB.timestamp > 0) {
+      return timeB.timestamp - timeA.timestamp; // Most recent first
+    }
+
+    if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
+    if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
+
+    return 0;
   });
 
   const filteredClients = sortedClients.filter((client) => {
@@ -258,20 +217,25 @@ const ClientList = ({
     );
   });
 
-  console.log("filteredClients", filteredClients);
+  const renderClient = ({ item }) => {
+    const rowId = item.listRowId || item.id;
+    const isSelected =
+      isListRowSelected(rowId, selectedClientId) ||
+      (!!selectedClientId &&
+        !String(selectedClientId).startsWith("row:") &&
+        (item.username === selectedClientId ||
+          item.conversationId === selectedClientId ||
+          item.id === selectedClientId));
 
-  const renderClient = ({ item }) => (
-    <ClientListItem
-      client={item}
-      isSelected={
-        item.id === selectedClientId ||
-        item.conversationId === selectedClientId ||
-        item.username === selectedClientId
-      }
-      onPress={() => onSelectClient(item.id)}
-      onDelete={() => onDeleteClient(item.id)}
-    />
-  );
+    return (
+      <ClientListItem
+        client={item}
+        isSelected={isSelected}
+        onPress={() => onSelectClient(rowId)}
+        onDelete={() => onDeleteClient(rowId)}
+      />
+    );
+  };
 
   return (
     <LinearGradient

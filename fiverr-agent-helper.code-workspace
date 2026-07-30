@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "../fiverr-agent-helper"
+		},
+		{
+			"path": "."
+		},
+		{
+			"path": "../fiverr-server"
+		}
+	]
+}

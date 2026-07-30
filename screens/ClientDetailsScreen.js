@@ -19,6 +19,7 @@ import AIChatTab from "../components/AIChatTab";
 import MessagesTab from "../components/MessagesTab";
 import { useWebSocket } from "../context/WebSocketContext";
 import { exportClientMessagesPdf } from "../utils/pdfExport";
+import { getClientConversationId } from "../utils/clientIdentity";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
 
 const ClientDetailsScreen = ({
@@ -44,8 +45,7 @@ const ClientDetailsScreen = ({
   const mergedClient = React.useMemo(() => {
     if (!client) return null;
 
-    const conversationId =
-      client.conversationId || client.username || client.id;
+    const conversationId = getClientConversationId(client);
     const key = client.username || conversationId;
     const fetchedData = clientData[key];
 
@@ -238,8 +238,7 @@ const ClientDetailsScreen = ({
       return;
     }
 
-    const conversationId =
-      client?.conversationId || client?.username || client?.id;
+    const conversationId = getClientConversationId(client);
     if (!conversationId) {
       console.warn(
         "[ClientDetailsScreen] Cannot send message: no conversation ID",
@@ -260,25 +259,20 @@ const ClientDetailsScreen = ({
     if (onFetchMessages) {
       setIsFetchingMessages(true);
       onFetchMessages();
-      // Reset loading state after a short delay if messages do not arrive immediately.
-      setTimeout(() => {
-        setIsFetchingMessages(false);
-      }, 1500);
     }
   };
 
-  // Reset fetching state when messages are received
+  // Reset fetching state when messages arrive or loading completes
   useEffect(() => {
-    if (messages.length > 0 && isFetchingMessages) {
+    if (isFetchingMessages && (messages.length > 0 || !isLoadingMessages)) {
       setIsFetchingMessages(false);
     }
-  }, [messages.length, isFetchingMessages]);
+  }, [messages.length, isFetchingMessages, isLoadingMessages]);
 
   // Reset fetching details state when client data is received
   useEffect(() => {
     if (isFetchingDetails && client) {
-      const conversationId =
-        client.conversationId || client.username || client.id;
+      const conversationId = getClientConversationId(client);
       const key = client.username || conversationId;
       if (clientData[key]) {
         // Clear timeout if data is received
