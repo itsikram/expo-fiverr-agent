@@ -180,6 +180,7 @@ class NotificationService {
    * @param {string} messageData.username - Username
    */
   async showMessageNotification({ clientName, messageText, conversationId, username }) {
+    /*
     const config = NOTIFICATION_CONFIG.MESSAGE_NOTIFICATION;
     const title = `${config.titlePrefix} ${clientName || 'Client'}`;
     const body = messageText || 'You have a new message';
@@ -202,6 +203,8 @@ class NotificationService {
       },
       channelId: NOTIFICATION_CHANNELS.MESSAGES,
     });
+    */
+    return null;
   }
 
   /**

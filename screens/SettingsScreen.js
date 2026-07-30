@@ -22,6 +22,7 @@ import {
   shadows,
 } from "../constants/theme";
 import { loadSettings, saveSettings } from "../utils/storage";
+import { DEFAULT_SERVER_URL } from "../config/server";
 import { useWebSocket } from "../context/WebSocketContext";
 import { useAuth } from "../context/AuthContext";
 import AdminDashboard from "../components/AdminDashboard";
@@ -48,13 +49,19 @@ const SettingsScreen = ({ onBack }) => {
 
   const loadSettingsData = async () => {
     try {
+      if (Platform.OS === "web") {
+        setServerAddress(DEFAULT_SERVER_URL);
+      }
+
       const settings = await loadSettings();
       if (settings) {
         if (settings.name) setName(settings.name);
         if (settings.skills) setSkills(settings.skills);
         if (settings.aboutMe) setAboutMe(settings.aboutMe);
-        // Support both serverUrl (full URL) and serverHost (backward compatibility)
-        if (settings.serverUrl != null) {
+        // Web builds use EXPO_PUBLIC_SERVER_URL from .env, not stored settings
+        if (Platform.OS === "web") {
+          setServerAddress(DEFAULT_SERVER_URL);
+        } else if (settings.serverUrl != null) {
           setServerAddress(settings.serverUrl);
         } else if (settings.serverHost != null) {
           setServerAddress(settings.serverHost);
@@ -101,13 +108,15 @@ const SettingsScreen = ({ onBack }) => {
         name: name.trim(),
         skills: skills.trim(),
         aboutMe: aboutMe.trim(),
-        // Save as serverUrl (full URL with protocol and port)
-        // Also keep serverHost for backward compatibility if it's just a host
-        serverUrl: serverAddressTrimmed || undefined,
-        serverHost:
-          serverAddressTrimmed && !serverAddressTrimmed.includes("://")
-            ? serverAddressTrimmed
-            : undefined,
+        ...(Platform.OS !== "web" && {
+          // Save as serverUrl (full URL with protocol and port)
+          // Also keep serverHost for backward compatibility if it's just a host
+          serverUrl: serverAddressTrimmed || undefined,
+          serverHost:
+            serverAddressTrimmed && !serverAddressTrimmed.includes("://")
+              ? serverAddressTrimmed
+              : undefined,
+        }),
         geminiApiKey: isApiKeyMasked ? undefined : apiKeyToSave || undefined,
         aiApiKey: isApiKeyMasked ? undefined : apiKeyToSave || undefined,
         aiModel: aiModel.trim() || undefined,
@@ -174,28 +183,42 @@ const SettingsScreen = ({ onBack }) => {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Server address */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Server</Text>
-            <Text style={styles.sectionDescription}>
-              Server address (full URL with protocol and port). Used for
-              WebSocket connection.
-              {"\n"}Examples: http://192.168.0.102:8765 or
-              https://fiverr-agent-03vs.onrender.com
-            </Text>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Server address</Text>
-              <TextInput
-                style={styles.input}
-                value={serverAddress}
-                onChangeText={setServerAddress}
-                placeholder="e.g. http://192.168.0.102:8765"
-                placeholderTextColor={colors.text.secondary}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+          {/* Server address — native only; web uses EXPO_PUBLIC_SERVER_URL from .env */}
+          {Platform.OS !== "web" ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Server</Text>
+              <Text style={styles.sectionDescription}>
+                Server address (full URL with protocol and port). Used for
+                WebSocket connection.
+                {"\n"}Examples: http://192.168.0.102:8765 or
+                https://fiverr-agent-server.onrender.com
+              </Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Server address</Text>
+                <TextInput
+                  style={styles.input}
+                  value={serverAddress}
+                  onChangeText={setServerAddress}
+                  placeholder="e.g. http://192.168.0.102:8765"
+                  placeholderTextColor={colors.text.secondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
             </View>
-          </View>
+          ) : (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Server</Text>
+              <Text style={styles.sectionDescription}>
+                Web builds use the server URL from EXPO_PUBLIC_SERVER_URL in
+                your .env file at build time.
+              </Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Server address</Text>
+                <Text style={styles.infoText}>{DEFAULT_SERVER_URL}</Text>
+              </View>
+            </View>
+          )}
 
           {/* Profile Section */}
           <View style={styles.section}>

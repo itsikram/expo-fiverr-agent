@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  TextInput,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -26,6 +27,18 @@ import {
   saveAdminAssignments,
 } from "../utils/adminService";
 
+const matchesNameUsernameEmail = (item, query) => {
+  const fields = [
+    item?.name,
+    item?.username,
+    item?.clientUsername,
+    item?.email,
+  ];
+  return fields.some((field) =>
+    (field || "").toString().toLowerCase().includes(query),
+  );
+};
+
 const AdminDashboard = ({ onClose }) => {
   const { token, role } = useAuth();
   const [clients, setClients] = useState([]);
@@ -35,6 +48,8 @@ const AdminDashboard = ({ onClose }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedClientIds, setSelectedClientIds] = useState([]);
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [clientSearchQuery, setClientSearchQuery] = useState("");
 
   useEffect(() => {
     if (!token) return;
@@ -87,6 +102,18 @@ const AdminDashboard = ({ onClose }) => {
     }, {});
   }, [assignments]);
 
+  const filteredUsers = useMemo(() => {
+    const query = userSearchQuery.trim().toLowerCase();
+    if (!query) return users;
+    return users.filter((user) => matchesNameUsernameEmail(user, query));
+  }, [users, userSearchQuery]);
+
+  const filteredClients = useMemo(() => {
+    const query = clientSearchQuery.trim().toLowerCase();
+    if (!query) return clients;
+    return clients.filter((client) => matchesNameUsernameEmail(client, query));
+  }, [clients, clientSearchQuery]);
+
   const handleAssignClients = async () => {
     if (!selectedUserId) {
       Alert.alert("Select a user", "Choose a user before saving assignments.");
@@ -131,16 +158,6 @@ const AdminDashboard = ({ onClose }) => {
         ? prev.filter((item) => item !== normalizedClientId)
         : [...prev, normalizedClientId],
     );
-  };
-
-  const handleSelectAllClients = () => {
-    setSelectedClientIds(
-      clients.map((client) => String(client._id || client.id)),
-    );
-  };
-
-  const handleClearClientSelection = () => {
-    setSelectedClientIds([]);
   };
 
   useEffect(() => {
@@ -242,28 +259,58 @@ const AdminDashboard = ({ onClose }) => {
                 <Text style={styles.panelHint}>
                   Tap a user to begin assigning clients.
                 </Text>
-                <View style={styles.chipGroup}>
-                  {users.map((user) => (
+                <View style={styles.searchInputContainer}>
+                  <Ionicons
+                    name="search"
+                    size={18}
+                    color={colors.text.secondary}
+                  />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search by name, username, or email..."
+                    placeholderTextColor={colors.text.secondary}
+                    value={userSearchQuery}
+                    onChangeText={setUserSearchQuery}
+                  />
+                  {userSearchQuery.length > 0 ? (
                     <TouchableOpacity
-                      key={user._id || user.id}
-                      style={[
-                        styles.userChip,
-                        selectedUserId === (user._id || user.id) &&
-                          styles.userChipActive,
-                      ]}
-                      onPress={() => setSelectedUserId(user._id || user.id)}
+                      onPress={() => setUserSearchQuery("")}
+                      style={styles.searchClearButton}
                     >
-                      <Text
-                        style={
-                          selectedUserId === (user._id || user.id)
-                            ? styles.userChipTextActive
-                            : styles.userChipText
-                        }
-                      >
-                        {user.username || user.email}
-                      </Text>
+                      <Ionicons
+                        name="close-circle"
+                        size={18}
+                        color={colors.text.secondary}
+                      />
                     </TouchableOpacity>
-                  ))}
+                  ) : null}
+                </View>
+                <View style={styles.chipGroup}>
+                  {filteredUsers.length === 0 ? (
+                    <Text style={styles.emptyState}>No users found.</Text>
+                  ) : (
+                    filteredUsers.map((user) => (
+                      <TouchableOpacity
+                        key={user._id || user.id}
+                        style={[
+                          styles.userChip,
+                          selectedUserId === (user._id || user.id) &&
+                            styles.userChipActive,
+                        ]}
+                        onPress={() => setSelectedUserId(user._id || user.id)}
+                      >
+                        <Text
+                          style={
+                            selectedUserId === (user._id || user.id)
+                              ? styles.userChipTextActive
+                              : styles.userChipText
+                          }
+                        >
+                          {user.username || user.email}
+                        </Text>
+                      </TouchableOpacity>
+                    ))
+                  )}
                 </View>
               </View>
 
@@ -272,16 +319,59 @@ const AdminDashboard = ({ onClose }) => {
                 <Text style={styles.panelHint}>
                   Select clients to grant access for the current user.
                 </Text>
+                <View style={styles.searchInputContainer}>
+                  <Ionicons
+                    name="search"
+                    size={18}
+                    color={colors.text.secondary}
+                  />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search by name, username, or email..."
+                    placeholderTextColor={colors.text.secondary}
+                    value={clientSearchQuery}
+                    onChangeText={setClientSearchQuery}
+                  />
+                  {clientSearchQuery.length > 0 ? (
+                    <TouchableOpacity
+                      onPress={() => setClientSearchQuery("")}
+                      style={styles.searchClearButton}
+                    >
+                      <Ionicons
+                        name="close-circle"
+                        size={18}
+                        color={colors.text.secondary}
+                      />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
                 <View style={styles.assignmentActions}>
                   <TouchableOpacity
                     style={styles.secondaryButton}
-                    onPress={handleSelectAllClients}
+                    onPress={() =>
+                      setSelectedClientIds((prev) => {
+                        const filteredIds = filteredClients.map((client) =>
+                          String(client._id || client.id),
+                        );
+                        const merged = new Set([...prev, ...filteredIds]);
+                        return Array.from(merged);
+                      })
+                    }
                   >
                     <Text style={styles.secondaryButtonText}>Select All</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.secondaryButton}
-                    onPress={handleClearClientSelection}
+                    onPress={() =>
+                      setSelectedClientIds((prev) => {
+                        const filteredIds = new Set(
+                          filteredClients.map((client) =>
+                            String(client._id || client.id),
+                          ),
+                        );
+                        return prev.filter((id) => !filteredIds.has(id));
+                      })
+                    }
                   >
                     <Text style={styles.secondaryButtonText}>Clear</Text>
                   </TouchableOpacity>
@@ -292,8 +382,10 @@ const AdminDashboard = ({ onClose }) => {
                       <Text style={styles.emptyState}>
                         No clients available.
                       </Text>
+                    ) : filteredClients.length === 0 ? (
+                      <Text style={styles.emptyState}>No clients found.</Text>
                     ) : (
-                      clients.map((client) => {
+                      filteredClients.map((client) => {
                         const clientId = client._id || client.id;
                         const selected = selectedClientIds.includes(clientId);
                         return (
@@ -599,6 +691,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     marginBottom: spacing.sm,
+  },
+  searchInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.background.primary,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  searchInput: {
+    flex: 1,
+    color: colors.text.primary,
+    fontSize: typography.sizes.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  searchClearButton: {
+    padding: spacing.xs,
   },
   assignmentRow: {
     flexDirection: "row",

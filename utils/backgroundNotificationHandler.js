@@ -31,19 +31,18 @@ export async function handleBackgroundNotification(notification) {
       });
     }
     
-    // Return a notification presentation option
-    // This tells the system how to present the notification
+    // Notifications disabled
     return {
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
+      shouldShowAlert: false,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
     };
   } catch (error) {
     console.error('[BackgroundNotification] Error handling notification:', error);
     return {
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
+      shouldShowAlert: false,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
     };
   }
 }
@@ -52,12 +51,12 @@ export async function handleBackgroundNotification(notification) {
 // This must be called before the app component is rendered
 // Note: The notification handler in App.js will override this for foreground notifications
 // This handler ensures notifications work even when app is completely closed
+/*
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
-    // Always show notifications, even in background
-    // The system will handle presentation based on app state
     return handleBackgroundNotification(notification);
   },
 });
 
 console.log('[BackgroundNotification] Background notification handler registered');
+*/

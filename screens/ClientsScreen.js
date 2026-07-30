@@ -502,23 +502,38 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       selectedClient,
       activeConversationKey,
     );
+    const activeNorm = normalizeClientLookupValue(activeConversationKey);
+    const stillLoadingThisConversation =
+      isLoadingMessages &&
+      loadingConversationId &&
+      normalizeClientLookupValue(loadingConversationId) === activeNorm;
+
     const prevCount = prevSelectedMessageCountRef.current;
     const countChanged = clientMessages.length !== prevCount;
 
-    if (countChanged) {
+    if (countChanged && clientMessages.length > 0) {
       setSnackbarMessage(
-        clientMessages.length > 0
-          ? `Fetched ${clientMessages.length} message${clientMessages.length !== 1 ? "s" : ""} from ${selectedClient.name || selectedClient.username}`
-          : `No messages found for ${selectedClient.name || selectedClient.username}`,
+        `Fetched ${clientMessages.length} message${clientMessages.length !== 1 ? "s" : ""} from ${selectedClient.name || selectedClient.username}`,
       );
-      setSnackbarType(clientMessages.length > 0 ? "success" : "info");
+      setSnackbarType("success");
       setSnackbarVisible(true);
+      isFetchingMessagesRef.current = false;
+    } else if (!stillLoadingThisConversation && isFetchingMessagesRef.current) {
       isFetchingMessagesRef.current = false;
     }
 
-    prevSelectedMessageCountRef.current = clientMessages.length;
+    if (!stillLoadingThisConversation || clientMessages.length > 0) {
+      prevSelectedMessageCountRef.current = clientMessages.length;
+    }
+
     prevMessagesKeysRef.current = new Set(Object.keys(messages));
-  }, [messages, hasInitialDataLoaded, selectedClient]);
+  }, [
+    messages,
+    hasInitialDataLoaded,
+    selectedClient,
+    isLoadingMessages,
+    loadingConversationId,
+  ]);
 
   // Show modal when new client data is received (only after initial data is loaded)
   // DISABLED: Modal is disabled for now
@@ -618,8 +633,27 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     loadingConversationId,
   ]);
 
-  // Inbox activation + extraction is handled by click_client in the extension.
-  // Only fetch cached/server messages here — do not trigger extraction early.
+  // Inbox activation + extraction: open conversation in Fiverr, then poll for fresh messages.
+  const scheduleClientMessageSync = React.useCallback(
+    (targetIdentifier, delaysMs = [4000, 10000, 20000]) => {
+      delaysMs.forEach((delayMs) => {
+        const timeoutId = setTimeout(() => {
+          const activeClient = selectedClientRef.current;
+          const activeTarget = activeClient
+            ? getClientConversationId(activeClient)
+            : null;
+          if (activeTarget !== targetIdentifier) {
+            return;
+          }
+
+          requestMessages(targetIdentifier, { force: true });
+        }, delayMs);
+        pendingClientSelectionTimeoutsRef.current.push(timeoutId);
+      });
+    },
+    [requestMessages],
+  );
+
   const activateClientAndLoadMessages = React.useCallback(
     (client) => {
       if (!client) {
@@ -662,18 +696,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         username,
       });
 
-      // Fallback: if the extension missed extraction, retry once after inbox has had time to load.
-      const fallbackTimeoutId = setTimeout(() => {
-        const activeClient = selectedClientRef.current;
-        const activeTarget = activeClient
-          ? getClientConversationId(activeClient)
-          : null;
-        if (activeTarget !== targetIdentifier) {
-          return;
-        }
-        requestMessages(targetIdentifier, { force: true });
-      }, 18000);
-      pendingClientSelectionTimeoutsRef.current.push(fallbackTimeoutId);
+      scheduleClientMessageSync(targetIdentifier);
 
       return true;
     },
@@ -683,6 +706,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       isConnected,
       requestClientData,
       requestMessages,
+      scheduleClientMessageSync,
     ],
   );
 
@@ -705,6 +729,47 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
 
     activateClientAndLoadMessages(selectedClient);
+  };
+
+  const handleLoadAllMessages = () => {
+    if (!selectedClient) {
+      return;
+    }
+
+    const targetIdentifier = getClientConversationId(selectedClient);
+    if (!targetIdentifier) {
+      Alert.alert(
+        "Cannot Load Messages",
+        "This client has no username or conversation ID. Try refreshing the client list.",
+      );
+      return;
+    }
+
+    if (!isConnected) {
+      Alert.alert("Not Connected", "Please wait for connection to server.");
+      return;
+    }
+
+    activateClientAndLoadMessages(selectedClient);
+    triggerMessageExtraction(targetIdentifier, {
+      force: true,
+      scrollToLoadAll: true,
+    });
+    requestMessages(targetIdentifier, { force: true });
+
+    // Full history scroll can take a while — poll for updated messages.
+    [8000, 20000, 40000, 60000].forEach((delayMs) => {
+      setTimeout(() => {
+        const activeClient = selectedClientRef.current;
+        const activeTarget = activeClient
+          ? getClientConversationId(activeClient)
+          : null;
+        if (activeTarget !== targetIdentifier) {
+          return;
+        }
+        requestMessages(targetIdentifier, { force: true });
+      }, delayMs);
+    });
   };
 
   const handleSelectClient = (clientId) => {
@@ -840,6 +905,11 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
     try {
       activateClientAndLoadMessages(currentClient);
+      triggerMessageExtraction(targetIdentifier, { force: true });
+      requestMessages(targetIdentifier, {
+        force: true,
+        triggerExtraction: true,
+      });
     } catch (error) {
       console.warn(
         "[ClientsScreen] Reload current client messages failed:",
@@ -849,7 +919,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       setTimeout(() => {
         setIsRefetching(false);
         console.log("[ClientsScreen] Reload current client messages complete.");
-      }, 3000);
+      }, 25000);
     }
   };
 
@@ -937,23 +1007,29 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
   // Extension status (based on WebSocket connection and sellerProfile data)
   const getExtensionStatus = () => {
-    // Extension is only active if WebSocket is connected AND we have sellerProfile data
-    if (isConnected && sellerProfile) {
+    if (!isConnected) {
+      return {
+        text: "Extension: Server offline",
+        color: colors.accent.error || "#F44336",
+      };
+    }
+
+    if (sellerProfile?.online) {
       return {
         text: "Extension: Active",
         color: colors.accent.success || "#4CAF50",
       };
     }
-    // If WebSocket is disconnected, extension is inactive regardless of sellerProfile
-    if (!isConnected) {
+
+    if (sellerProfile) {
       return {
-        text: "Extension: Disconnected",
-        color: colors.accent.error || "#F44336",
+        text: "Extension: Not connected",
+        color: colors.accent.warning || "#FF9800",
       };
     }
-    // WebSocket is connected but no sellerProfile yet
+
     return {
-      text: "Extension: Inactive",
+      text: "Extension: Waiting",
       color: colors.accent.warning || "#FF9800",
     };
   };
@@ -1013,6 +1089,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
               client={selectedClient}
               messages={displayMessages}
               onFetchMessages={handleFetchMessages}
+              onLoadAllMessages={handleLoadAllMessages}
               onSendMessage={sendMessageToClient}
               isLoadingMessages={
                 isLoadingMessages &&

@@ -17,7 +17,7 @@ import {
   saveLastSync,
   clearAIChatHistory,
 } from "../utils/storage";
-import notificationService from "../utils/notificationService";
+// import notificationService from "../utils/notificationService";
 import { useAuth } from "./AuthContext";
 import {
   getClientConversationId,
@@ -679,6 +679,7 @@ export const WebSocketProvider = ({ children }) => {
         );
 
         // Register push token for remote notifications (works when app is closed)
+        /*
         try {
           const pushToken = await notificationService.getExpoPushToken();
           if (pushToken) {
@@ -699,6 +700,7 @@ export const WebSocketProvider = ({ children }) => {
         } catch (error) {
           console.error("[WebSocket] Error registering push token:", error);
         }
+        */
 
         // Start ping interval
         pingIntervalRef.current = setInterval(() => {
@@ -832,7 +834,7 @@ export const WebSocketProvider = ({ children }) => {
 
   const requestMessages = useCallback(
     (conversationIdOrUsername, options = {}) => {
-      const { force = false } = options;
+      const { force = false, triggerExtraction = false } = options;
       const payload = { type: "request_messages" };
       const clientKey = getClientKey(conversationIdOrUsername);
 
@@ -861,6 +863,10 @@ export const WebSocketProvider = ({ children }) => {
         loadingConversationIdRef.current = null;
         setLoadingConversationId(null);
         setIsLoadingMessages(false);
+      }
+
+      if (triggerExtraction) {
+        payload.triggerExtraction = true;
       }
 
       sendMessage(payload);
@@ -911,7 +917,7 @@ export const WebSocketProvider = ({ children }) => {
 
   const triggerMessageExtraction = useCallback(
     (targetIdentifier, options = {}) => {
-      const { force = false } = options;
+      const { force = false, scrollToLoadAll = false } = options;
       const requestKey = targetIdentifier || "default";
       if (
         !force &&
@@ -932,6 +938,9 @@ export const WebSocketProvider = ({ children }) => {
       if (targetIdentifier) {
         payload.conversationId = targetIdentifier;
         payload.username = targetIdentifier;
+      }
+      if (scrollToLoadAll) {
+        payload.scrollToLoadAll = true;
       }
       sendMessage(payload);
       return true;
@@ -1761,7 +1770,8 @@ export const WebSocketProvider = ({ children }) => {
             const messageCount = data.data?.messageCount || 1;
             const isTest = data.data?.isTest === true;
 
-            // Check if app is in background or if conversation is not currently selected
+            // Notifications disabled
+            /*
             const appState = AppState.currentState;
             const isAppInBackground =
               appState === "background" || appState === "inactive";
@@ -1769,10 +1779,6 @@ export const WebSocketProvider = ({ children }) => {
               selectedConversationId === conversationId ||
               selectedConversationId === clientUsername;
 
-            // Show notification if:
-            // 1. It's a test notification (always show)
-            // 2. App is in background
-            // 3. Conversation is not currently selected
             if (isTest || isAppInBackground || !isConversationSelected) {
               notificationService
                 .showMessageNotification({
@@ -1788,13 +1794,13 @@ export const WebSocketProvider = ({ children }) => {
                   );
                 });
 
-              // Increment badge count (skip for test notifications)
               if (!isTest) {
                 notificationService.incrementBadge().catch((error) => {
                   console.error("[WebSocket] Error incrementing badge:", error);
                 });
               }
             }
+            */
 
             // Emit event for UI to show popup
             // We'll use a callback system similar to fetchClientDetails
@@ -1824,7 +1830,8 @@ export const WebSocketProvider = ({ children }) => {
               clientData.username || clientData.clientUsername;
             const conversationId = clientData.conversationId || clientUsername;
 
-            // Show notification for new client
+            // Notifications disabled
+            /*
             const appState = AppState.currentState;
             const isAppInBackground =
               appState === "background" || appState === "inactive";
@@ -1832,7 +1839,6 @@ export const WebSocketProvider = ({ children }) => {
               selectedConversationId === conversationId ||
               selectedConversationId === clientUsername;
 
-            // Show notification if app is in background or conversation is not selected
             if (isAppInBackground || !isConversationSelected) {
               notificationService
                 .showMessageNotification({
@@ -1848,11 +1854,11 @@ export const WebSocketProvider = ({ children }) => {
                   );
                 });
 
-              // Increment badge count
               notificationService.incrementBadge().catch((error) => {
                 console.error("[WebSocket] Error incrementing badge:", error);
               });
             }
+            */
 
             // Set new client data to show in UI
             setNewClientData({

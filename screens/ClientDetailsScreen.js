@@ -26,6 +26,7 @@ const ClientDetailsScreen = ({
   client,
   messages = [],
   onFetchMessages,
+  onLoadAllMessages,
   onSendMessage,
   isLoadingMessages,
 }) => {
@@ -36,6 +37,7 @@ const ClientDetailsScreen = ({
   const [isTranslationModalVisible, setIsTranslationModalVisible] =
     useState(false);
   const [isFetchingMessages, setIsFetchingMessages] = useState(false);
+  const [isLoadingAllMessages, setIsLoadingAllMessages] = useState(false);
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
   const [isHeaderMinimized, setIsHeaderMinimized] = useState(false);
   const [isFooterMinimized, setIsFooterMinimized] = useState(false);
@@ -262,12 +264,45 @@ const ClientDetailsScreen = ({
     }
   };
 
+  const handleLoadAllMessages = () => {
+    if (onLoadAllMessages) {
+      setIsLoadingAllMessages(true);
+      onLoadAllMessages();
+    }
+  };
+
+  const loadAllStartCountRef = useRef(0);
+
   // Reset fetching state when messages arrive or loading completes
   useEffect(() => {
     if (isFetchingMessages && (messages.length > 0 || !isLoadingMessages)) {
       setIsFetchingMessages(false);
     }
   }, [messages.length, isFetchingMessages, isLoadingMessages]);
+
+  // Reset load-all state when new messages arrive or after timeout
+  useEffect(() => {
+    if (!isLoadingAllMessages) {
+      return;
+    }
+
+    if (messages.length > loadAllStartCountRef.current) {
+      setIsLoadingAllMessages(false);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setIsLoadingAllMessages(false);
+    }, 65000);
+
+    return () => clearTimeout(timeoutId);
+  }, [isLoadingAllMessages, isLoadingMessages, messages.length]);
+
+  useEffect(() => {
+    if (isLoadingAllMessages) {
+      loadAllStartCountRef.current = messages.length;
+    }
+  }, [isLoadingAllMessages]);
 
   // Reset fetching details state when client data is received
   useEffect(() => {
@@ -403,7 +438,9 @@ const ClientDetailsScreen = ({
       onOpenTranslationModal={() => setIsTranslationModalVisible(true)}
       onSend={handleSendMessage}
       onFetchMessages={handleFetchMessages}
+      onLoadAllMessages={handleLoadAllMessages}
       isFetchingMessages={isFetchingMessages || isLoadingMessages}
+      isLoadingAllMessages={isLoadingAllMessages}
       isFooterMinimized={isFooterMinimized}
       onToggleFooterMinimize={() => setIsFooterMinimized(!isFooterMinimized)}
       client={client}

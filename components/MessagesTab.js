@@ -29,16 +29,34 @@ const MessagesTab = ({
   onOpenTranslationModal,
   onSend,
   onFetchMessages,
+  onLoadAllMessages,
   isFetchingMessages = false,
+  isLoadingAllMessages = false,
   isFooterMinimized = false,
   onToggleFooterMinimize,
   onExportPdf,
   client = null,
 }) => {
   const scrollViewRef = useRef(null);
+  const messageSnapshotRef = useRef({
+    conversationKey: null,
+    count: 0,
+    firstKey: null,
+    lastKey: null,
+  });
+  const scrollMetricsRef = useRef({
+    contentHeight: 0,
+    scrollY: 0,
+    preserveOnNextLayout: false,
+  });
   const [sendingMessages, setSendingMessages] = useState([]); // Array of messages being sent
   const [isSending, setIsSending] = useState(false);
   const sendingStartTimeRef = useRef(null); // Track when sending started for minimum display time
+
+  const getMessageStableKey = (message, index) =>
+    message.id ||
+    message._id ||
+    `${message.text || message.content || ""}|${message.sender || "client"}|${message.time || message.timestamp || index}`;
   const { cancelOptimisticMessage } = useWebSocket();
   const { token, role } = useAuth();
   const isAdmin = role === "admin";
@@ -53,6 +71,17 @@ const MessagesTab = ({
     setSendingMessages([]);
     setIsSending(false);
     sendingStartTimeRef.current = null;
+    messageSnapshotRef.current = {
+      conversationKey: activeConversationKey,
+      count: 0,
+      firstKey: null,
+      lastKey: null,
+    };
+    scrollMetricsRef.current = {
+      contentHeight: 0,
+      scrollY: 0,
+      preserveOnNextLayout: false,
+    };
   }, [activeConversationKey, client?.listRowId, client?.id]);
 
   // Parent already passes strictly filtered messages for the selected client.
@@ -120,15 +149,98 @@ const MessagesTab = ({
     );
   };
 
-  // Auto-scroll to bottom when new messages are added
+  const handleMessagesScroll = (event) => {
+    scrollMetricsRef.current.scrollY = event.nativeEvent.contentOffset.y;
+  };
+
+  const handleMessagesContentSizeChange = (_width, height) => {
+    const metrics = scrollMetricsRef.current;
+
+    if (
+      metrics.preserveOnNextLayout &&
+      metrics.contentHeight > 0 &&
+      height > metrics.contentHeight
+    ) {
+      scrollViewRef.current?.scrollTo({
+        y: metrics.scrollY + (height - metrics.contentHeight),
+        animated: false,
+      });
+      metrics.preserveOnNextLayout = false;
+    }
+
+    metrics.contentHeight = height;
+  };
+
+  // Scroll to bottom only for new messages at the end — not when older history loads in.
   useEffect(() => {
-    if (visibleMessages.length > 0 && scrollViewRef.current) {
-      // Use a small delay to ensure the message is rendered
+    if (visibleMessages.length === 0) {
+      messageSnapshotRef.current = {
+        conversationKey: activeConversationKey,
+        count: 0,
+        firstKey: null,
+        lastKey: null,
+      };
+      return;
+    }
+
+    const firstKey = getMessageStableKey(visibleMessages[0], 0);
+    const lastKey = getMessageStableKey(
+      visibleMessages[visibleMessages.length - 1],
+      visibleMessages.length - 1,
+    );
+    const prev = messageSnapshotRef.current;
+    const conversationChanged = prev.conversationKey !== activeConversationKey;
+    const countIncreased = visibleMessages.length > prev.count;
+    const olderMessagesAdded =
+      countIncreased &&
+      prev.firstKey != null &&
+      firstKey !== prev.firstKey &&
+      lastKey === prev.lastKey;
+
+    messageSnapshotRef.current = {
+      conversationKey: activeConversationKey,
+      count: visibleMessages.length,
+      firstKey,
+      lastKey,
+    };
+
+    if (!scrollViewRef.current) {
+      return;
+    }
+
+    if (isLoadingAllMessages || olderMessagesAdded) {
+      scrollMetricsRef.current.preserveOnNextLayout = true;
+      return;
+    }
+
+    const shouldScrollToBottom =
+      conversationChanged ||
+      isSending ||
+      sendingMessages.length > 0 ||
+      (countIncreased && prev.lastKey != null && lastKey !== prev.lastKey);
+
+    if (shouldScrollToBottom) {
       setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
+        scrollViewRef.current?.scrollToEnd({ animated: !conversationChanged });
       }, 150);
     }
-  }, [visibleMessages.length, visibleMessages]);
+  }, [
+    visibleMessages,
+    activeConversationKey,
+    isLoadingAllMessages,
+    isSending,
+    sendingMessages.length,
+  ]);
+
+  useEffect(() => {
+    if (!isLoadingAllMessages || !scrollViewRef.current) {
+      return;
+    }
+
+    scrollViewRef.current.scrollTo({ y: 0, animated: false });
+    scrollMetricsRef.current.scrollY = 0;
+    scrollMetricsRef.current.preserveOnNextLayout = true;
+  }, [isLoadingAllMessages]);
 
   // Clear sending state when a new message appears (message was successfully sent)
   // But ensure stop button displays for minimum 30 seconds
@@ -291,7 +403,50 @@ const MessagesTab = ({
         contentContainerStyle={styles.messagesContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        onScroll={handleMessagesScroll}
+        scrollEventThrottle={16}
+        onContentSizeChange={handleMessagesContentSizeChange}
       >
+        {(onLoadAllMessages || onFetchMessages) && (
+          <View style={styles.loadAllBar}>
+            {onLoadAllMessages && (
+              <TouchableOpacity
+                style={[
+                  styles.loadAllButton,
+                  (isLoadingAllMessages || isFetchingMessages) &&
+                    styles.loadAllButtonDisabled,
+                ]}
+                onPress={onLoadAllMessages}
+                disabled={isLoadingAllMessages || isFetchingMessages}
+              >
+                {isLoadingAllMessages ? (
+                  <>
+                    <ActivityIndicator
+                      size="small"
+                      color={colors.text.white}
+                      style={styles.loadAllButtonSpinner}
+                    />
+                    <Text style={styles.loadAllButtonText}>
+                      Loading all messages...
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons
+                      name="cloud-download-outline"
+                      size={18}
+                      color={colors.text.white}
+                    />
+                    <Text style={styles.loadAllButtonText}>
+                      Load All Messages
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {isFetchingMessages && visibleMessages.length === 0 ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.accent.primary} />
@@ -580,6 +735,30 @@ const styles = StyleSheet.create({
   loadingHeaderText: {
     fontSize: typography.sizes.base,
     color: colors.text.primary,
+  },
+  loadAllBar: {
+    marginBottom: spacing.md,
+  },
+  loadAllButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.accent.primary,
+    borderRadius: borderRadius.md,
+    gap: spacing.sm,
+  },
+  loadAllButtonDisabled: {
+    opacity: 0.7,
+  },
+  loadAllButtonSpinner: {
+    marginRight: spacing.xs,
+  },
+  loadAllButtonText: {
+    color: colors.text.white,
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
   },
   loadingContainer: {
     flex: 1,

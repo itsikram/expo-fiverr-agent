@@ -1,17 +1,24 @@
+import { Platform } from 'react-native';
+
 /**
  * Server configuration for WebSocket connection
  *
- * Live server: wss://fiverr-agent-03vs.onrender.com (no port input; fixed URL).
+ * Live server: wss://fiverr-agent-server.onrender.com (no port input; fixed URL).
  * Local server: ws://localhost:8765 or ws://192.168.0.102:8765
- * 
- * Can be configured via environment variable:
+ *
+ * Web builds always use EXPO_PUBLIC_SERVER_URL from .env (baked in at build time).
+ * Native apps can override via the Settings screen (stored in local storage).
+ *
+ * Environment variables:
  * - EXPO_PUBLIC_SERVER_URL (for Expo public env vars)
  * - SERVER_URL (for build-time env vars)
  */
-const DEFAULT_SERVER_URL = 
-  process.env.EXPO_PUBLIC_SERVER_URL || 
-  process.env.SERVER_URL || 
-  'https://fiverr-agent-03vs.onrender.com';
+export const DEFAULT_SERVER_URL =
+  process.env.EXPO_PUBLIC_SERVER_URL ||
+  process.env.SERVER_URL ||
+  'https://fiverr-agent-server.onrender.com';
+
+const useEnvServerUrl = () => Platform.OS === 'web';
 
 // Check if host is a local IP or localhost
 const isLocalHost = (host) => {
@@ -74,6 +81,12 @@ export const SERVER_CONFIG = {
   serverUrl: DEFAULT_SERVER_URL,
 
   async loadSettings() {
+    if (useEnvServerUrl()) {
+      this.serverUrl = DEFAULT_SERVER_URL;
+      console.log('[SERVER_CONFIG] Web build using env server URL:', this.serverUrl);
+      return;
+    }
+
     try {
       const { loadSettings: loadStorage } = await import('../utils/storage');
       const settings = await loadStorage();
@@ -129,7 +142,7 @@ export const SERVER_CONFIG = {
     }
     
     // Fallback to default
-    return 'wss://fiverr-agent-03vs.onrender.com';
+    return 'wss://fiverr-agent-server.onrender.com';
   },
 
   RECONNECT_INTERVAL: 3000,

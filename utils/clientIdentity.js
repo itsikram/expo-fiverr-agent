@@ -267,6 +267,51 @@ export const collapseDuplicateParagraphs = (text) => {
   return deduped.join("\n\n");
 };
 
+const normalizeAttachmentUrl = (url) => {
+  if (!url || typeof url !== "string") {
+    return null;
+  }
+  return url.split("?")[0].split("#")[0].trim().toLowerCase();
+};
+
+/** Remove duplicate image attachments within a single message. */
+export const dedupeMessageImages = (images = []) => {
+  if (!Array.isArray(images)) {
+    return [];
+  }
+
+  const seen = new Set();
+  const deduped = [];
+
+  for (const attachment of images) {
+    if (!attachment) {
+      continue;
+    }
+
+    const candidateUrls = [
+      attachment.url,
+      attachment.href,
+      attachment.thumbnailUrl,
+      attachment.thumbnail,
+    ]
+      .map(normalizeAttachmentUrl)
+      .filter(Boolean);
+
+    if (candidateUrls.length === 0) {
+      continue;
+    }
+
+    if (candidateUrls.some((url) => seen.has(url))) {
+      continue;
+    }
+
+    candidateUrls.forEach((url) => seen.add(url));
+    deduped.push(attachment);
+  }
+
+  return deduped;
+};
+
 const getMessageTextKey = (message) =>
   String(message?.text || message?.content || message?.message || "")
     .trim()
@@ -351,15 +396,17 @@ export const pickRicherMessage = (left, right) => {
   return {
     ...secondary,
     ...primary,
-    images:
+    images: dedupeMessageImages(
       (Array.isArray(primary?.images) && primary.images.length > 0
         ? primary.images
         : null) ||
-      (Array.isArray(secondary?.images) && secondary.images.length > 0
-        ? secondary.images
-        : null) ||
-      primary?.images ||
-      secondary?.images,
+        (Array.isArray(secondary?.images) && secondary.images.length > 0
+          ? secondary.images
+          : null) ||
+        primary?.images ||
+        secondary?.images ||
+        [],
+    ),
     _id: primary?._id || secondary?._id,
     id: primary?.id || secondary?.id,
   };

@@ -13,7 +13,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
 import { formatTime } from "../utils/formatTime";
-import { collapseDuplicateParagraphs } from "../utils/clientIdentity";
+import { collapseDuplicateParagraphs, dedupeMessageImages } from "../utils/clientIdentity";
 
 const openLink = async (url) => {
   if (!url) return;
@@ -71,7 +71,9 @@ const MessageBubble = ({
   onEdit,
   onDelete,
 }) => {
-  const attachments = Array.isArray(message.images) ? message.images : [];
+  const attachments = dedupeMessageImages(
+    Array.isArray(message.images) ? message.images : [],
+  );
   const links = Array.isArray(message.links) ? message.links : [];
   const textContent = collapseDuplicateParagraphs(
     message.text || message.content || "",
@@ -127,12 +129,20 @@ const MessageBubble = ({
 
       {attachments.length > 0 ? (
         <View style={styles.attachmentsContainer}>
-          {attachments.map((attachment, index) => (
+          {attachments.map((attachment, index) => {
+            const attachmentKey =
+              attachment.url ||
+              attachment.thumbnailUrl ||
+              attachment.href ||
+              `attachment-${index}`;
+
+            return (
             <AttachmentItem
-              key={`attachment-${index}`}
+              key={attachmentKey}
               attachment={attachment}
             />
-          ))}
+            );
+          })}
         </View>
       ) : null}
 
