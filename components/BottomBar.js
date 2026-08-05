@@ -13,9 +13,21 @@ import {
   colors,
   spacing,
   borderRadius,
-  shadows,
   typography,
 } from "../constants/theme";
+
+const StatusIndicators = ({ serverColor, extensionColor }) => (
+  <View style={styles.statusIndicators}>
+    <View style={styles.statusRow}>
+      <Text style={styles.statusLabel}>S</Text>
+      <View style={[styles.statusColor, { backgroundColor: serverColor }]} />
+    </View>
+    <View style={styles.statusRow}>
+      <Text style={styles.statusLabel}>E</Text>
+      <View style={[styles.statusColor, { backgroundColor: extensionColor }]} />
+    </View>
+  </View>
+);
 
 const BottomBar = ({
   onMenuToggle,
@@ -24,144 +36,99 @@ const BottomBar = ({
   isRefetching,
   showRefetch,
   onNavigateToSettings,
-  authUsername,
-  authEmail,
   onOpenVoiceModal,
-  isMinimized = false,
-  onToggleMinimize,
+  serverStatusColor,
+  extensionStatusColor,
+  isMessageInputMinimized = false,
+  onToggleMessageInput,
+  showMessageInputToggle = false,
   onLogout,
   onOpenAdminDashboard,
 }) => {
+  const renderIconButton = (icon, onPress, options = {}) => {
+    const { disabled, loading, variant = "default" } = options;
+    return (
+      <TouchableOpacity
+        style={[
+          styles.iconButton,
+          variant === "danger" && styles.iconButtonDanger,
+          variant === "accent" && styles.iconButtonAccent,
+          disabled && styles.iconButtonDisabled,
+        ]}
+        onPress={onPress}
+        activeOpacity={0.7}
+        disabled={disabled || loading}
+      >
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.text.secondary} />
+        ) : (
+          <Ionicons
+            name={icon}
+            size={20}
+            color={
+              variant === "accent"
+                ? colors.text.white
+                : variant === "danger"
+                  ? colors.accent.error
+                  : colors.text.secondary
+            }
+          />
+        )}
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <SafeAreaView
       style={[styles.safeArea, Platform.OS === "web" && styles.safeAreaWeb]}
       edges={["bottom"]}
     >
-      <View
-        style={[styles.container, Platform.OS === "web" && styles.containerWeb]}
-      >
-        {!isMinimized ? (
-          <>
+      <View style={styles.container}>
+        <View style={styles.leftSection}>
+          {renderIconButton(
+            isMenuOpen ? "close" : "menu",
+            onMenuToggle,
+            { variant: "accent" },
+          )}
+        </View>
+
+        <View style={styles.rightSection}>
+          <StatusIndicators
+            serverColor={serverStatusColor}
+            extensionColor={extensionStatusColor}
+          />
+          {onOpenVoiceModal
+            ? renderIconButton("mic-outline", onOpenVoiceModal)
+            : null}
+          {showRefetch
+            ? renderIconButton("refresh-outline", onRefetch, {
+                loading: isRefetching,
+                disabled: isRefetching,
+              })
+            : null}
+          {renderIconButton("settings-outline", onNavigateToSettings)}
+          {onOpenAdminDashboard
+            ? renderIconButton("shield-checkmark-outline", onOpenAdminDashboard)
+            : null}
+          {onLogout
+            ? renderIconButton("log-out-outline", onLogout, {
+                variant: "danger",
+              })
+            : null}
+          {showMessageInputToggle && onToggleMessageInput ? (
             <TouchableOpacity
-              style={[styles.menuButton, isMenuOpen && styles.menuButtonActive]}
-              onPress={onMenuToggle}
+              style={styles.collapseButton}
+              onPress={onToggleMessageInput}
               activeOpacity={0.7}
             >
               <Ionicons
-                name={isMenuOpen ? "close" : "menu"}
-                size={24}
-                color={colors.text.white}
+                name={isMessageInputMinimized ? "chevron-up" : "chevron-down"}
+                size={16}
+                color={colors.text.muted}
               />
             </TouchableOpacity>
-
-            <View style={styles.rightButtons}>
-              {onOpenVoiceModal ? (
-                <TouchableOpacity
-                  style={styles.voiceButton}
-                  onPress={onOpenVoiceModal}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name="mic" size={24} color={colors.text.white} />
-                </TouchableOpacity>
-              ) : null}
-              {showRefetch && (
-                <TouchableOpacity
-                  style={[
-                    styles.refetchButton,
-                    isRefetching && styles.refetchButtonActive,
-                  ]}
-                  onPress={onRefetch}
-                  activeOpacity={0.7}
-                  disabled={isRefetching}
-                >
-                  {isRefetching ? (
-                    <ActivityIndicator size="small" color={colors.text.white} />
-                  ) : (
-                    <Ionicons
-                      name="refresh"
-                      size={24}
-                      color={colors.text.white}
-                    />
-                  )}
-                </TouchableOpacity>
-              )}
-
-              <TouchableOpacity
-                style={styles.settingsButton}
-                onPress={onNavigateToSettings}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="settings" size={24} color={colors.text.white} />
-              </TouchableOpacity>
-              {onOpenAdminDashboard ? (
-                <TouchableOpacity
-                  style={styles.adminButton}
-                  onPress={onOpenAdminDashboard}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="shield-checkmark"
-                    size={22}
-                    color={colors.text.white}
-                  />
-                </TouchableOpacity>
-              ) : null}
-              {onLogout ? (
-                <TouchableOpacity
-                  style={styles.logoutButton}
-                  onPress={onLogout}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="log-out-outline"
-                    size={22}
-                    color={colors.text.white}
-                  />
-                </TouchableOpacity>
-              ) : null}
-              {(authUsername || authEmail) && (
-                <View style={styles.authInfoContainer}>
-                  <Text style={styles.authLabel}>Logged in as</Text>
-                  <Text style={styles.authUsername}>
-                    {authUsername || authEmail || "Unknown"}
-                  </Text>
-                  {authEmail ? (
-                    <Text style={styles.authEmail}>{authEmail}</Text>
-                  ) : null}
-                </View>
-              )}
-              {onToggleMinimize && (
-                <TouchableOpacity
-                  style={styles.minimizeButton}
-                  onPress={onToggleMinimize}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="chevron-down"
-                    size={20}
-                    color={colors.text.white}
-                  />
-                </TouchableOpacity>
-              )}
-            </View>
-          </>
-        ) : (
-          <View style={styles.minimizedContainer}>
-            {onToggleMinimize && (
-              <TouchableOpacity
-                style={styles.minimizeButton}
-                onPress={onToggleMinimize}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="chevron-up"
-                  size={20}
-                  color={colors.text.white}
-                />
-              </TouchableOpacity>
-            )}
-          </View>
-        )}
+          ) : null}
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -169,7 +136,7 @@ const BottomBar = ({
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.background.secondary,
     marginBottom: Platform.OS === "android" ? -65 : -35,
     zIndex: 1000,
     elevation: 1000,
@@ -181,118 +148,71 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.lg,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.background.secondary,
     borderTopWidth: 1,
     borderTopColor: colors.border.light,
-    ...shadows.md,
   },
-  containerWeb: {
-    paddingTop: 10,
-  },
-  rightButtons: {
+  leftSection: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.sm,
   },
-  menuButton: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.accent.primary,
-    justifyContent: "center",
+  rightSection: {
+    flexDirection: "row",
     alignItems: "center",
-    ...shadows.sm,
+    gap: spacing.xs,
   },
-  menuButtonActive: {
-    backgroundColor: colors.accent.error,
-  },
-  refetchButton: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.accent.primary,
+  statusIndicators: {
+    flexDirection: "column",
     justifyContent: "center",
+    gap: 3,
+    marginRight: spacing.xs,
+  },
+  statusRow: {
+    flexDirection: "row",
     alignItems: "center",
-    ...shadows.sm,
+    gap: 4,
   },
-  refetchButtonActive: {
-    opacity: 0.7,
-  },
-  voiceButton: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.accent.primary,
-    justifyContent: "center",
-    alignItems: "center",
-    ...shadows.sm,
-  },
-  settingsButton: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.accent.primary,
-    justifyContent: "center",
-    alignItems: "center",
-    ...shadows.sm,
-  },
-  adminButton: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.accent.warning,
-    justifyContent: "center",
-    alignItems: "center",
-    ...shadows.sm,
-  },
-  logoutButton: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.accent.error,
-    justifyContent: "center",
-    alignItems: "center",
-    ...shadows.sm,
-  },
-  minimizedContainer: {
-    width: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: -10,
-    marginTop: -10,
-  },
-  minimizeButton: {
-    width: 48,
-    height: 25,
-    borderRadius: 10,
-    backgroundColor: colors.background.secondary,
-    justifyContent: "center",
-    alignItems: "center",
-    ...shadows.sm,
-  },
-  authInfoContainer: {
-    marginLeft: spacing.sm,
-    alignItems: "flex-start",
-    justifyContent: "center",
-    maxWidth: 220,
-  },
-  authLabel: {
-    fontSize: typography.sizes.xs,
-    color: colors.text.secondary,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  authUsername: {
-    fontSize: typography.sizes.sm,
+  statusLabel: {
+    fontSize: typography.sizes.xs + 1,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white,
+    color: colors.text.muted,
+    width: 10,
+    textAlign: "center",
   },
-  authEmail: {
-    fontSize: typography.sizes.xs,
-    color: colors.text.secondary,
+  statusColor: {
+    width: 10,
+    height: 10,
+    borderRadius: borderRadius.full,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surface.hover,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  iconButtonAccent: {
+    backgroundColor: colors.accent.primary,
+    borderColor: colors.accent.primary,
+  },
+  iconButtonDanger: {
+    backgroundColor: colors.accent.errorMuted,
+    borderColor: "rgba(239,68,68,0.2)",
+  },
+  iconButtonDisabled: {
+    opacity: 0.5,
+  },
+  collapseButton: {
+    width: 32,
+    height: 32,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: spacing.xs,
   },
 });
 

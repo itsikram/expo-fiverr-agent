@@ -22,7 +22,7 @@ import {
   shadows,
 } from "../constants/theme";
 import { loadSettings, saveSettings } from "../utils/storage";
-import { DEFAULT_SERVER_URL } from "../config/server";
+import { SERVER_CONFIG } from "../config/server";
 import { useWebSocket } from "../context/WebSocketContext";
 import { useAuth } from "../context/AuthContext";
 import AdminDashboard from "../components/AdminDashboard";
@@ -50,7 +50,8 @@ const SettingsScreen = ({ onBack }) => {
   const loadSettingsData = async () => {
     try {
       if (Platform.OS === "web") {
-        setServerAddress(DEFAULT_SERVER_URL);
+        await SERVER_CONFIG.loadSettings();
+        setServerAddress(SERVER_CONFIG.serverUrl);
       }
 
       const settings = await loadSettings();
@@ -58,9 +59,8 @@ const SettingsScreen = ({ onBack }) => {
         if (settings.name) setName(settings.name);
         if (settings.skills) setSkills(settings.skills);
         if (settings.aboutMe) setAboutMe(settings.aboutMe);
-        // Web builds use EXPO_PUBLIC_SERVER_URL from .env, not stored settings
         if (Platform.OS === "web") {
-          setServerAddress(DEFAULT_SERVER_URL);
+          setServerAddress(SERVER_CONFIG.serverUrl);
         } else if (settings.serverUrl != null) {
           setServerAddress(settings.serverUrl);
         } else if (settings.serverHost != null) {
@@ -210,12 +210,13 @@ const SettingsScreen = ({ onBack }) => {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Server</Text>
               <Text style={styles.sectionDescription}>
-                Web builds use the server URL from EXPO_PUBLIC_SERVER_URL in
-                your .env file at build time.
+                Web builds read the server URL from runtime-config.js (or
+                runtime-config.json) on the live server. EXPO_PUBLIC_SERVER_URL
+                in .env is only applied when you run the web export build.
               </Text>
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Server address</Text>
-                <Text style={styles.infoText}>{DEFAULT_SERVER_URL}</Text>
+                <Text style={styles.infoText}>{serverAddress || SERVER_CONFIG.serverUrl}</Text>
               </View>
             </View>
           )}
@@ -333,8 +334,8 @@ const SettingsScreen = ({ onBack }) => {
                 autoCorrect={false}
               />
               <Text style={styles.hint}>
-                Default is gemini-2.5-flash. If unavailable, the app tries other
-                Gemini models automatically.
+                Default is gemini-2.5-flash. Older Gemini models are no longer
+                supported by the API.
               </Text>
             </View>
 
@@ -576,15 +577,16 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxxl,
   },
   section: {
-    marginBottom: spacing.xxl,
+    marginBottom: spacing.lg,
     backgroundColor: colors.background.card,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
-    ...shadows.md,
+    borderWidth: 1,
+    borderColor: colors.border.light,
   },
   sectionTitle: {
-    fontSize: typography.sizes.xl,
-    fontWeight: typography.weights.bold,
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
     color: colors.text.primary,
     marginBottom: spacing.xs,
   },

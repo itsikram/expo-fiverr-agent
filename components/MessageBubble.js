@@ -10,21 +10,25 @@ import {
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
+import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { formatTime } from "../utils/formatTime";
 import { collapseDuplicateParagraphs, dedupeMessageImages } from "../utils/clientIdentity";
 
 const openLink = async (url) => {
   if (!url) return;
   try {
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
     await Linking.openURL(url);
   } catch (error) {
     console.warn("Unable to open attachment link:", error, url);
   }
 };
 
-const AttachmentItem = ({ attachment }) => {
+const AttachmentItem = ({ attachment, isFromMe }) => {
   const url = attachment.url || attachment.href || null;
   const label =
     attachment.title ||
@@ -44,19 +48,21 @@ const AttachmentItem = ({ attachment }) => {
         <Image source={{ uri: thumbnail }} style={styles.attachmentImage} />
       ) : (
         <View style={styles.attachmentPlaceholder}>
-          <Text style={styles.attachmentPlaceholderText}>File</Text>
+          <Ionicons name="document-outline" size={18} color={colors.text.secondary} />
         </View>
       )}
       <View style={styles.attachmentMeta}>
         <Text
-          style={styles.attachmentTitle}
+          style={[styles.attachmentTitle, isFromMe && styles.attachmentTitleSent]}
           numberOfLines={1}
           ellipsizeMode="tail"
         >
           {label}
         </Text>
         {attachment.size && (
-          <Text style={styles.attachmentSize}>{attachment.size}</Text>
+          <Text style={[styles.attachmentSize, isFromMe && styles.attachmentSizeSent]}>
+            {attachment.size}
+          </Text>
         )}
       </View>
     </TouchableOpacity>
@@ -79,41 +85,48 @@ const MessageBubble = ({
     message.text || message.content || "",
   );
   const [isHovered, setIsHovered] = useState(false);
+  const { messageBubbleMaxWidth, isCompact } = useResponsiveLayout();
   const shouldShowAdminActions = showAdminActions && (onEdit || onDelete);
-  const actionButtonStyle = [
-    styles.adminActionButton,
-    isHovered && styles.adminActionButtonHovered,
-  ];
+
+  const bubbleWidthStyle = {
+    maxWidth: messageBubbleMaxWidth,
+    minWidth: 0,
+    flexShrink: 1,
+  };
+
+  const hoverProps =
+    Platform.OS === "web"
+      ? {
+          onMouseEnter: () => setIsHovered(true),
+          onMouseLeave: () => setIsHovered(false),
+          onFocus: () => setIsHovered(true),
+          onBlur: () => setIsHovered(false),
+        }
+      : {};
 
   const renderAdminActions = shouldShowAdminActions ? (
     <View
       style={[
         styles.adminActions,
-        isFromMe ? styles.adminActionsRight : styles.adminActionsLeft,
+        isHovered ? styles.adminActionsVisible : styles.adminActionsHidden,
       ]}
     >
       {onEdit ? (
         <TouchableOpacity
           onPress={() => onEdit(message)}
-          style={actionButtonStyle}
+          style={styles.adminActionButton}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
         >
-          <Ionicons
-            name="pencil"
-            size={14}
-            color={isHovered ? colors.text.white : colors.text.secondary}
-          />
+          <Ionicons name="pencil-outline" size={13} color={colors.text.secondary} />
         </TouchableOpacity>
       ) : null}
       {onDelete ? (
         <TouchableOpacity
           onPress={() => onDelete(message)}
-          style={actionButtonStyle}
+          style={[styles.adminActionButton, styles.adminActionButtonDanger]}
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
         >
-          <Ionicons
-            name="trash"
-            size={14}
-            color={isHovered ? colors.text.white : colors.text.secondary}
-          />
+          <Ionicons name="trash-outline" size={13} color={colors.accent.error} />
         </TouchableOpacity>
       ) : null}
     </View>
@@ -128,7 +141,7 @@ const MessageBubble = ({
       ) : null}
 
       {attachments.length > 0 ? (
-        <View style={styles.attachmentsContainer}>
+        <View style={[styles.attachmentsContainer, isFromMe && styles.attachmentsContainerSent]}>
           {attachments.map((attachment, index) => {
             const attachmentKey =
               attachment.url ||
@@ -137,10 +150,11 @@ const MessageBubble = ({
               `attachment-${index}`;
 
             return (
-            <AttachmentItem
-              key={attachmentKey}
-              attachment={attachment}
-            />
+              <AttachmentItem
+                key={attachmentKey}
+                attachment={attachment}
+                isFromMe={isFromMe}
+              />
             );
           })}
         </View>
@@ -176,13 +190,11 @@ const MessageBubble = ({
           <>
             <ActivityIndicator
               size="small"
-              color={
-                isFromMe ? "rgba(255, 255, 255, 0.8)" : colors.text.secondary
-              }
+              color={isFromMe ? "rgba(255,255,255,0.7)" : colors.text.muted}
               style={styles.sendingIndicator}
             />
-            <Text style={isFromMe ? styles.sendingText : styles.sendingText}>
-              {"Sending..."}
+            <Text style={isFromMe ? styles.sendingTextSent : styles.sendingText}>
+              Sending...
             </Text>
           </>
         ) : message.time ? (
@@ -194,201 +206,185 @@ const MessageBubble = ({
     </>
   );
 
-  if (isFromMe) {
-    return (
-      <View
-        style={styles.containerRight}
-        onMouseEnter={
-          Platform.OS === "web" ? () => setIsHovered(true) : undefined
-        }
-        onMouseLeave={
-          Platform.OS === "web" ? () => setIsHovered(false) : undefined
-        }
-        onFocus={Platform.OS === "web" ? () => setIsHovered(true) : undefined}
-        onBlur={Platform.OS === "web" ? () => setIsHovered(false) : undefined}
-      >
-        {renderAdminActions}
-        <LinearGradient
-          colors={[colors.accent.primary, colors.accent.secondary]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.bubbleRight}
-        >
-          {renderBody()}
-        </LinearGradient>
-      </View>
-    );
-  }
+  const bubbleStyle = isFromMe ? styles.bubbleRight : styles.bubbleLeft;
 
   return (
     <View
-      style={styles.containerLeft}
-      onMouseEnter={
-        Platform.OS === "web" ? () => setIsHovered(true) : undefined
-      }
-      onMouseLeave={
-        Platform.OS === "web" ? () => setIsHovered(false) : undefined
-      }
-      onFocus={Platform.OS === "web" ? () => setIsHovered(true) : undefined}
-      onBlur={Platform.OS === "web" ? () => setIsHovered(false) : undefined}
+      style={[styles.row, isFromMe ? styles.rowRight : styles.rowLeft]}
+      {...hoverProps}
     >
-      {renderAdminActions}
-      <View style={styles.bubbleLeft}>{renderBody()}</View>
+      <View style={[bubbleStyle, bubbleWidthStyle, isCompact && styles.bubbleCompact]}>
+        {renderAdminActions}
+        {renderBody()}
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  containerRight: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.lg,
+  row: {
+    width: "100%",
+    marginBottom: spacing.sm,
   },
-  containerLeft: {
-    flexDirection: "row",
-    justifyContent: "flex-start",
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.lg,
+  rowRight: {
+    alignItems: "flex-end",
+  },
+  rowLeft: {
+    alignItems: "flex-start",
   },
   bubbleRight: {
-    maxWidth: "75%",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    position: "relative",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm + 2,
     borderRadius: borderRadius.lg,
     borderBottomRightRadius: borderRadius.sm,
+    backgroundColor: colors.accent.primary,
   },
   bubbleLeft: {
-    maxWidth: "75%",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    position: "relative",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm + 2,
     borderRadius: borderRadius.lg,
     borderBottomLeftRadius: borderRadius.sm,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.background.elevated,
     borderWidth: 1,
-    borderColor: colors.border.dark,
+    borderColor: colors.border.light,
+  },
+  bubbleCompact: {
+    maxWidth: "100%",
   },
   textRight: {
     fontSize: typography.sizes.base,
     color: colors.text.white,
-    lineHeight: 20,
-    marginBottom: spacing.xs / 2,
+    lineHeight: 21,
+    ...(Platform.OS === "web" ? { wordBreak: "break-word" } : {}),
   },
   textLeft: {
     fontSize: typography.sizes.base,
     color: colors.text.primary,
-    lineHeight: 20,
-    marginBottom: spacing.xs / 2,
+    lineHeight: 21,
+    ...(Platform.OS === "web" ? { wordBreak: "break-word" } : {}),
   },
   timeContainer: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-end",
+    marginTop: spacing.xs,
     gap: spacing.xs / 2,
   },
   timeRight: {
     fontSize: typography.sizes.xs,
-    color: "rgba(255, 255, 255, 0.8)",
+    color: "rgba(255,255,255,0.55)",
   },
   timeLeft: {
     fontSize: typography.sizes.xs,
-    color: colors.text.secondary,
-    alignSelf: "flex-end",
+    color: colors.text.muted,
   },
   sendingIndicator: {
-    marginRight: spacing.xs / 2,
+    marginRight: 2,
+  },
+  sendingTextSent: {
+    fontSize: typography.sizes.xs,
+    color: "rgba(255,255,255,0.55)",
+    fontStyle: "italic",
   },
   sendingText: {
     fontSize: typography.sizes.xs,
-    color: "rgba(255, 255, 255, 0.8)",
+    color: colors.text.muted,
     fontStyle: "italic",
   },
   attachmentsContainer: {
     marginTop: spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.12)",
+    borderTopColor: colors.border.light,
     paddingTop: spacing.sm,
+  },
+  attachmentsContainerSent: {
+    borderTopColor: "rgba(255,255,255,0.15)",
   },
   attachmentItem: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface.hover,
+    borderRadius: borderRadius.sm,
     padding: spacing.sm,
     marginBottom: spacing.xs,
   },
   attachmentImage: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     borderRadius: borderRadius.sm,
     marginRight: spacing.sm,
   },
   attachmentPlaceholder: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     borderRadius: borderRadius.sm,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: colors.surface.active,
     justifyContent: "center",
     alignItems: "center",
     marginRight: spacing.sm,
   },
-  attachmentPlaceholderText: {
-    fontSize: typography.sizes.xs,
-    color: "rgba(255,255,255,0.7)",
-  },
   attachmentMeta: {
     flex: 1,
     justifyContent: "center",
+    minWidth: 0,
   },
   attachmentTitle: {
     fontSize: typography.sizes.sm,
-    color: colors.text.white,
+    color: colors.text.primary,
     fontWeight: typography.weights.medium,
   },
+  attachmentTitleSent: {
+    color: colors.text.white,
+  },
   attachmentSize: {
-    marginTop: spacing.xs / 2,
+    marginTop: 2,
     fontSize: typography.sizes.xs,
-    color: "rgba(255,255,255,0.72)",
+    color: colors.text.muted,
+  },
+  attachmentSizeSent: {
+    color: "rgba(255,255,255,0.6)",
   },
   linksContainer: {
     marginTop: spacing.sm,
   },
   linkTextRight: {
-    color: "rgba(255,255,255,0.9)",
+    color: "rgba(255,255,255,0.85)",
     textDecorationLine: "underline",
     marginBottom: spacing.xs / 2,
+    fontSize: typography.sizes.sm,
   },
   linkTextLeft: {
-    color: colors.accent.primary,
+    color: colors.accent.secondary,
     textDecorationLine: "underline",
     marginBottom: spacing.xs / 2,
+    fontSize: typography.sizes.sm,
   },
   adminActions: {
+    position: "absolute",
+    top: -10,
+    right: 4,
     flexDirection: "row",
-    gap: 8,
-    marginBottom: spacing.xs,
-    alignSelf: "flex-start",
-    zIndex: 20,
-    pointerEvents: "box-none",
+    gap: 4,
+    zIndex: 10,
   },
-  adminActionsRight: {
-    alignSelf: "flex-end",
-    marginRight: spacing.md,
-  },
-  adminActionsLeft: {
-    alignSelf: "flex-start",
-    marginLeft: spacing.md,
+  adminActionsHidden: Platform.OS === "web"
+    ? { opacity: 0, pointerEvents: "none" }
+    : { opacity: 0.7 },
+  adminActionsVisible: {
+    opacity: 1,
   },
   adminActionButton: {
-    padding: 6,
-    borderRadius: 8,
-    backgroundColor: "rgba(255,255,255,0.12)",
+    padding: 5,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.background.card,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: colors.border.light,
   },
-  adminActionButtonHovered: {
-    backgroundColor: colors.accent.primary,
-    borderColor: colors.accent.primary,
+  adminActionButtonDanger: {
+    backgroundColor: colors.accent.errorMuted,
+    borderColor: "rgba(239,68,68,0.2)",
   },
 });
 

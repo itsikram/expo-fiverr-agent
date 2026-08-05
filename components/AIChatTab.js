@@ -16,19 +16,27 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import MessageBubble from './MessageBubble';
-import TranslationModal from './TranslationModal';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
+import { useResponsiveLayout } from '../hooks/useResponsiveLayout';
 import { getAiChatResponse } from '../utils/aiChatService';
 import { formatTime } from '../utils/formatTime';
 import { loadAIChatHistory, saveAIChatHistory, clearAIChatHistory, loadSettings } from '../utils/storage';
 import { useWebSocket } from '../context/WebSocketContext';
 
+const INPUT_LINE_HEIGHT = 20;
+const INPUT_MIN_HEIGHT = INPUT_LINE_HEIGHT;
+const INPUT_MAX_HEIGHT = INPUT_LINE_HEIGHT * 10;
+const INPUT_ROW_VERTICAL_PADDING = 10;
+const INPUT_ROW_MIN_HEIGHT = INPUT_MIN_HEIGHT + INPUT_ROW_VERTICAL_PADDING * 2;
+
 const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) => {
   const { cancelOptimisticMessage } = useWebSocket();
+  const { messageHorizontalPadding } = useResponsiveLayout();
   const [chatMessages, setChatMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isTranslationModalVisible, setIsTranslationModalVisible] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
   const [editingMessageIndex, setEditingMessageIndex] = useState(null);
   const [editedText, setEditedText] = useState('');
   const [suggestedPrompts, setSuggestedPrompts] = useState({}); // { messageIndex: [prompts] }
@@ -49,6 +57,28 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
   // Get client ID for storage key
   const getClientId = () => {
     return client?.conversationId || client?.username || client?.id || 'unknown';
+  };
+
+  const clientStorageKey =
+    client?.conversationId || client?.username || client?.id || 'unknown';
+
+  useEffect(() => {
+    setInputHeight(INPUT_MIN_HEIGHT);
+  }, [clientStorageKey]);
+
+  useEffect(() => {
+    if (!inputText) {
+      setInputHeight(INPUT_MIN_HEIGHT);
+    }
+  }, [inputText]);
+
+  const handleInputContentSizeChange = (event) => {
+    const contentHeight = event.nativeEvent.contentSize.height;
+    const nextHeight = Math.min(
+      INPUT_MAX_HEIGHT,
+      Math.max(INPUT_MIN_HEIGHT, contentHeight),
+    );
+    setInputHeight(nextHeight);
   };
 
   // Load user profile from settings on mount
@@ -454,22 +484,6 @@ Example (return exactly this format, no other text):
     }
   };
 
-  // Update AI-suggested actions when messages change
-  useEffect(() => {
-    if (!isActive || !messages || messages.length === 0) {
-      setAiSuggestedActions([]);
-      return;
-    }
-
-    // Debounce AI action generation to avoid too many API calls
-    const timeoutId = setTimeout(() => {
-      generateAiSuggestedActions();
-    }, 500);
-
-    return () => clearTimeout(timeoutId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, chatMessages.length, isActive]);
-
   // Generate suggested prompts based on context
   const generateSuggestedPrompts = (lastAIMessage, messageIndex) => {
     const messageText = lastAIMessage?.text || '';
@@ -595,16 +609,6 @@ Example (return exactly this format, no other text):
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleTranslationTextReady = (translatedText) => {
-    setInputText(translatedText);
-    setIsTranslationModalVisible(false);
-  };
-
-  const handleUseInputText = (inputText) => {
-    setInputText(inputText);
-    setIsTranslationModalVisible(false);
   };
 
   const handleQuickAction = async (prompt) => {
@@ -1426,63 +1430,56 @@ Example (return exactly this format, no other text):
         </View>
       )} */}
 
-      <View style={styles.inputContainer}>
-        <TouchableOpacity
-          style={styles.optionsButton}
-          onPress={() => setIsOptionsModalVisible(true)}
+      <View
+        style={[styles.inputContainer, { paddingHorizontal: messageHorizontalPadding }]}
+      >
+        <View
+          style={[
+            styles.inputRow,
+            inputHeight > INPUT_MIN_HEIGHT && styles.inputRowExpanded,
+          ]}
         >
-          <Ionicons name="options-outline" size={20} color={colors.text.white} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.translateButton}
-          onPress={() => setIsTranslationModalVisible(true)}
-        >
-          <Ionicons name="language" size={20} color={colors.text.white} />
-        </TouchableOpacity>
-        {chatMessages.length > 0 && (
-          <TouchableOpacity
-            style={styles.clearButton}
-            onPress={handleClearChatHistory}
-            disabled={isLoading}
-          >
-            <Ionicons name="trash-outline" size={18} color={colors.text.white} />
-          </TouchableOpacity>
-        )}
-        <TextInput
-          style={styles.messageInput}
-          placeholder="Ask AI anything..."
-          placeholderTextColor={colors.text.secondary}
-          value={inputText}
-          onChangeText={setInputText}
-          multiline
-          maxLength={1000}
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, (!inputText.trim() || isLoading) && styles.sendButtonDisabled]}
-          onPress={() => handleSendMessage()}
-          disabled={!inputText.trim() || isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator size="small" color={colors.text.white} />
-          ) : (
-            <Ionicons name="send" size={20} color={colors.text.white} />
-          )}
-        </TouchableOpacity>
+          <View style={styles.inputFieldWrap}>
+            <TextInput
+              style={[styles.messageInput, { height: inputHeight }]}
+              placeholder="Ask AI anything..."
+              placeholderTextColor={colors.text.muted}
+              value={inputText}
+              onChangeText={setInputText}
+              onFocus={() => setIsInputFocused(true)}
+              onBlur={() => setIsInputFocused(false)}
+              onContentSizeChange={handleInputContentSizeChange}
+              multiline
+              maxLength={1000}
+              scrollEnabled={inputHeight >= INPUT_MAX_HEIGHT}
+            />
+          </View>
+          <View style={styles.inputActions}>
+            {!isInputFocused ? (
+              <TouchableOpacity
+                style={styles.iconButton}
+                onPress={() => setIsOptionsModalVisible(true)}
+              >
+                <Ionicons name="options-outline" size={18} color={colors.text.secondary} />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              style={[
+                styles.sendButton,
+                (!inputText.trim() || isLoading) && styles.sendButtonDisabled,
+              ]}
+              onPress={() => handleSendMessage()}
+              disabled={!inputText.trim() || isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color={colors.text.white} />
+              ) : (
+                <Ionicons name="arrow-up" size={18} color={colors.text.white} />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
-
-      {/* Translation Modal */}
-      <TranslationModal
-        visible={isTranslationModalVisible}
-        onClose={() => setIsTranslationModalVisible(false)}
-        initialText={inputText}
-        targetLanguage={
-          client?.language === 'English'
-            ? 'en'
-            : client?.language?.toLowerCase() || 'en'
-        }
-        onTextReady={handleTranslationTextReady}
-        onUseInputText={handleUseInputText}
-      />
 
       {/* Options Modal */}
       <Modal
@@ -1735,65 +1732,78 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.lg,
-    backgroundColor: colors.background.card,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.background.secondary,
     borderTopWidth: 1,
     borderTopColor: colors.border.light,
-    gap: spacing.sm,
-  },
-  optionsButton: {
-    padding: spacing.sm,
-    backgroundColor: colors.accent.primary,
-    borderRadius: borderRadius.md,
-    width: 44,
-    height: 44,
-    alignItems: 'center',
     justifyContent: 'center',
   },
-  translateButton: {
-    padding: spacing.sm,
-    backgroundColor: colors.accent.primary,
-    borderRadius: borderRadius.md,
-    width: 44,
-    height: 44,
+  inputRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.background.input,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
+    paddingVertical: INPUT_ROW_VERTICAL_PADDING,
+    minHeight: INPUT_ROW_MIN_HEIGHT,
+  },
+  inputRowExpanded: {
+    alignItems: 'flex-end',
+  },
+  inputFieldWrap: {
+    flex: 1,
     justifyContent: 'center',
   },
-  clearButton: {
-    padding: spacing.sm,
-    backgroundColor: colors.accent.error || '#dc3545',
-    borderRadius: borderRadius.md,
-    width: 44,
-    height: 44,
+  inputActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    height: 32,
+    justifyContent: 'center',
+  },
+  iconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.sm,
     alignItems: 'center',
     justifyContent: 'center',
   },
   messageInput: {
-    flex: 1,
-    backgroundColor: colors.background.secondary,
-    borderWidth: 2,
-    borderColor: colors.border.dark,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    width: '100%',
     color: colors.text.primary,
-    fontSize: typography.sizes.base,
-    maxHeight: 100,
-    minHeight: 44,
+    fontSize: typography.sizes.sm,
+    lineHeight: INPUT_LINE_HEIGHT,
+    paddingTop: 0,
+    paddingBottom: 0,
+    margin: 0,
+    ...(Platform.OS === 'android' ? { includeFontPadding: false, textAlignVertical: 'top' } : {}),
+    ...(Platform.OS === 'ios' ? { paddingVertical: 0 } : {}),
+    ...(Platform.OS === 'web'
+      ? {
+          outlineStyle: 'none',
+          borderWidth: 0,
+          resize: 'none',
+          overflow: 'hidden',
+          padding: 0,
+          lineHeight: `${INPUT_LINE_HEIGHT}px`,
+          boxSizing: 'border-box',
+        }
+      : {}),
   },
   sendButton: {
-    padding: spacing.sm,
-    backgroundColor: colors.accent.success,
-    borderRadius: borderRadius.md,
-    width: 44,
-    height: 44,
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.accent.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sendButtonDisabled: {
-    opacity: 0.5,
+    opacity: 0.35,
   },
   quickActionsContainer: {
     marginTop: spacing.xl,

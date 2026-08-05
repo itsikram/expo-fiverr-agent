@@ -11,7 +11,6 @@ import {
   Image,
   Platform,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import TabButton from "../components/TabButton";
 import TranslationModal from "../components/TranslationModal";
@@ -22,6 +21,93 @@ import { exportClientMessagesPdf } from "../utils/pdfExport";
 import { getClientConversationId } from "../utils/clientIdentity";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
 
+const COUNTRY_NAME_TO_CODE = {
+  "united states": "US",
+  "united states of america": "US",
+  usa: "US",
+  "united kingdom": "UK",
+  "great britain": "UK",
+  england: "UK",
+  bangladesh: "BD",
+  pakistan: "PK",
+  india: "IN",
+  canada: "CA",
+  australia: "AU",
+  germany: "DE",
+  france: "FR",
+  italy: "IT",
+  spain: "ES",
+  netherlands: "NL",
+  brazil: "BR",
+  mexico: "MX",
+  china: "CN",
+  japan: "JP",
+  "south korea": "KR",
+  "saudi arabia": "SA",
+  "united arab emirates": "AE",
+  uae: "AE",
+  egypt: "EG",
+  turkey: "TR",
+  poland: "PL",
+  ukraine: "UA",
+  russia: "RU",
+  philippines: "PH",
+  indonesia: "ID",
+  malaysia: "MY",
+  singapore: "SG",
+  "south africa": "ZA",
+  nigeria: "NG",
+  ireland: "IE",
+  sweden: "SE",
+  norway: "NO",
+  denmark: "DK",
+  finland: "FI",
+  portugal: "PT",
+  greece: "GR",
+  israel: "IL",
+  "new zealand": "NZ",
+  argentina: "AR",
+  colombia: "CO",
+  chile: "CL",
+  vietnam: "VN",
+  thailand: "TH",
+  romania: "RO",
+  hungary: "HU",
+  belgium: "BE",
+  switzerland: "CH",
+  austria: "AT",
+  "czech republic": "CZ",
+  czechia: "CZ",
+};
+
+const formatCountryCode = (country) => {
+  if (!country) return null;
+
+  const trimmed = String(country).trim();
+  if (!trimmed) return null;
+
+  if (/^[A-Za-z]{2,3}$/.test(trimmed)) {
+    return trimmed.toUpperCase();
+  }
+
+  const normalized = trimmed.toLowerCase();
+  if (COUNTRY_NAME_TO_CODE[normalized]) {
+    return COUNTRY_NAME_TO_CODE[normalized];
+  }
+
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    return words
+      .slice(0, 3)
+      .map((word) => word[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 3);
+  }
+
+  return trimmed.slice(0, 3).toUpperCase();
+};
+
 const ClientDetailsScreen = ({
   client,
   messages = [],
@@ -29,6 +115,7 @@ const ClientDetailsScreen = ({
   onLoadAllMessages,
   onSendMessage,
   isLoadingMessages,
+  isMessageInputMinimized = false,
 }) => {
   const { isConnected, fetchClientDetails, clientData, navigateToInbox } =
     useWebSocket();
@@ -40,7 +127,6 @@ const ClientDetailsScreen = ({
   const [isLoadingAllMessages, setIsLoadingAllMessages] = useState(false);
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
   const [isHeaderMinimized, setIsHeaderMinimized] = useState(false);
-  const [isFooterMinimized, setIsFooterMinimized] = useState(false);
   const fetchTimeoutRef = useRef(null);
 
   // Merge fetched client data with client prop
@@ -89,125 +175,116 @@ const ClientDetailsScreen = ({
     return client;
   }, [client, clientData]);
 
+  const getInitials = (name) => {
+    if (!name) return "?";
+    const parts = name.trim().split(" ");
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
+
   const renderHeader = () => {
     const displayClient = mergedClient || client;
+    const clientAvatarUrl =
+      displayClient?.avatarUrl || displayClient?.avatar_url || null;
+    const countryCode = formatCountryCode(displayClient?.country);
+    const ratingValue = displayClient?.review_avg_rating
+      ? parseFloat(displayClient.review_avg_rating)
+      : null;
+    const hasRating = Number.isFinite(ratingValue) && ratingValue > 0;
 
-    // Get client avatar URL from the original client prop (same as sidebar ClientListItem)
-    // This ensures we show the same avatar as in the sidebar client list
-    const clientAvatarUrl = client?.avatarUrl || client?.avatar_url || null;
-
-    // Helper function to get initials (same logic as ClientListItem)
-    const getInitials = (name) => {
-      if (!name) return "?";
-      const parts = name.trim().split(" ");
-      if (parts.length >= 2) {
-        return (parts[0][0] + parts[1][0]).toUpperCase();
-      }
-      return name.substring(0, 2).toUpperCase();
-    };
-
-    return (
-      <View style={styles.headerWrapper}>
-        {!isHeaderMinimized ? (
-          <LinearGradient
-            colors={[colors.background.card, colors.background.cardLight]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.header}
-          >
-            <View style={styles.headerContent}>
-              <View style={styles.avatarContainer}>
-                <View style={styles.avatar}>
-                  {clientAvatarUrl ? (
-                    <Image
-                      source={{ uri: clientAvatarUrl }}
-                      style={styles.avatarImage}
-                    />
-                  ) : (
-                    <Text style={styles.avatarText}>
-                      {getInitials(displayClient?.name)}
-                    </Text>
-                  )}
-                </View>
-              </View>
-              <View style={styles.headerText}>
-                <Text style={styles.clientName}>
-                  {displayClient?.name || "Unknown Client"}
-                </Text>
-                {displayClient?.username && (
-                  <Text style={styles.clientUsername}>
-                    @{displayClient.username}
-                  </Text>
-                )}
-              </View>
-              <View style={styles.infoRow}>
-                {displayClient?.country && (
-                  <View style={styles.infoBadge}>
-                    <Text style={styles.infoIcon}>🌍</Text>
-                    <Text style={styles.infoText}>{displayClient.country}</Text>
-                  </View>
-                )}
-
-                {displayClient?.language && (
-                  <View style={styles.infoBadge}>
-                    <Text style={styles.infoIcon}>🗣️</Text>
-                    <Text style={styles.infoText}>
-                      {displayClient.language}
-                    </Text>
-                  </View>
-                )}
-
-                {displayClient?.review_avg_rating && (
-                  <View style={styles.infoBadge}>
-                    <Text style={styles.infoIcon}>⭐</Text>
-                    <Text style={styles.infoText}>
-                      {parseFloat(displayClient.review_avg_rating).toFixed(1)}
-                    </Text>
-                  </View>
-                )}
-                {displayClient?.review_count && (
-                  <View style={styles.infoBadge}>
-                    <Text style={styles.infoIcon}>📝</Text>
-                    <Text style={styles.infoText}>
-                      {displayClient.review_count} reviews
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.minimizeButton}
-              onPress={() => setIsHeaderMinimized(!isHeaderMinimized)}
-            >
-              <Ionicons
-                name="chevron-up"
-                size={20}
-                color={colors.text.primary}
-              />
-            </TouchableOpacity>
-          </LinearGradient>
-        ) : (
-          <LinearGradient
-            colors={[colors.background.card, colors.background.cardLight]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.header}
-          >
-            <View style={styles.minimizedHeaderContent}>
+    if (isHeaderMinimized) {
+      return (
+        <View style={styles.headerMinimized}>
+          <View style={styles.headerActions}>
+            {Platform.OS === "web" && (
               <TouchableOpacity
-                style={styles.minimizeButtonMinimized}
-                onPress={() => setIsHeaderMinimized(!isHeaderMinimized)}
+                style={styles.headerActionButton}
+                onPress={handleExportMessages}
                 activeOpacity={0.7}
               >
-                <Ionicons
-                  name="chevron-down"
-                  size={20}
-                  color={colors.text.primary}
-                />
+                <Ionicons name="download-outline" size={18} color={colors.text.secondary} />
               </TouchableOpacity>
-            </View>
-          </LinearGradient>
-        )}
+            )}
+            <TouchableOpacity
+              style={styles.collapseButton}
+              onPress={() => setIsHeaderMinimized(false)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-down" size={18} color={colors.text.secondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <View style={styles.avatar}>
+            {clientAvatarUrl ? (
+              <Image source={{ uri: clientAvatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarText}>
+                {getInitials(displayClient?.name)}
+              </Text>
+            )}
+          </View>
+          <View style={styles.headerText}>
+            <Text style={styles.clientName} numberOfLines={1}>
+              {displayClient?.name || "Unknown Client"}
+            </Text>
+            {displayClient?.username && (
+              <Text style={styles.clientUsername} numberOfLines={1}>
+                @{displayClient.username}
+              </Text>
+            )}
+            {(countryCode || hasRating) && (
+              <View style={styles.headerMetaRow}>
+                {countryCode ? (
+                  <Text style={styles.headerMetaText}>{countryCode}</Text>
+                ) : null}
+                {countryCode && hasRating ? (
+                  <Text style={styles.headerMetaDivider}>•</Text>
+                ) : null}
+                {hasRating ? (
+                  <View style={styles.headerRating}>
+                    <Ionicons
+                      name="star"
+                      size={11}
+                      color={colors.accent.warning}
+                    />
+                    <Text style={styles.headerMetaText}>
+                      {ratingValue.toFixed(1)}
+                      {displayClient?.review_count
+                        ? ` (${displayClient.review_count})`
+                        : ""}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            )}
+          </View>
+          <View style={styles.headerActions}>
+            {Platform.OS === "web" && (
+              <TouchableOpacity
+                style={styles.headerActionButton}
+                onPress={handleExportMessages}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="download-outline" size={18} color={colors.text.secondary} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.collapseButton}
+              onPress={() => setIsHeaderMinimized(true)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chevron-up" size={18} color={colors.text.secondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
     );
   };
@@ -216,19 +293,19 @@ const ClientDetailsScreen = ({
     <View style={styles.tabsContainer}>
       <TabButton
         label="Messages"
-        icon="💬"
+        iconName="chatbubbles-outline"
         isActive={activeTab === "messages"}
         onPress={() => setActiveTab("messages")}
       />
       <TabButton
         label="AI Chat"
-        icon="💡"
+        iconName="sparkles-outline"
         isActive={activeTab === "aichat"}
         onPress={() => setActiveTab("aichat")}
       />
       <TabButton
         label="Info"
-        icon="ℹ️"
+        iconName="information-circle-outline"
         isActive={activeTab === "info"}
         onPress={() => setActiveTab("info")}
       />
@@ -441,10 +518,8 @@ const ClientDetailsScreen = ({
       onLoadAllMessages={handleLoadAllMessages}
       isFetchingMessages={isFetchingMessages || isLoadingMessages}
       isLoadingAllMessages={isLoadingAllMessages}
-      isFooterMinimized={isFooterMinimized}
-      onToggleFooterMinimize={() => setIsFooterMinimized(!isFooterMinimized)}
+      isInputMinimized={isMessageInputMinimized}
       client={client}
-      onExportPdf={Platform.OS === "web" ? handleExportMessages : undefined}
     />
   );
 
@@ -548,14 +623,11 @@ const ClientDetailsScreen = ({
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={[colors.background.primary, colors.background.secondary]}
-        style={styles.gradient}
-      >
+      <View style={styles.main}>
         {renderHeader()}
         {renderTabs()}
         <View style={styles.tabPane}>{renderTabContent()}</View>
-      </LinearGradient>
+      </View>
 
       {/* Translation Modal */}
       <TranslationModal
@@ -593,64 +665,60 @@ const InfoField = ({ label, value }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.background.primary,
   },
-  gradient: {
+  main: {
     flex: 1,
-  },
-  headerWrapper: {
-    position: "relative",
-    overflow: "visible",
-    minHeight: 20,
+    width: "100%",
+    backgroundColor: colors.background.primary,
   },
   header: {
-    padding: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
-    position: "relative",
+    backgroundColor: colors.background.secondary,
   },
-  headerContent: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  minimizedHeaderContent: {
-    flexDirection: "row",
+  headerMinimized: {
     alignItems: "flex-end",
-    justifyContent: "flex-end",
-    gap: 0,
-    marginTop: -10,
-    marginBottom: -10,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+    backgroundColor: colors.background.secondary,
   },
-  minimizeButton: {
-    padding: spacing.xs,
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  headerActionButton: {
+    width: 32,
+    height: 32,
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.background.secondary || "rgba(255, 255, 255, 0.1)",
-    position: "absolute",
-    right: spacing.sm,
-    top: spacing.sm,
-    zIndex: 10,
-    minWidth: 44, // Ensure minimum touch target
-    minHeight: 44, // Ensure minimum touch target
+    backgroundColor: colors.surface.hover,
     justifyContent: "center",
     alignItems: "center",
   },
-  minimizeButtonMinimized: {
-    padding: 0,
+  headerTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  collapseButton: {
+    width: 32,
+    height: 32,
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.background.secondary || "rgba(255, 255, 255, 0.1)",
-    minWidth: 44, // Ensure minimum touch target
-    minHeight: 10, // Ensure minimum touch target
+    backgroundColor: colors.surface.hover,
     justifyContent: "center",
     alignItems: "center",
-    margin: 0,
-  },
-  avatarContainer: {
-    marginRight: spacing.md,
   },
   avatar: {
     width: 40,
     height: 40,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.accent.primary,
+    backgroundColor: colors.accent.primaryMuted,
     justifyContent: "center",
     alignItems: "center",
     overflow: "hidden",
@@ -661,63 +729,58 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
   },
   avatarText: {
-    fontSize: typography.sizes.base,
-    fontWeight: typography.weights.bold,
-    color: colors.text.white,
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+    color: colors.accent.primary,
   },
   headerText: {
     flex: 1,
-    marginRight: spacing.md,
   },
   clientName: {
-    fontSize: typography.sizes.xl,
-    fontWeight: typography.weights.bold,
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
     color: colors.text.primary,
-    marginBottom: spacing.xs,
   },
   clientUsername: {
     fontSize: typography.sizes.sm,
-    fontWeight: typography.weights.medium,
     color: colors.text.secondary,
+    marginTop: 2,
   },
-  infoRow: {
+  headerMetaRow: {
     flexDirection: "row",
+    alignItems: "center",
     flexWrap: "wrap",
-    gap: spacing.sm,
-    alignItems: "center",
-    justifyContent: "flex-end",
+    gap: spacing.xs,
+    marginTop: 4,
   },
-  infoBadge: {
+  headerMetaText: {
+    fontSize: typography.sizes.xs,
+    color: colors.text.muted,
+    fontWeight: typography.weights.medium,
+  },
+  headerMetaDivider: {
+    fontSize: typography.sizes.xs,
+    color: colors.text.muted,
+    lineHeight: 14,
+  },
+  headerRating: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.background.card,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: colors.border.light,
-  },
-  infoIcon: {
-    fontSize: typography.sizes.sm,
-    marginRight: spacing.xs / 2,
-  },
-  infoText: {
-    fontSize: typography.sizes.sm,
-    color: colors.text.secondary,
-    fontWeight: typography.weights.medium,
+    gap: 3,
   },
   tabsContainer: {
     flexDirection: "row",
-    backgroundColor: "transparent",
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.xs,
+    backgroundColor: colors.background.secondary,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
   },
   tabPane: {
     flex: 1,
-    backgroundColor: colors.background.card,
-    borderTopLeftRadius: borderRadius.lg,
-    borderTopRightRadius: borderRadius.lg,
-    marginTop: -1,
+    width: "100%",
+    backgroundColor: colors.background.primary,
   },
   emptyState: {
     flex: 1,
@@ -749,26 +812,28 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.card,
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.border.light,
   },
   infoField: {
-    marginBottom: spacing.lg,
-    paddingBottom: spacing.lg,
+    marginBottom: spacing.md,
+    paddingBottom: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
   },
   infoLabel: {
-    fontSize: typography.sizes.sm,
-    color: colors.text.secondary,
-    fontWeight: typography.weights.semibold,
+    fontSize: typography.sizes.xs,
+    color: colors.text.muted,
+    fontWeight: typography.weights.medium,
     marginBottom: spacing.xs,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   infoValue: {
-    fontSize: typography.sizes.lg,
+    fontSize: typography.sizes.base,
     color: colors.text.primary,
-    fontWeight: typography.weights.semibold,
+    fontWeight: typography.weights.medium,
   },
   fetchButton: {
     backgroundColor: colors.accent.primary,
@@ -778,11 +843,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
   },
   fetchButtonDisabled: {
     opacity: 0.6,

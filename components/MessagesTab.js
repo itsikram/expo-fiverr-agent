@@ -16,11 +16,18 @@ import MessageBubble from "./MessageBubble";
 import { useAuth } from "../context/AuthContext";
 import { updateAdminMessage, deleteAdminMessage } from "../utils/adminService";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
+import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import {
   useWebSocket,
   getMessageTimestamp,
 } from "../context/WebSocketContext";
 import { getClientConversationId } from "../utils/clientIdentity";
+
+const INPUT_LINE_HEIGHT = 20;
+const INPUT_MIN_HEIGHT = INPUT_LINE_HEIGHT;
+const INPUT_MAX_HEIGHT = INPUT_LINE_HEIGHT * 10;
+const INPUT_ROW_VERTICAL_PADDING = 10;
+const INPUT_ROW_MIN_HEIGHT = INPUT_MIN_HEIGHT + INPUT_ROW_VERTICAL_PADDING * 2;
 
 const MessagesTab = ({
   messages = [],
@@ -32,9 +39,7 @@ const MessagesTab = ({
   onLoadAllMessages,
   isFetchingMessages = false,
   isLoadingAllMessages = false,
-  isFooterMinimized = false,
-  onToggleFooterMinimize,
-  onExportPdf,
+  isInputMinimized = false,
   client = null,
 }) => {
   const scrollViewRef = useRef(null);
@@ -60,6 +65,9 @@ const MessagesTab = ({
   const { cancelOptimisticMessage } = useWebSocket();
   const { token, role } = useAuth();
   const isAdmin = role === "admin";
+  const { messageHorizontalPadding } = useResponsiveLayout();
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
 
   const activeConversationKey = React.useMemo(
     () => getClientConversationId(client),
@@ -82,7 +90,23 @@ const MessagesTab = ({
       scrollY: 0,
       preserveOnNextLayout: false,
     };
+    setInputHeight(INPUT_MIN_HEIGHT);
   }, [activeConversationKey, client?.listRowId, client?.id]);
+
+  useEffect(() => {
+    if (!messageText) {
+      setInputHeight(INPUT_MIN_HEIGHT);
+    }
+  }, [messageText]);
+
+  const handleInputContentSizeChange = (event) => {
+    const contentHeight = event.nativeEvent.contentSize.height;
+    const nextHeight = Math.min(
+      INPUT_MAX_HEIGHT,
+      Math.max(INPUT_MIN_HEIGHT, contentHeight),
+    );
+    setInputHeight(nextHeight);
+  };
 
   // Parent already passes strictly filtered messages for the selected client.
   const visibleMessages = React.useMemo(() => {
@@ -400,7 +424,10 @@ const MessagesTab = ({
       <ScrollView
         ref={scrollViewRef}
         style={styles.messagesScroll}
-        contentContainerStyle={styles.messagesContent}
+        contentContainerStyle={[
+          styles.messagesContent,
+          { paddingHorizontal: messageHorizontalPadding },
+        ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         onScroll={handleMessagesScroll}
@@ -423,7 +450,7 @@ const MessagesTab = ({
                   <>
                     <ActivityIndicator
                       size="small"
-                      color={colors.text.white}
+                      color={colors.text.secondary}
                       style={styles.loadAllButtonSpinner}
                     />
                     <Text style={styles.loadAllButtonText}>
@@ -434,11 +461,11 @@ const MessagesTab = ({
                   <>
                     <Ionicons
                       name="cloud-download-outline"
-                      size={18}
-                      color={colors.text.white}
+                      size={16}
+                      color={colors.text.secondary}
                     />
                     <Text style={styles.loadAllButtonText}>
-                      Load All Messages
+                      Load all messages
                     </Text>
                   </>
                 )}
@@ -454,10 +481,10 @@ const MessagesTab = ({
           </View>
         ) : visibleMessages.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>💬</Text>
-            <Text style={styles.emptyTitle}>No Messages Yet</Text>
+            <Ionicons name="chatbubbles-outline" size={48} color={colors.text.muted} />
+            <Text style={styles.emptyTitle}>No messages yet</Text>
             <Text style={styles.emptyText}>
-              Click "Fetch Messages" to retrieve messages for this client.
+              Fetch messages to start the conversation.
             </Text>
             {onFetchMessages && (
               <TouchableOpacity
@@ -524,86 +551,63 @@ const MessagesTab = ({
           </>
         )}
       </ScrollView>
-      <View style={styles.inputContainer}>
-        {!isFooterMinimized ? (
-          <>
-            <TouchableOpacity
-              style={styles.translateButton}
-              onPress={onOpenTranslationModal}
-            >
-              <Ionicons name="language" size={20} color={colors.text.white} />
-            </TouchableOpacity>
-            {onExportPdf && (
-              <TouchableOpacity
-                style={styles.exportButton}
-                onPress={onExportPdf}
-              >
-                <Ionicons
-                  name="download-outline"
-                  size={20}
-                  color={colors.text.white}
-                />
-              </TouchableOpacity>
-            )}
-
-            <TextInput
-              style={styles.messageInput}
-              placeholder="Type your message here..."
-              placeholderTextColor={colors.text.secondary}
-              value={messageText}
-              onChangeText={setMessageText}
-              multiline
-              maxLength={1000}
-            />
-            {isSending ? (
-              <TouchableOpacity
-                style={[styles.sendButton, styles.stopButton]}
-                onPress={handleStopSending}
-              >
-                <Ionicons name="stop" size={20} color={colors.text.white} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={[
-                  styles.sendButton,
-                  !messageText.trim() && styles.sendButtonDisabled,
-                ]}
-                onPress={handleSend}
-                disabled={!messageText.trim()}
-              >
-                <Ionicons name="send" size={20} color={colors.text.white} />
-              </TouchableOpacity>
-            )}
-            {onToggleFooterMinimize && (
-              <TouchableOpacity
-                style={styles.minimizeButton}
-                onPress={onToggleFooterMinimize}
-              >
-                <Ionicons
-                  name="chevron-down"
-                  size={20}
-                  color={colors.text.primary}
-                />
-              </TouchableOpacity>
-            )}
-          </>
-        ) : (
-          onToggleFooterMinimize && (
-            <View style={styles.minimizedFooter}>
-              <TouchableOpacity
-                style={styles.minimizeButton}
-                onPress={onToggleFooterMinimize}
-              >
-                <Ionicons
-                  name="chevron-up"
-                  size={20}
-                  color={colors.text.primary}
-                />
-              </TouchableOpacity>
+      {!isInputMinimized ? (
+        <View
+          style={[styles.inputContainer, { paddingHorizontal: messageHorizontalPadding }]}
+        >
+          <View
+            style={[
+              styles.inputRow,
+              inputHeight > INPUT_MIN_HEIGHT && styles.inputRowExpanded,
+            ]}
+          >
+            <View style={styles.inputFieldWrap}>
+              <TextInput
+                style={[styles.messageInput, { height: inputHeight }]}
+                placeholder="Type a message..."
+                placeholderTextColor={colors.text.muted}
+                value={messageText}
+                onChangeText={setMessageText}
+                onFocus={() => setIsInputFocused(true)}
+                onBlur={() => setIsInputFocused(false)}
+                onContentSizeChange={handleInputContentSizeChange}
+                multiline
+                maxLength={1000}
+                scrollEnabled={inputHeight >= INPUT_MAX_HEIGHT}
+              />
             </View>
-          )
-        )}
-      </View>
+            <View style={styles.inputActions}>
+              {!isInputFocused ? (
+                <TouchableOpacity
+                  style={styles.iconButton}
+                  onPress={onOpenTranslationModal}
+                >
+                  <Ionicons name="language-outline" size={18} color={colors.text.secondary} />
+                </TouchableOpacity>
+              ) : null}
+              {isSending ? (
+                <TouchableOpacity
+                  style={[styles.sendButton, styles.stopButton]}
+                  onPress={handleStopSending}
+                >
+                  <Ionicons name="stop" size={18} color={colors.text.white} />
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[
+                    styles.sendButton,
+                    !messageText.trim() && styles.sendButtonDisabled,
+                  ]}
+                  onPress={handleSend}
+                  disabled={!messageText.trim()}
+                >
+                  <Ionicons name="arrow-up" size={18} color={colors.text.white} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      ) : null}
     </KeyboardAvoidingView>
   );
 };
@@ -611,90 +615,92 @@ const MessagesTab = ({
 const styles = StyleSheet.create({
   tabContent: {
     flex: 1,
+    width: "100%",
   },
   messagesScroll: {
     flex: 1,
+    width: "100%",
   },
   messagesContent: {
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    width: "100%",
   },
   inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: spacing.lg,
-    backgroundColor: colors.background.card,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.background.secondary,
     borderTopWidth: 1,
     borderTopColor: colors.border.light,
-    gap: spacing.sm,
-  },
-  minimizedFooter: {
-    width: "100%",
-    alignItems: "center",
     justifyContent: "center",
   },
-  minimizeButton: {
-    padding: spacing.xs,
+  inputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.background.input,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
+    paddingVertical: INPUT_ROW_VERTICAL_PADDING,
+    minHeight: INPUT_ROW_MIN_HEIGHT,
+  },
+  inputRowExpanded: {
+    alignItems: "flex-end",
+  },
+  inputFieldWrap: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  inputActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    height: 32,
+    justifyContent: "center",
+  },
+  iconButton: {
+    width: 32,
+    height: 32,
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.background.secondary || "rgba(255, 255, 255, 0.1)",
-  },
-  translateButton: {
-    padding: spacing.sm,
-    backgroundColor: colors.accent.primary,
-    borderRadius: borderRadius.md,
-    width: 44,
-    height: 44,
     alignItems: "center",
     justifyContent: "center",
-  },
-  refetchButton: {
-    padding: spacing.sm,
-    backgroundColor: colors.accent.info || "#3b82f6",
-    borderRadius: borderRadius.md,
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  refetchButtonDisabled: {
-    opacity: 0.6,
   },
   messageInput: {
-    flex: 1,
-    backgroundColor: colors.background.secondary,
-    borderWidth: 2,
-    borderColor: colors.border.dark,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    width: "100%",
     color: colors.text.primary,
-    fontSize: typography.sizes.base,
-    maxHeight: 100,
-    minHeight: 44,
+    fontSize: typography.sizes.sm,
+    lineHeight: INPUT_LINE_HEIGHT,
+    paddingTop: 0,
+    paddingBottom: 0,
+    margin: 0,
+    ...(Platform.OS === "android" ? { includeFontPadding: false, textAlignVertical: "top" } : {}),
+    ...(Platform.OS === "ios" ? { paddingVertical: 0 } : {}),
+    ...(Platform.OS === "web"
+      ? {
+          outlineStyle: "none",
+          borderWidth: 0,
+          resize: "none",
+          overflow: "hidden",
+          padding: 0,
+          lineHeight: `${INPUT_LINE_HEIGHT}px`,
+          boxSizing: "border-box",
+        }
+      : {}),
   },
   sendButton: {
-    padding: spacing.sm,
-    backgroundColor: colors.accent.success,
-    borderRadius: borderRadius.md,
-    width: 44,
-    height: 44,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  exportButton: {
-    padding: spacing.sm,
-    backgroundColor: colors.accent.secondary,
-    borderRadius: borderRadius.md,
-    width: 44,
-    height: 44,
+    width: 32,
+    height: 32,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.accent.primary,
     alignItems: "center",
     justifyContent: "center",
   },
   sendButtonDisabled: {
-    opacity: 0.5,
+    opacity: 0.35,
   },
   stopButton: {
-    backgroundColor: colors.accent.error || "#dc3545",
+    backgroundColor: colors.accent.error,
   },
   emptyState: {
     flex: 1,
@@ -702,39 +708,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: spacing.xxxl * 2,
     paddingHorizontal: spacing.xl,
-  },
-  emptyIcon: {
-    fontSize: 64,
-    marginBottom: spacing.lg,
+    gap: spacing.sm,
   },
   emptyTitle: {
-    fontSize: typography.sizes.xl,
+    fontSize: typography.sizes.lg,
     fontWeight: typography.weights.semibold,
     color: colors.text.secondary,
-    marginBottom: spacing.md,
+    marginTop: spacing.sm,
   },
   emptyText: {
-    fontSize: typography.sizes.base,
+    fontSize: typography.sizes.sm,
     color: colors.text.muted,
     textAlign: "center",
-    lineHeight: 24,
-    marginBottom: spacing.xl,
-  },
-  loadingHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.background.secondary,
-    borderRadius: borderRadius.md,
-  },
-  loadingHeaderIndicator: {
-    marginRight: spacing.sm,
-  },
-  loadingHeaderText: {
-    fontSize: typography.sizes.base,
-    color: colors.text.primary,
+    lineHeight: 20,
+    marginBottom: spacing.lg,
   },
   loadAllBar: {
     marginBottom: spacing.md,
@@ -745,20 +732,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
-    backgroundColor: colors.accent.primary,
+    backgroundColor: colors.surface.hover,
     borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border.light,
     gap: spacing.sm,
   },
   loadAllButtonDisabled: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
   loadAllButtonSpinner: {
     marginRight: spacing.xs,
   },
   loadAllButtonText: {
-    color: colors.text.white,
+    color: colors.text.secondary,
     fontSize: typography.sizes.sm,
-    fontWeight: typography.weights.semibold,
+    fontWeight: typography.weights.medium,
   },
   loadingContainer: {
     flex: 1,
@@ -769,15 +758,14 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: spacing.md,
-    fontSize: typography.sizes.base,
-    color: colors.text.secondary,
+    fontSize: typography.sizes.sm,
+    color: colors.text.muted,
   },
   fetchButton: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: spacing.xl,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.lg,
     backgroundColor: colors.accent.primary,
     borderRadius: borderRadius.md,
     gap: spacing.sm,
@@ -787,7 +775,7 @@ const styles = StyleSheet.create({
   },
   fetchButtonText: {
     color: colors.text.white,
-    fontSize: typography.sizes.base,
+    fontSize: typography.sizes.sm,
     fontWeight: typography.weights.semibold,
   },
 });

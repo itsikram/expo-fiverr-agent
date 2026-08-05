@@ -124,7 +124,9 @@ function AppWrapper() {
 
   // Load server settings on mount
   useEffect(() => {
-    SERVER_CONFIG.loadSettings();
+    SERVER_CONFIG.loadSettings().catch((error) => {
+      console.warn("[App] Failed to load server settings:", error);
+    });
   }, []);
 
   const handleNavigateToSettings = () => {

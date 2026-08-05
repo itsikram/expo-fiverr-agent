@@ -14,16 +14,13 @@ export const AI_CONFIG = {
     process.env.EXPO_PUBLIC_OPENAI_MODEL ||
     'gemini-2.5-flash',
   DEFAULT_MODEL: 'gemini-2.5-flash',
-  GEMINI_FALLBACK_MODELS: [
-    'gemini-2.5-flash',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-1.5-pro',
-  ],
+  GEMINI_FALLBACK_MODELS: ['gemini-2.5-flash'],
   OPENAI_FALLBACK_MODELS: [
     'gpt-4o-mini',
     'gpt-3.5-turbo',
   ],
+  GEMINI_NATIVE_URL:
+    'https://generativelanguage.googleapis.com/v1beta/models',
   GEMINI_OPENAI_URL:
     'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
   OPENAI_API_URL: 'https://api.openai.com/v1/chat/completions',

@@ -55,12 +55,12 @@ const ProfileSelector = ({
   };
 
   return (
-    <View style={[styles.wrapper, isCard && styles.wrapperCard]}>
+    <View style={[styles.wrapper, isCard && styles.wrapperCard, dropdownOpen && styles.wrapperElevated]}>
       <Text style={[styles.profileLabel, isCard && styles.profileLabelCard]}>
         Profile
       </Text>
 
-      <View style={styles.selectContainer}>
+      <View style={[styles.selectContainer, dropdownOpen && styles.selectContainerElevated]}>
         {/* Select trigger row (like <select> displayed value) */}
         <TouchableOpacity
           style={[
@@ -92,21 +92,14 @@ const ProfileSelector = ({
                 color={hasProfile ? colors.text.white : colors.text.secondary}
               />
             )}
+            {hasProfile && isOnline ? <View style={styles.avatarOnlineDot} /> : null}
           </View>
           <View style={styles.triggerTextWrap}>
             {hasProfile ? (
               <>
-                <View style={styles.profileNameRow}>
-                  <Text style={[styles.profileName, isCard && styles.profileNameCard]} numberOfLines={1}>
-                    {displayProfile.profileName || displayProfile.username || '—'}
-                  </Text>
-                  {isOnline && (
-                    <View style={styles.onlineBadge}>
-                      <View style={styles.onlineDot} />
-                      <Text style={styles.onlineText}>Online</Text>
-                    </View>
-                  )}
-                </View>
+                <Text style={[styles.profileName, isCard && styles.profileNameCard]} numberOfLines={1}>
+                  {displayProfile.profileName || displayProfile.username || '—'}
+                </Text>
                 {displayProfile.username ? (
                   <Text style={[styles.profileUsername, isCard && styles.profileUsernameCard]}>
                     @{displayProfile.username}
@@ -164,6 +157,7 @@ const ProfileSelector = ({
                           color="rgba(255, 255, 255, 0.7)"
                         />
                       )}
+                      {Boolean(p.online) ? <View style={styles.avatarOnlineDotSmall} /> : null}
                     </View>
                     <View style={styles.optionLeft}>
                       <Text style={[styles.optionName, selected && styles.optionNameSelected]} numberOfLines={1}>
@@ -174,12 +168,6 @@ const ProfileSelector = ({
                       </Text>
                     </View>
                     <View style={styles.optionRight}>
-                      {Boolean(p.online) && (
-                        <View style={styles.optionOnline}>
-                          <View style={styles.optionDot} />
-                          <Text style={styles.optionOnlineText}>Online</Text>
-                        </View>
-                      )}
                       {selected && (
                         <Ionicons name="checkmark" size={20} color={colors.accent.primary} style={styles.optionCheck} />
                       )}
@@ -198,7 +186,9 @@ const ProfileSelector = ({
 const styles = StyleSheet.create({
   wrapper: {
     marginBottom: 5,
-    zIndex: 99999,
+  },
+  wrapperElevated: {
+    zIndex: 100,
   },
   wrapperCard: {
     marginBottom: 10,
@@ -206,8 +196,8 @@ const styles = StyleSheet.create({
   },
   profileLabel: {
     fontSize: typography.sizes.xs,
-    fontWeight: typography.weights.semibold,
-    color: 'rgba(255, 255, 255, 0.6)',
+    fontWeight: typography.weights.medium,
+    color: colors.text.muted,
     marginBottom: 6,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -217,41 +207,45 @@ const styles = StyleSheet.create({
   },
   selectContainer: {
     position: 'relative',
-    zIndex: 99999,
+  },
+  selectContainerElevated: {
+    zIndex: 100,
   },
   triggerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: colors.background.input,
     borderRadius: borderRadius.md,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.md,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: colors.border.light,
   },
   triggerRowEmpty: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: colors.surface.hover,
   },
   triggerRowOpen: {
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: colors.border.medium,
   },
   triggerRowCard: {
     backgroundColor: colors.background.card || 'rgba(255, 255, 255, 0.08)',
     borderColor: colors.border?.light || 'rgba(255, 255, 255, 0.1)',
   },
   profileIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.accent.primary,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.accent.primaryMuted,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,
+    position: 'relative',
+    overflow: 'visible',
   },
   profileIconWrapEmpty: {
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: colors.surface.active,
   },
   profileIconWrapEmptyCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.12)',
@@ -261,35 +255,31 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: 20,
   },
+  avatarOnlineDot: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.accent.success,
+    borderWidth: 2,
+    borderColor: colors.background.input,
+  },
+  avatarOnlineDotSmall: {
+    position: 'absolute',
+    bottom: -1,
+    right: -1,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accent.success,
+    borderWidth: 1.5,
+    borderColor: 'rgba(30, 30, 35, 0.98)',
+  },
   triggerTextWrap: {
     flex: 1,
     minWidth: 0,
-  },
-  profileNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  onlineBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(34, 197, 94, 0.2)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
-    gap: 4,
-  },
-  onlineDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#22c55e',
-  },
-  onlineText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#22c55e',
   },
   profileName: {
     fontSize: typography.sizes.base,
@@ -332,7 +322,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: borderRadius.md,
     borderBottomRightRadius: borderRadius.md,
     maxHeight: 220,
-    zIndex: 99999,
+    zIndex: 100,
     elevation: 9999,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -363,6 +353,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.sm,
+    position: 'relative',
+    overflow: 'visible',
   },
   optionImage: {
     width: '100%',
@@ -394,22 +386,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  optionOnline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  optionDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#22c55e',
-  },
-  optionOnlineText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#22c55e',
   },
   optionCheck: {
     marginLeft: 4,

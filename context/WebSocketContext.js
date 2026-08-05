@@ -463,7 +463,9 @@ export const WebSocketProvider = ({ children }) => {
   const [selectedConversationId, setSelectedConversationId] = useState(null);
   const [loadingConversationId, setLoadingConversationId] = useState(null);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [isLoadingClients, setIsLoadingClients] = useState(false);
   const loadingConversationIdRef = useRef(null);
+  const clientListLoadTimeoutRef = useRef(null);
   const [newClientData, setNewClientData] = useState(null); // New client data that doesn't exist in clients list
   const [sellerProfile, setSellerProfile] = useState(null); // { profileName, username, updated_at, online } - current from extension
   const [sellerProfiles, setSellerProfiles] = useState([]); // all unique profiles by username
@@ -483,6 +485,10 @@ export const WebSocketProvider = ({ children }) => {
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
   const pingIntervalRef = useRef(null);
+  const pongWatchdogRef = useRef(null);
+  const lastPongAtRef = useRef(0);
+  const connectGenerationRef = useRef(0);
+  const intentionalDisconnectRef = useRef(false);
   const sessionIdRef = useRef(null);
   const isInitialLoadRef = useRef(true);
   const saveMessagesTimeoutRef = useRef(null);
@@ -586,6 +592,25 @@ export const WebSocketProvider = ({ children }) => {
     }
   }, []);
 
+  const beginClientListLoad = useCallback(() => {
+    setIsLoadingClients(true);
+    if (clientListLoadTimeoutRef.current) {
+      clearTimeout(clientListLoadTimeoutRef.current);
+    }
+    clientListLoadTimeoutRef.current = setTimeout(() => {
+      setIsLoadingClients(false);
+      clientListLoadTimeoutRef.current = null;
+    }, 45000);
+  }, []);
+
+  const endClientListLoad = useCallback(() => {
+    setIsLoadingClients(false);
+    if (clientListLoadTimeoutRef.current) {
+      clearTimeout(clientListLoadTimeoutRef.current);
+      clientListLoadTimeoutRef.current = null;
+    }
+  }, []);
+
   const loadAssignments = useCallback(async () => {
     if (!token || isAdminRole) {
       assignedClientIdsRef.current = [];
@@ -636,7 +661,52 @@ export const WebSocketProvider = ({ children }) => {
     };
   }, [loadAssignments]);
 
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearPingWatchdogs = useCallback(() => {
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
+    }
+    if (pongWatchdogRef.current) {
+      clearInterval(pongWatchdogRef.current);
+      pongWatchdogRef.current = null;
+    }
+  }, []);
+
+  const getReconnectDelay = useCallback((attempt) => {
+    const base = SERVER_CONFIG.RECONNECT_INTERVAL || 3000;
+    const cappedAttempt = Math.min(Math.max(attempt, 1), 6);
+    return Math.min(base * Math.pow(1.6, cappedAttempt - 1), 30000);
+  }, []);
+
+  const connectRef = useRef(null);
+
+  const scheduleReconnect = useCallback(() => {
+    if (intentionalDisconnectRef.current) {
+      return;
+    }
+    clearReconnectTimer();
+    reconnectAttemptsRef.current += 1;
+    const delay = getReconnectDelay(reconnectAttemptsRef.current);
+    console.log(
+      `[WebSocket] Reconnecting attempt ${reconnectAttemptsRef.current} in ${delay}ms...`,
+    );
+    reconnectTimeoutRef.current = setTimeout(() => {
+      connectRef.current?.();
+    }, delay);
+  }, [clearReconnectTimer, getReconnectDelay]);
+
   const connect = useCallback(async () => {
+    if (intentionalDisconnectRef.current) {
+      return;
+    }
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       console.log("[WebSocket] Already connected");
       return;
@@ -656,14 +726,39 @@ export const WebSocketProvider = ({ children }) => {
       console.log("[WebSocket] Platform:", Platform.OS);
       setConnectionStatus("connecting");
 
+      // Invalidate any stale socket callbacks from a previous attempt
+      connectGenerationRef.current += 1;
+      const thisGeneration = connectGenerationRef.current;
+
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch (_) {}
+        wsRef.current = null;
+      }
+
+      clearPingWatchdogs();
+      clearReconnectTimer();
+
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = async () => {
+        if (
+          connectGenerationRef.current !== thisGeneration ||
+          wsRef.current !== ws
+        ) {
+          try {
+            ws.close();
+          } catch (_) {}
+          return;
+        }
+
         console.log("[WebSocket] Connection opened");
         setConnectionStatus("connected");
         setIsConnected(true);
         reconnectAttemptsRef.current = 0;
+        lastPongAtRef.current = Date.now();
 
         // Generate session ID
         sessionIdRef.current = `expo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -678,39 +773,46 @@ export const WebSocketProvider = ({ children }) => {
           }),
         );
 
-        // Register push token for remote notifications (works when app is closed)
-        /*
-        try {
-          const pushToken = await notificationService.getExpoPushToken();
-          if (pushToken) {
-            ws.send(
-              JSON.stringify({
-                type: "register_push_token",
-                pushToken: pushToken,
-              }),
-            );
-            console.log(
-              "[WebSocket] Push token registered for remote notifications",
-            );
-          } else {
-            console.warn(
-              "[WebSocket] Could not get push token for registration",
-            );
-          }
-        } catch (error) {
-          console.error("[WebSocket] Error registering push token:", error);
-        }
-        */
-
         // Start ping interval
         pingIntervalRef.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "ping" }));
           }
         }, SERVER_CONFIG.PING_INTERVAL);
+
+        // Force reconnect if the socket goes silent (common after long idle tabs)
+        pongWatchdogRef.current = setInterval(() => {
+          if (
+            connectGenerationRef.current !== thisGeneration ||
+            wsRef.current !== ws
+          ) {
+            return;
+          }
+          if (ws.readyState !== WebSocket.OPEN) {
+            return;
+          }
+          if (
+            Date.now() - lastPongAtRef.current >
+            (SERVER_CONFIG.PONG_TIMEOUT || 70000)
+          ) {
+            console.warn(
+              "[WebSocket] No pong/activity received, forcing reconnect",
+            );
+            try {
+              ws.close();
+            } catch (_) {}
+          }
+        }, 15000);
       };
 
       ws.onmessage = (event) => {
+        if (
+          connectGenerationRef.current !== thisGeneration ||
+          wsRef.current !== ws
+        ) {
+          return;
+        }
+        lastPongAtRef.current = Date.now();
         try {
           const data = JSON.parse(event.data);
           handleMessage(data);
@@ -725,6 +827,13 @@ export const WebSocketProvider = ({ children }) => {
       };
 
       ws.onclose = (event) => {
+        if (
+          connectGenerationRef.current !== thisGeneration ||
+          wsRef.current !== ws
+        ) {
+          return;
+        }
+
         const { code, reason } = event;
         console.log(
           "[WebSocket] Connection closed",
@@ -734,12 +843,8 @@ export const WebSocketProvider = ({ children }) => {
 
         setConnectionStatus("disconnected");
         setIsConnected(false);
-
-        // Clear ping interval
-        if (pingIntervalRef.current) {
-          clearInterval(pingIntervalRef.current);
-          pingIntervalRef.current = null;
-        }
+        wsRef.current = null;
+        clearPingWatchdogs();
 
         // Provide helpful error messages
         if (code === 1006) {
@@ -751,56 +856,54 @@ export const WebSocketProvider = ({ children }) => {
           console.error("  2. Your device has network access");
         }
 
-        // Attempt to reconnect
-        if (
-          reconnectAttemptsRef.current < SERVER_CONFIG.MAX_RECONNECT_ATTEMPTS
-        ) {
-          reconnectAttemptsRef.current += 1;
-          console.log(
-            `[WebSocket] Reconnecting attempt ${reconnectAttemptsRef.current}/${SERVER_CONFIG.MAX_RECONNECT_ATTEMPTS}...`,
-          );
-
-          reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
-          }, SERVER_CONFIG.RECONNECT_INTERVAL);
-        } else {
-          console.error("[WebSocket] Max reconnection attempts reached");
-          console.error("[WebSocket] Please check:");
-          console.error(
-            "  1. Server URL:",
-            SERVER_CONFIG.getWebSocketUrl(Platform.OS),
-          );
-          console.error("  2. Network connectivity");
-          setConnectionStatus("error");
+        if (!intentionalDisconnectRef.current) {
+          scheduleReconnect();
         }
       };
     } catch (error) {
       console.error("[WebSocket] Connection error:", error);
       setConnectionStatus("error");
       setIsConnected(false);
+      if (!intentionalDisconnectRef.current) {
+        scheduleReconnect();
+      }
     }
-  }, [token]);
+  }, [token, clearPingWatchdogs, clearReconnectTimer, scheduleReconnect]);
+
+  connectRef.current = connect;
 
   const disconnect = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-
-    if (pingIntervalRef.current) {
-      clearInterval(pingIntervalRef.current);
-      pingIntervalRef.current = null;
-    }
+    intentionalDisconnectRef.current = true;
+    connectGenerationRef.current += 1;
+    clearReconnectTimer();
+    clearPingWatchdogs();
 
     if (wsRef.current) {
-      wsRef.current.close();
+      try {
+        wsRef.current.close();
+      } catch (_) {}
       wsRef.current = null;
     }
 
     setIsConnected(false);
     setConnectionStatus("disconnected");
     reconnectAttemptsRef.current = 0;
-  }, []);
+    endClientListLoad();
+  }, [clearPingWatchdogs, clearReconnectTimer, endClientListLoad]);
+
+  const ensureConnected = useCallback(() => {
+    intentionalDisconnectRef.current = false;
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      lastPongAtRef.current = Date.now();
+      try {
+        wsRef.current.send(JSON.stringify({ type: "ping" }));
+      } catch (_) {}
+      return;
+    }
+    reconnectAttemptsRef.current = 0;
+    clearReconnectTimer();
+    connect();
+  }, [clearReconnectTimer, connect]);
 
   const sendMessage = useCallback((message) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -828,9 +931,10 @@ export const WebSocketProvider = ({ children }) => {
       return false;
     }
 
+    beginClientListLoad();
     sendMessage({ type: "request_client_list" });
     return true;
-  }, [sendMessage, shouldThrottleRequest]);
+  }, [beginClientListLoad, sendMessage, shouldThrottleRequest]);
 
   const requestMessages = useCallback(
     (conversationIdOrUsername, options = {}) => {
@@ -907,13 +1011,14 @@ export const WebSocketProvider = ({ children }) => {
       return false;
     }
 
+    beginClientListLoad();
     // Send command to trigger browser extension to fetch client list
     sendMessage({
       type: "trigger",
       action: "extract_client_list",
     });
     return true;
-  }, [sendMessage, shouldThrottleRequest]);
+  }, [beginClientListLoad, sendMessage, shouldThrottleRequest]);
 
   const triggerMessageExtraction = useCallback(
     (targetIdentifier, options = {}) => {
@@ -1258,6 +1363,7 @@ export const WebSocketProvider = ({ children }) => {
               "[WebSocket] Ignoring invalid client list payload; keeping existing clients.",
               data,
             );
+            endClientListLoad();
             break;
           }
 
@@ -1357,6 +1463,7 @@ export const WebSocketProvider = ({ children }) => {
           });
 
           setClients(sortedClients);
+          endClientListLoad();
           // Save sync timestamp
           saveLastSync();
           break;
@@ -2080,6 +2187,7 @@ export const WebSocketProvider = ({ children }) => {
       requestClientData,
       requestMessages,
       requestClientList,
+      endClientListLoad,
       clients,
       selectedConversationId,
       assignedClientIds,
@@ -2135,14 +2243,55 @@ export const WebSocketProvider = ({ children }) => {
     };
   }, [clientData]);
 
-  // Connect on mount
+  // Connect on mount and recover after long idle / tab focus
   useEffect(() => {
+    intentionalDisconnectRef.current = false;
     connect();
 
+    const onAppStateChange = (nextState) => {
+      if (nextState === "active") {
+        console.log("[WebSocket] App became active, ensuring connection");
+        ensureConnected();
+      }
+    };
+    const appStateSub = AppState.addEventListener("change", onAppStateChange);
+
+    let onVisibilityChange = null;
+    let onWindowFocus = null;
+    let onOnline = null;
+    if (Platform.OS === "web" && typeof document !== "undefined") {
+      onVisibilityChange = () => {
+        if (document.visibilityState === "visible") {
+          console.log("[WebSocket] Tab visible, ensuring connection");
+          ensureConnected();
+        }
+      };
+      onWindowFocus = () => {
+        ensureConnected();
+      };
+      onOnline = () => {
+        console.log("[WebSocket] Network online, ensuring connection");
+        ensureConnected();
+      };
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      if (typeof window !== "undefined") {
+        window.addEventListener("focus", onWindowFocus);
+        window.addEventListener("online", onOnline);
+      }
+    }
+
     return () => {
+      appStateSub?.remove?.();
+      if (onVisibilityChange) {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
+      if (typeof window !== "undefined") {
+        if (onWindowFocus) window.removeEventListener("focus", onWindowFocus);
+        if (onOnline) window.removeEventListener("online", onOnline);
+      }
       disconnect();
     };
-  }, [connect, disconnect]);
+  }, [connect, disconnect, ensureConnected]);
 
   const value = {
     isConnected,
@@ -2159,6 +2308,7 @@ export const WebSocketProvider = ({ children }) => {
     selectedConversationId,
     loadingConversationId,
     isLoadingMessages,
+    isLoadingClients,
     setSelectedConversationId,
     connect,
     disconnect,

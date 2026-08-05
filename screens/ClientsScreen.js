@@ -5,9 +5,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
-  Dimensions,
   Modal,
   Platform,
+  ScrollView,
+  ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -24,6 +26,7 @@ import {
 } from "../utils/clientIdentity";
 import { useAuth } from "../context/AuthContext";
 import ClientList from "../components/ClientList";
+import ClientListItem from "../components/ClientListItem";
 import ProfileSelector from "../components/ProfileSelector";
 import ClientDetailsScreen from "./ClientDetailsScreen";
 import OffcanvasSidebar from "../components/OffcanvasSidebar";
@@ -31,9 +34,11 @@ import BottomBar from "../components/BottomBar";
 import TranslationModal from "../components/TranslationModal";
 import Snackbar from "../components/Snackbar";
 import AdminDashboard from "../components/AdminDashboard";
-import { colors, spacing, borderRadius, typography } from "../constants/theme";
+import { colors, spacing, borderRadius, typography, layout } from "../constants/theme";
 
 const ClientsScreen = ({ onNavigateToSettings }) => {
+  const { width: windowWidth } = useWindowDimensions();
+  const isDesktopWeb = Platform.OS === "web" && windowWidth >= 768;
   const {
     isConnected,
     connectionStatus,
@@ -60,6 +65,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     sendMessageToClient,
     deleteClient,
     loadAssignments,
+    isLoadingClients,
   } = useWebSocket();
   const { username, email, token, role, logout } = useAuth();
 
@@ -76,15 +82,16 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
   const [snackbarType, setSnackbarType] = useState("info");
-  const [isBottomBarMinimized, setIsBottomBarMinimized] = useState(false);
+  const [isMessageInputMinimized, setIsMessageInputMinimized] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [assignedClientIds, setAssignedClientIds] = useState([]);
   const [isAssignmentsLoaded, setIsAssignmentsLoaded] = useState(false);
   const prevClientsCountRef = React.useRef(0);
   const prevMessagesKeysRef = React.useRef(new Set());
-  const prevSelectedMessageCountRef = React.useRef(-1);
   const isFetchingClientsRef = React.useRef(false);
   const isFetchingMessagesRef = React.useRef(false);
+  const fetchSnackbarConversationRef = React.useRef(null);
+  const sawLoadingForFetchRef = React.useRef(false);
   const pendingClientSelectionTimeoutsRef = React.useRef([]);
 
   const clearPendingClientSelectionTimeouts = React.useCallback(() => {
@@ -451,6 +458,10 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
   }, [isConnected]);
 
+  useEffect(() => {
+    setIsMessageInputMinimized(false);
+  }, [selectedClientId]);
+
   // Reset refetching state when clients are updated and show snackbar
   useEffect(() => {
     if (clients.length > 0 && isRefetching) {
@@ -483,7 +494,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
   }, [clients.length, hasInitialDataLoaded]);
 
-  // Show snackbar when messages are fetched for the selected client
+  // Show snackbar only after a fresh fetch finishes loading for the selected client.
   useEffect(() => {
     if (!hasInitialDataLoaded || !isFetchingMessagesRef.current || !selectedClient) {
       if (hasInitialDataLoaded) {
@@ -497,35 +508,47 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       return;
     }
 
-    const clientMessages = findMessagesForClient(
-      messages,
-      selectedClient,
-      activeConversationKey,
-    );
+    const trackingKey = fetchSnackbarConversationRef.current;
     const activeNorm = normalizeClientLookupValue(activeConversationKey);
+    const trackingNorm = trackingKey
+      ? normalizeClientLookupValue(trackingKey)
+      : null;
+
+    if (!trackingNorm || trackingNorm !== activeNorm) {
+      return;
+    }
+
     const stillLoadingThisConversation =
       isLoadingMessages &&
       loadingConversationId &&
       normalizeClientLookupValue(loadingConversationId) === activeNorm;
 
-    const prevCount = prevSelectedMessageCountRef.current;
-    const countChanged = clientMessages.length !== prevCount;
+    if (stillLoadingThisConversation) {
+      sawLoadingForFetchRef.current = true;
+      return;
+    }
 
-    if (countChanged && clientMessages.length > 0) {
+    if (!sawLoadingForFetchRef.current) {
+      return;
+    }
+
+    const clientMessages = findMessagesForClient(
+      messages,
+      selectedClient,
+      activeConversationKey,
+    );
+
+    if (clientMessages.length > 0) {
       setSnackbarMessage(
         `Fetched ${clientMessages.length} message${clientMessages.length !== 1 ? "s" : ""} from ${selectedClient.name || selectedClient.username}`,
       );
       setSnackbarType("success");
       setSnackbarVisible(true);
-      isFetchingMessagesRef.current = false;
-    } else if (!stillLoadingThisConversation && isFetchingMessagesRef.current) {
-      isFetchingMessagesRef.current = false;
     }
 
-    if (!stillLoadingThisConversation || clientMessages.length > 0) {
-      prevSelectedMessageCountRef.current = clientMessages.length;
-    }
-
+    isFetchingMessagesRef.current = false;
+    fetchSnackbarConversationRef.current = null;
+    sawLoadingForFetchRef.current = false;
     prevMessagesKeysRef.current = new Set(Object.keys(messages));
   }, [
     messages,
@@ -672,7 +695,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         return false;
       }
 
-      prevSelectedMessageCountRef.current = -1;
+      fetchSnackbarConversationRef.current = targetIdentifier;
+      sawLoadingForFetchRef.current = false;
       isFetchingMessagesRef.current = true;
       setSelectedConversationId(targetIdentifier);
       requestClientData(targetIdentifier);
@@ -777,7 +801,9 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     const conversationKey = client ? getClientConversationId(client) : null;
 
     setSelectedClientId(clientId);
-    setIsSidebarOpen(false);
+    if (!isDesktopWeb) {
+      setIsSidebarOpen(false);
+    }
 
     if (conversationKey) {
       setSelectedConversationId(conversationKey);
@@ -846,7 +872,6 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
     setIsRefetching(true);
     isFetchingClientsRef.current = true;
-    isFetchingMessagesRef.current = true;
 
     try {
       await refreshAssignments();
@@ -990,21 +1015,6 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
   };
 
-  const getServerStatusText = () => {
-    switch (connectionStatus) {
-      case "connected":
-        return "Server: Connected";
-      case "connecting":
-        return "Server: Connecting...";
-      case "disconnected":
-        return "Server: Disconnected";
-      case "error":
-        return "Server: Error";
-      default:
-        return "Server: Unknown";
-    }
-  };
-
   // Extension status (based on WebSocket connection and sellerProfile data)
   const getExtensionStatus = () => {
     if (!isConnected) {
@@ -1014,14 +1024,22 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       };
     }
 
-    if (sellerProfile?.online) {
+    const anyOnline =
+      sellerProfile?.online ||
+      (Array.isArray(sellerProfiles) &&
+        sellerProfiles.some((profile) => profile?.online));
+
+    if (anyOnline) {
       return {
         text: "Extension: Active",
         color: colors.accent.success || "#4CAF50",
       };
     }
 
-    if (sellerProfile) {
+    if (
+      sellerProfile ||
+      (Array.isArray(sellerProfiles) && sellerProfiles.length > 0)
+    ) {
       return {
         text: "Extension: Not connected",
         color: colors.accent.warning || "#FF9800",
@@ -1036,53 +1054,71 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
   const extensionStatus = getExtensionStatus();
 
+  const sidebarClientList = (
+    <ClientList
+      sellerProfiles={sellerProfiles}
+      selectedSellerProfile={selectedSellerProfile}
+      onSelectProfile={setSelectedSellerProfile}
+      clients={visibleClients}
+      selectedClientId={selectedClientId}
+      onSelectClient={handleSelectClient}
+      onDeleteClient={handleDeleteClient}
+      isLoading={isLoadingClients}
+      showProfileSelector={isAdminRole}
+    />
+  );
+
   return (
     <View
       style={[styles.container, Platform.OS === "web" && styles.containerWeb]}
     >
-      {/* Connection Status Bar - Split Horizontally */}
-      <View style={styles.connectionBar}>
-        <View
-          style={[
-            styles.connectionStatusItem,
-            { backgroundColor: getConnectionStatusColor() },
-          ]}
-        >
-          <Text style={styles.connectionText}>{getServerStatusText()}</Text>
-        </View>
-        <View
-          style={[
-            styles.connectionStatusItem,
-            { backgroundColor: extensionStatus.color },
-          ]}
-        >
-          <Text style={styles.connectionText}>{extensionStatus.text}</Text>
-        </View>
-      </View>
-
-      <View style={styles.content}>
-        {/* Offcanvas Sidebar */}
-        <OffcanvasSidebar
-          isOpen={isSidebarOpen}
-          onClose={() => setIsSidebarOpen(false)}
-          onOpen={() => setIsSidebarOpen(true)}
-          enableSwipeOpen
-          onRefetch={handleRefetch}
-          isRefetching={isRefetching}
-        >
-          <ClientList
-            sellerProfiles={sellerProfiles}
-            selectedSellerProfile={selectedSellerProfile}
-            onSelectProfile={setSelectedSellerProfile}
-            clients={visibleClients}
-            selectedClientId={selectedClientId}
-            onSelectClient={handleSelectClient}
-            onDeleteClient={handleDeleteClient}
-          />
-        </OffcanvasSidebar>
+      <View style={[styles.content, isDesktopWeb && styles.contentDesktop]}>
+        {isDesktopWeb ? (
+          isSidebarOpen ? (
+            <View style={styles.desktopSidebar}>
+              {sidebarClientList}
+              <View style={styles.desktopSidebarFooter}>
+                <TouchableOpacity
+                  style={[
+                    styles.desktopRefetchButton,
+                    isRefetching && styles.desktopRefetchButtonDisabled,
+                  ]}
+                  onPress={handleRefetch}
+                  activeOpacity={0.7}
+                  disabled={isRefetching}
+                >
+                  <Ionicons
+                    name="refresh"
+                    size={18}
+                    color={colors.text.secondary}
+                  />
+                  <Text style={styles.desktopRefetchButtonText}>
+                    {isRefetching ? "Fetching..." : "Refetch clients"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null
+        ) : (
+          <OffcanvasSidebar
+            isOpen={isSidebarOpen}
+            onClose={() => setIsSidebarOpen(false)}
+            onOpen={() => setIsSidebarOpen(true)}
+            enableSwipeOpen
+            onRefetch={handleRefetch}
+            isRefetching={isRefetching}
+          >
+            {sidebarClientList}
+          </OffcanvasSidebar>
+        )}
 
         {/* Main Content */}
-        <View style={styles.details}>
+        <View
+          style={[
+            styles.details,
+            isDesktopWeb && isSidebarOpen && styles.detailsWithSidebar,
+          ]}
+        >
           {selectedClient ? (
             <ClientDetailsScreen
               key={activeConversationKey || selectedClientId}
@@ -1096,8 +1132,9 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
                 selectedClient &&
                 loadingConversationId === getClientConversationId(selectedClient)
               }
+              isMessageInputMinimized={isMessageInputMinimized}
             />
-          ) : (
+          ) : isAdminRole ? (
             <LinearGradient
               colors={[colors.background.primary, colors.background.secondary]}
               style={styles.emptyState}
@@ -1124,7 +1161,6 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
                   <TouchableOpacity
                     style={styles.retryButton}
                     onPress={() => {
-                      // The WebSocket context will handle reconnection
                       requestAllData();
                     }}
                   >
@@ -1133,6 +1169,63 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
                 )}
               </View>
             </LinearGradient>
+          ) : (
+            <View style={styles.assignedClientsHome}>
+              <View style={styles.assignedClientsHeader}>
+                <Text style={styles.assignedClientsTitle}>Your Clients</Text>
+                <Text style={styles.assignedClientsSubtitle}>
+                  {visibleClients.length > 0
+                    ? "Select a client to view messages and details"
+                    : "Clients assigned to you will appear here"}
+                </Text>
+              </View>
+
+              {!isAssignmentsLoaded || (isLoadingClients && visibleClients.length === 0) ? (
+                <View style={styles.assignedClientsLoading}>
+                  <ActivityIndicator size="large" color={colors.accent.primary} />
+                  <Text style={styles.assignedClientsLoadingText}>
+                    Loading your clients...
+                  </Text>
+                </View>
+              ) : visibleClients.length === 0 ? (
+                <View style={styles.assignedClientsEmpty}>
+                  <Text style={styles.emptyIcon}>👥</Text>
+                  <Text style={styles.emptyTitle}>No assigned clients</Text>
+                  <Text style={styles.emptyText}>
+                    {isConnected
+                      ? "You don't have any clients assigned yet. Contact your admin."
+                      : "Waiting for connection to server..."}
+                  </Text>
+                  {!isConnected && (
+                    <TouchableOpacity
+                      style={styles.retryButton}
+                      onPress={() => requestAllData()}
+                    >
+                      <Text style={styles.retryButtonText}>Retry Connection</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ) : (
+                <ScrollView
+                  style={styles.assignedClientsList}
+                  contentContainerStyle={styles.assignedClientsListContent}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {visibleClients.map((client, index) => {
+                    const rowId = getListRowId(client, index);
+                    return (
+                      <ClientListItem
+                        key={rowId}
+                        client={client}
+                        isSelected={false}
+                        onPress={() => handleSelectClient(rowId)}
+                      />
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
           )}
         </View>
       </View>
@@ -1145,15 +1238,18 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         isRefetching={isRefetching}
         showRefetch={!!selectedClient}
         onNavigateToSettings={onNavigateToSettings}
-        authUsername={username}
-        authEmail={email}
         onOpenAdminDashboard={
           role === "admin" ? handleOpenAdminDashboard : null
         }
         onLogout={handleLogout}
         onOpenVoiceModal={handleOpenVoiceModal}
-        isMinimized={isBottomBarMinimized}
-        onToggleMinimize={() => setIsBottomBarMinimized(!isBottomBarMinimized)}
+        serverStatusColor={getConnectionStatusColor()}
+        extensionStatusColor={extensionStatus.color}
+        isMessageInputMinimized={isMessageInputMinimized}
+        onToggleMessageInput={() =>
+          setIsMessageInputMinimized(!isMessageInputMinimized)
+        }
+        showMessageInputToggle={!!selectedClient}
       />
 
       {/* Translation Modal */}
@@ -1279,40 +1375,64 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   );
 };
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-
 const styles = StyleSheet.create({
   container: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
+    flex: 1,
+    width: "100%",
     backgroundColor: colors.background.primary,
-    paddingTop: 40,
+    paddingTop: Platform.OS === "web" ? 0 : 40,
   },
   containerWeb: {
     paddingTop: 0,
   },
-  connectionBar: {
-    height: 16,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  connectionStatusItem: {
-    flex: 1,
-    height: "100%",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 8,
-  },
-  connectionText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "600",
-  },
   content: {
     flex: 1,
+    width: "100%",
+  },
+  contentDesktop: {
+    flexDirection: "row",
+  },
+  desktopSidebar: {
+    width: layout.sidebarWidth,
+    flexShrink: 0,
+    flex: 1,
+    maxHeight: "100%",
+    backgroundColor: colors.background.sidebar,
+    borderRightWidth: 1,
+    borderRightColor: colors.border.light,
+  },
+  desktopSidebarFooter: {
+    padding: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+  },
+  desktopRefetchButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface.hover,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    gap: spacing.sm,
+  },
+  desktopRefetchButtonText: {
+    color: colors.text.secondary,
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
+  },
+  desktopRefetchButtonDisabled: {
+    opacity: 0.6,
   },
   details: {
     flex: 1,
+    width: "100%",
+  },
+  detailsWithSidebar: {
+    flex: 1,
+    minWidth: 0,
   },
   retryButton: {
     marginTop: 20,
@@ -1390,17 +1510,61 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   emptyTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#e0e0e0",
-    marginBottom: 10,
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.secondary,
+    marginBottom: spacing.sm,
     textAlign: "center",
   },
   emptyText: {
-    fontSize: 16,
-    color: "#a0a0a0",
+    fontSize: typography.sizes.base,
+    color: colors.text.muted,
     textAlign: "center",
-    lineHeight: 24,
+    lineHeight: 22,
+  },
+  assignedClientsHome: {
+    flex: 1,
+    backgroundColor: colors.background.primary,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
+  },
+  assignedClientsHeader: {
+    marginBottom: spacing.lg,
+  },
+  assignedClientsTitle: {
+    fontSize: typography.sizes.xl,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.primary,
+    marginBottom: spacing.xs,
+  },
+  assignedClientsSubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.muted,
+    lineHeight: 20,
+  },
+  assignedClientsLoading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  assignedClientsLoadingText: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+  },
+  assignedClientsEmpty: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: spacing.lg,
+  },
+  assignedClientsList: {
+    flex: 1,
+  },
+  assignedClientsListContent: {
+    paddingBottom: spacing.xl,
+    gap: spacing.xs,
   },
   translateFloatingButton: {
     position: "absolute",

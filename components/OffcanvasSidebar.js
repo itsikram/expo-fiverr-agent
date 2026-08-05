@@ -8,11 +8,10 @@ import {
   Text,
   PanResponder,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, typography } from '../constants/theme';
+import { colors, spacing, borderRadius, typography, layout } from '../constants/theme';
 
-const SIDEBAR_WIDTH = 300;
+const SIDEBAR_WIDTH = layout.sidebarWidth;
 const SWIPE_THRESHOLD = SIDEBAR_WIDTH * 0.35;
 const EDGE_STRIP_WIDTH = 20;
 
@@ -79,10 +78,11 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
     outputRange: ['0deg', '360deg'],
   });
 
-  // Pan: close by dragging sidebar/overlay left when open
+  // Pan: close by dragging sidebar left when open — do not capture taps on list items
   const panResponderClose = React.useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8,
+    onStartShouldSetPanResponder: () => false,
+    onMoveShouldSetPanResponder: (_, g) =>
+      isOpen && g.dx < -10 && Math.abs(g.dx) > Math.abs(g.dy * 1.5),
     onPanResponderMove: (_, g) => {
       if (!isOpen) return;
       const dx = Math.min(0, g.dx);
@@ -181,12 +181,7 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
           ]}
           {...(isOpen ? panResponderClose.panHandlers : {})}
         >
-          <LinearGradient
-            colors={[colors.background.sidebar, colors.background.sidebarDark]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.sidebarGradient}
-          >
+          <View style={styles.sidebarInner}>
             <View style={styles.contentContainer}>
               {children}
             </View>
@@ -201,17 +196,17 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
                   <Animated.View style={{ transform: [{ rotate: spin }] }}>
                     <Ionicons 
                       name="refresh" 
-                      size={20} 
-                      color={colors.text.white}
+                      size={18} 
+                      color={colors.text.secondary}
                     />
                   </Animated.View>
                   <Text style={styles.refetchButtonText}>
-                    {isRefetching ? 'Fetching...' : 'Refetch Clients'}
+                    {isRefetching ? 'Fetching...' : 'Refetch clients'}
                   </Text>
                 </TouchableOpacity>
               </View>
             )}
-          </LinearGradient>
+          </View>
         </Animated.View>
       </View>
     </Modal>
@@ -247,7 +242,7 @@ const styles = StyleSheet.create({
   },
   overlayBackground: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: colors.surface.overlay,
   },
   sidebar: {
     position: 'absolute',
@@ -257,8 +252,11 @@ const styles = StyleSheet.create({
     width: SIDEBAR_WIDTH,
     zIndex: 1000,
   },
-  sidebarGradient: {
+  sidebarInner: {
     flex: 1,
+    backgroundColor: colors.background.sidebar,
+    borderRightWidth: 1,
+    borderRightColor: colors.border.light,
   },
   contentContainer: {
     flex: 1,
@@ -266,23 +264,24 @@ const styles = StyleSheet.create({
   refetchButtonContainer: {
     padding: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    borderTopColor: colors.border.light,
   },
   refetchButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.accent.primary,
-    marginBottom: 10,
-    paddingVertical: spacing.md,
+    backgroundColor: colors.surface.hover,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
     gap: spacing.sm,
   },
   refetchButtonText: {
-    color: colors.text.white,
-    fontSize: typography.sizes.base,
-    fontWeight: typography.weights.semibold,
+    color: colors.text.secondary,
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
   },
   refetchButtonDisabled: {
     opacity: 0.6,

@@ -1,59 +1,55 @@
 import React from 'react';
 import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
-const TabButton = ({ label, isActive, onPress, icon }) => {
+const TabButton = ({ label, isActive, onPress, iconName }) => {
   return (
     <TouchableOpacity
       style={[styles.tab, isActive && styles.tabActive]}
       onPress={onPress}
       activeOpacity={0.7}
     >
-      <Text style={styles.icon}>{icon}</Text>
+      {iconName ? (
+        <Ionicons
+          name={iconName}
+          size={16}
+          color={isActive ? colors.accent.primary : colors.text.secondary}
+          style={styles.icon}
+        />
+      ) : null}
       <Text style={[styles.label, isActive && styles.labelActive]}>
         {label}
       </Text>
-      {isActive && <View style={styles.indicator} />}
     </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
   tab: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-    marginRight: spacing.sm,
-    borderTopLeftRadius: borderRadius.md,
-    borderTopRightRadius: borderRadius.md,
-    backgroundColor: 'transparent',
-    overflow: 'hidden',
-    height: 48,
-    flexShrink: 0,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.sm,
+    gap: spacing.xs,
   },
   tabActive: {
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.accent.primaryMuted,
   },
   icon: {
-    fontSize: typography.sizes.base,
-    marginRight: spacing.xs,
+    marginRight: 2,
   },
   label: {
-    fontSize: typography.sizes.base,
-    fontWeight: typography.weights.semibold,
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.medium,
     color: colors.text.secondary,
   },
   labelActive: {
     color: colors.accent.primary,
-  },
-  indicator: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-    backgroundColor: colors.accent.primary,
+    fontWeight: typography.weights.semibold,
   },
 });
 

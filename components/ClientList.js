@@ -7,8 +7,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   Platform,
+  ActivityIndicator,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import ClientListItem from "./ClientListItem";
 import ProfileSelector from "./ProfileSelector";
@@ -165,6 +165,8 @@ const ClientList = ({
   sellerProfiles = [],
   selectedSellerProfile,
   onSelectProfile,
+  isLoading = false,
+  showProfileSelector = true,
 }) => {
   const [searchText, setSearchText] = useState("");
 
@@ -238,31 +240,30 @@ const ClientList = ({
   };
 
   return (
-    <LinearGradient
-      colors={[colors.background.sidebar, colors.background.sidebarDark]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 0 }}
-      style={styles.container}
-    >
-      <View style={styles.profileSection}>
-        <ProfileSelector
-          sellerProfiles={sellerProfiles}
-          selectedSellerProfile={selectedSellerProfile}
-          onSelectProfile={onSelectProfile}
-          variant="sidebar"
-        />
-      </View>
-      {/* <View style={styles.header}>
-        <Text style={styles.title}>Clients</Text>
-      </View> */}
+    <View style={styles.container}>
+      {showProfileSelector ? (
+        <View style={styles.profileSection}>
+          <ProfileSelector
+            sellerProfiles={sellerProfiles}
+            selectedSellerProfile={selectedSellerProfile}
+            onSelectProfile={onSelectProfile}
+            variant="sidebar"
+          />
+        </View>
+      ) : null}
 
       <View style={styles.searchContainer}>
-        <Text style={styles.searchLabel}>🔍 Search Clients</Text>
         <View style={styles.searchInputContainer}>
+          <Ionicons
+            name="search"
+            size={16}
+            color={colors.text.muted}
+            style={styles.searchIcon}
+          />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by name or username..."
-            placeholderTextColor={colors.text.secondary}
+            placeholder="Search clients..."
+            placeholderTextColor={colors.text.muted}
             value={searchText}
             onChangeText={setSearchText}
           />
@@ -270,86 +271,91 @@ const ClientList = ({
             <TouchableOpacity
               onPress={() => setSearchText("")}
               style={styles.clearButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons
-                name="close-circle"
-                size={20}
-                color={colors.text.secondary}
-              />
+              <Ionicons name="close-circle" size={16} color={colors.text.muted} />
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      <FlatList
-        data={filteredClients}
-        renderItem={renderClient}
-        keyExtractor={(item, index) => getClientListKey(item, index)}
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
-
-      {filteredClients.length === 0 && (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No clients found</Text>
+      {isLoading && filteredClients.length === 0 ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.accent.primary} />
+          <Text style={styles.loadingTitle}>Loading clients</Text>
+          <Text style={styles.loadingSubtitle}>
+            Fetching your client list from Fiverr...
+          </Text>
         </View>
+      ) : (
+        <FlatList
+          data={filteredClients}
+          renderItem={renderClient}
+          keyExtractor={(item, index) => getClientListKey(item, index)}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[
+            styles.listContent,
+            filteredClients.length === 0 && styles.listContentEmpty,
+          ]}
+          showsVerticalScrollIndicator={false}
+          ListHeaderComponent={
+            isLoading ? (
+              <View style={styles.loadingBanner}>
+                <ActivityIndicator size="small" color={colors.accent.primary} />
+                <Text style={styles.loadingText}>Fetching clients...</Text>
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={
+            !isLoading ? (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>No clients found</Text>
+              </View>
+            ) : null
+          }
+        />
       )}
-    </LinearGradient>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: spacing.xl,
-    paddingTop: Platform.OS === "android" ? spacing.xxl + 20 : spacing.xxl + 50,
+    padding: spacing.md,
+    paddingTop: Platform.OS === "web" ? spacing.sm : spacing.lg,
+    backgroundColor: colors.background.sidebar,
   },
   profileSection: {
-    marginBottom: spacing.lg,
-    paddingBottom: spacing.lg,
+    marginBottom: spacing.md,
+    paddingBottom: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.12)",
-    zIndex: 99999,
+    borderBottomColor: colors.border.light,
+    zIndex: 2,
     overflow: "visible",
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: spacing.xl,
-  },
-  emoji: {
-    fontSize: 28,
-    marginRight: spacing.md,
-  },
-  title: {
-    fontSize: typography.sizes["2xl"],
-    fontWeight: typography.weights.bold,
-    color: colors.text.white,
-  },
   searchContainer: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.md,
     zIndex: 1,
-  },
-  searchLabel: {
-    fontSize: typography.sizes.md,
-    fontWeight: typography.weights.bold,
-    color: "rgba(255, 255, 255, 0.9)",
-    marginBottom: 5,
   },
   searchInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: colors.background.input,
     borderRadius: borderRadius.md,
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-    paddingHorizontal: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    paddingHorizontal: spacing.sm + 2,
+  },
+  searchIcon: {
+    marginRight: spacing.xs,
   },
   searchInput: {
     flex: 1,
-    color: colors.text.white,
-    fontSize: typography.sizes.md,
-    paddingVertical: spacing.md,
+    color: colors.text.primary,
+    fontSize: typography.sizes.sm,
+    paddingVertical: spacing.sm + 2,
+    ...(Platform.OS === "web" ? { outlineStyle: "none" } : {}),
   },
   clearButton: {
     padding: spacing.xs,
@@ -357,15 +363,54 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: spacing.xl,
   },
-  emptyContainer: {
+  listContentEmpty: {
+    flexGrow: 1,
+  },
+  loadingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surface.hover,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+  },
+  loadingText: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+    fontWeight: typography.weights.medium,
+  },
+  loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 5,
+    paddingVertical: spacing.xxxl,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
+  },
+  loadingTitle: {
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.primary,
+    marginTop: spacing.sm,
+  },
+  loadingSubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.muted,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  emptyContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: spacing.xl,
   },
   emptyText: {
-    fontSize: typography.sizes.base,
-    color: colors.text.secondary,
+    fontSize: typography.sizes.sm,
+    color: colors.text.muted,
   },
 });
 

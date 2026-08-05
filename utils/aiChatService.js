@@ -1,4 +1,10 @@
 import { AI_CONFIG } from '../config/ai';
+
+const MAX_CONTEXT_MESSAGES = 20;
+const MAX_OUTPUT_TOKENS = 768;
+const RETRYABLE_STATUS_CODES = new Set([404, 429, 500, 503]);
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 import { loadSettings } from './storage';
 
 // Build context string similar to desktop _get_ai_chat_response
@@ -114,14 +120,16 @@ const buildContextText = (client, messages = [], userProfile = {}) => {
   // IMPORTANT: Sort messages chronologically to ensure proper conversation flow
   if (messages && messages.length > 0) {
     // Sort messages by timestamp (oldest first) to maintain conversation flow
-    const sortedMessages = [...messages].sort((a, b) => {
+    const sortedMessages = [...messages]
+      .sort((a, b) => {
       const timeA = a.time || a.timestamp || a.date || '';
       const timeB = b.time || b.timestamp || b.date || '';
       if (!timeA && !timeB) return 0;
-      if (!timeA) return 1; // Put messages without timestamp at end
+      if (!timeA) return 1;
       if (!timeB) return -1;
       return new Date(timeA) - new Date(timeB);
-    });
+    })
+      .slice(-MAX_CONTEXT_MESSAGES);
 
     contextParts.push(`FULL CONVERSATION HISTORY WITH CLIENT (${sortedMessages.length} messages, sorted chronologically):`);
     contextParts.push('======================================================================');
@@ -235,10 +243,174 @@ const isMaskedKey = (value) =>
   typeof value === 'string' && value.includes('*');
 
 const isGeminiKey = (value) =>
-  typeof value === 'string' && value.startsWith('AIza');
+  typeof value === 'string' &&
+  (value.startsWith('AIza') || value.startsWith('AQ.'));
 
 const isOpenAiKey = (value) =>
   typeof value === 'string' && value.startsWith('sk-');
+
+const getGeminiKeyHelpMessage = () =>
+  'Use a Gemini API key from https://aistudio.google.com/apikey (it usually starts with AIza). Free tier may also require billing to be linked in Google AI Studio without activating paid usage.';
+
+const parseApiErrorMessage = (errorText) => {
+  if (!errorText) return 'Unknown error';
+  try {
+    const parsed = JSON.parse(errorText);
+    return parsed?.error?.message || parsed?.message || errorText;
+  } catch {
+    return errorText.substring(0, 300);
+  }
+};
+
+const isRetryableAiError = (error) =>
+  Boolean(
+    error?.isModelError ||
+      RETRYABLE_STATUS_CODES.has(error?.status) ||
+      /quota|rate limit|resource_exhausted|does not exist|model_not_found|not found|unavailable/i.test(
+        error?.message || '',
+      ),
+  );
+
+const buildGeminiContents = (chatHistory = [], userMessage = '') => {
+  const turns = [
+    ...buildChatHistoryMessages(chatHistory).slice(-8).map((message) => ({
+      role: message.role === 'assistant' ? 'model' : 'user',
+      text: message.content || '',
+    })),
+    { role: 'user', text: userMessage },
+  ].filter((turn) => turn.text.trim());
+
+  const contents = [];
+  turns.forEach((turn) => {
+    const last = contents[contents.length - 1];
+    if (last && last.role === turn.role) {
+      last.parts[0].text += `\n\n${turn.text}`;
+      return;
+    }
+    contents.push({ role: turn.role, parts: [{ text: turn.text }] });
+  });
+
+  if (contents.length > 0 && contents[0].role === 'model') {
+    contents.unshift({ role: 'user', parts: [{ text: 'Continue our conversation.' }] });
+  }
+
+  return contents;
+};
+
+const extractGeminiNativeText = (json) =>
+  json?.candidates?.[0]?.content?.parts
+    ?.map((part) => part.text || '')
+    .join('')
+    .trim() || '';
+
+const requestGeminiNative = async ({
+  apiKey,
+  model,
+  systemMessage,
+  chatHistory,
+  userMessage,
+}) => {
+  const url = `${AI_CONFIG.GEMINI_NATIVE_URL}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: {
+        parts: [{ text: systemMessage }],
+      },
+      contents: buildGeminiContents(chatHistory, userMessage),
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+      },
+    }),
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    const message = parseApiErrorMessage(responseText);
+    throw {
+      status: response.status,
+      message,
+      isModelError: isRetryableAiError({ status: response.status, message }),
+    };
+  }
+
+  let json;
+  try {
+    json = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    throw {
+      status: 500,
+      message: 'Invalid JSON response from Gemini native API.',
+      isModelError: false,
+    };
+  }
+
+  const content = extractGeminiNativeText(json);
+  if (!content) {
+    throw {
+      status: 500,
+      message: 'Empty response from Gemini native API.',
+      isModelError: true,
+    };
+  }
+
+  return content;
+};
+
+const requestGeminiOpenAiCompat = async ({
+  apiKey,
+  apiUrl,
+  model,
+  apiMessages,
+}) => {
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: apiMessages,
+      temperature: 0.7,
+      max_tokens: MAX_OUTPUT_TOKENS,
+    }),
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    const message = parseApiErrorMessage(responseText);
+    throw {
+      status: response.status,
+      message,
+      isModelError: isRetryableAiError({ status: response.status, message }),
+    };
+  }
+
+  let json;
+  try {
+    json = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    throw {
+      status: 500,
+      message: 'Invalid JSON response from Gemini OpenAI-compatible API.',
+      isModelError: false,
+    };
+  }
+
+  const content = json?.choices?.[0]?.message?.content;
+  if (!content) {
+    throw {
+      status: 500,
+      message: 'Empty response from Gemini OpenAI-compatible API.',
+      isModelError: true,
+    };
+  }
+
+  return content;
+};
 
 const isGeminiModel = (value) =>
   typeof value === 'string' && /^gemini/i.test(value.trim());
@@ -250,6 +422,22 @@ const isGeminiUrl = (value) =>
   typeof value === 'string' &&
   /generativelanguage\.googleapis\.com/i.test(value);
 
+const UNSUPPORTED_GEMINI_MODELS = new Set([
+  'gemini-1.5-flash',
+  'gemini-1.5-flash-8b',
+  'gemini-1.5-pro',
+  'gemini-2.0-flash',
+  'gemini-2.0-flash-lite',
+]);
+
+const normalizeGeminiModel = (model) => {
+  const trimmed = typeof model === 'string' ? model.trim() : '';
+  if (!trimmed || isOpenAiModel(trimmed) || UNSUPPORTED_GEMINI_MODELS.has(trimmed)) {
+    return AI_CONFIG.DEFAULT_MODEL;
+  }
+  return trimmed;
+};
+
 const resolveAiConfig = (settings = {}) => {
   let apiKey = AI_CONFIG.AI_API_KEY;
   let apiUrl = AI_CONFIG.AI_API_URL;
@@ -257,7 +445,11 @@ const resolveAiConfig = (settings = {}) => {
 
   if (settings.geminiApiKey && !isMaskedKey(settings.geminiApiKey)) {
     apiKey = settings.geminiApiKey;
-  } else if (settings.aiApiKey && !isMaskedKey(settings.aiApiKey)) {
+  } else if (
+    settings.aiApiKey &&
+    !isMaskedKey(settings.aiApiKey) &&
+    !isOpenAiKey(settings.aiApiKey)
+  ) {
     apiKey = settings.aiApiKey;
   } else if (settings.openaiApiKey && !isMaskedKey(settings.openaiApiKey)) {
     apiKey = settings.openaiApiKey;
@@ -287,6 +479,13 @@ const resolveAiConfig = (settings = {}) => {
     }
     if (!model || isOpenAiModel(model)) {
       model = AI_CONFIG.DEFAULT_MODEL;
+    }
+    model = normalizeGeminiModel(model);
+    if (isOpenAiKey(apiKey)) {
+      const envGeminiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+      if (envGeminiKey && isGeminiKey(envGeminiKey)) {
+        apiKey = envGeminiKey;
+      }
     }
   } else if (!apiUrl) {
     apiUrl = AI_CONFIG.OPENAI_API_URL;
@@ -322,7 +521,19 @@ export const getAiChatResponse = async ({
 
   if (!apiKey) {
     throw new Error(
-      'AI API key is not configured. Please set it in Settings or in config/ai.js.'
+      `AI API key is not configured. ${getGeminiKeyHelpMessage()} You can also set it in Settings.`,
+    );
+  }
+
+  if (usingGemini && isOpenAiKey(apiKey)) {
+    throw new Error(
+      'An OpenAI key was detected, but a Gemini model is selected. Please add a Gemini key from Google AI Studio.',
+    );
+  }
+
+  if (usingGemini && !isGeminiKey(apiKey)) {
+    console.warn(
+      '[aiChatService] Gemini key format looks unusual. Expected AIza... from Google AI Studio.',
     );
   }
 
@@ -338,14 +549,9 @@ export const getAiChatResponse = async ({
     model = AI_CONFIG.DEFAULT_MODEL;
   }
 
-  const normalizeModel = (value) => {
-    if (!value || typeof value !== 'string') return AI_CONFIG.DEFAULT_MODEL;
-    const trimmed = value.trim();
-    if (!trimmed) return AI_CONFIG.DEFAULT_MODEL;
-    return trimmed;
-  };
-
-  model = normalizeModel(model);
+  model = usingGemini
+    ? normalizeGeminiModel(model)
+    : (model || AI_CONFIG.DEFAULT_MODEL).trim();
 
   // Ensure messages is an array
   const allMessages = Array.isArray(messages) ? messages : [];
@@ -367,75 +573,83 @@ export const getAiChatResponse = async ({
     { role: 'user', content: userMessage },
   ];
 
-  const requestAiResponse = async (selectedModel) => {
-    const body = {
-      model: selectedModel,
-      messages: apiMessages,
-      temperature: 0.7,
-      max_tokens: 1000,
-    };
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      const message = errorText.substring(0, 200);
-      const isModelError =
-        response.status === 404 ||
-        /model.*does not exist|model_not_found|invalid_request_error/i.test(message);
-      throw { status: response.status, message, isModelError };
-    }
-
-    return response.json();
-  };
-
   const fallbackModels = usingGemini
     ? AI_CONFIG.GEMINI_FALLBACK_MODELS
     : AI_CONFIG.OPENAI_FALLBACK_MODELS;
-  const modelCandidates = [
-    model,
-    ...fallbackModels.filter((m) => m !== model),
-  ];
+  const modelCandidates = [model, ...fallbackModels.filter((m) => m !== model)];
 
-  let json;
+  let content;
   let lastError;
-  for (const candidate of modelCandidates) {
+  for (let index = 0; index < modelCandidates.length; index += 1) {
+    const candidate = modelCandidates[index];
     try {
       console.log(`[aiChatService] Attempting AI request with model: ${candidate}`);
-      json = await requestAiResponse(candidate);
+
+      if (usingGemini) {
+        try {
+          content = await requestGeminiNative({
+            apiKey,
+            model: candidate,
+            systemMessage,
+            chatHistory,
+            userMessage,
+          });
+        } catch (nativeError) {
+          console.warn(
+            `[aiChatService] Native Gemini request failed for ${candidate}:`,
+            nativeError?.message || nativeError,
+          );
+          content = await requestGeminiOpenAiCompat({
+            apiKey,
+            apiUrl,
+            model: candidate,
+            apiMessages,
+          });
+        }
+      } else {
+        content = await requestGeminiOpenAiCompat({
+          apiKey,
+          apiUrl,
+          model: candidate,
+          apiMessages,
+        });
+      }
+
       model = candidate;
       break;
     } catch (error) {
       lastError = error;
-      if (!error?.isModelError) {
-        // Stop retrying on non-model errors, use the underlying error.
-        throw new Error(`AI API error (${error.status || 'unknown'}): ${error.message || 'Unknown error'}`);
-      }
+      const canRetry =
+        isRetryableAiError(error) && index < modelCandidates.length - 1;
       console.warn(
-        `[aiChatService] Model ${candidate} failed with model error; trying next fallback.`,
-        error.message,
+        `[aiChatService] Model ${candidate} failed:`,
+        error?.message || error,
       );
+
+      if (!canRetry) {
+        break;
+      }
+
+      if (error?.status === 429) {
+        await sleep(1200 * (index + 1));
+      }
     }
   }
 
-  if (!json) {
-    throw new Error(
-      `AI API error (${lastError?.status || 'unknown'}): ${lastError?.message || 'Unable to generate a response.'}`,
-    );
-  }
-
-  const choice = json.choices && json.choices[0];
-  const content = choice && choice.message && choice.message.content;
-
   if (!content) {
-    throw new Error('Empty response from AI.');
+    const status = lastError?.status || 'unknown';
+    const message = lastError?.message || 'Unable to generate a response.';
+    if (status === 429 || /quota|resource_exhausted|rate limit/i.test(message)) {
+      throw new Error(
+        `Gemini free-tier quota reached (${status}). Try again later, verify billing is linked in Google AI Studio, or confirm the model is set to gemini-2.5-flash. ${getGeminiKeyHelpMessage()}`,
+      );
+    }
+    if (status === 401 || status === 403 || /api key/i.test(message)) {
+      throw new Error(
+        `Gemini API key was rejected. ${getGeminiKeyHelpMessage()}`,
+      );
+    }
+    throw new Error(`AI API error (${status}): ${message}`);
   }
 
   return content;

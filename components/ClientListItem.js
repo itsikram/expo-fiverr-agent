@@ -1,6 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { View, Text, Pressable, StyleSheet, Image, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 import { formatTime } from '../utils/formatTime';
@@ -15,7 +14,6 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
     return name.substring(0, 2).toUpperCase();
   };
 
-  // Get client avatar URL (check both camelCase and snake_case)
   const clientAvatarUrl = client?.avatarUrl || client?.avatar_url || null;
 
   const handleDeletePress = (e) => {
@@ -26,200 +24,160 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
   };
 
   return (
-    <TouchableOpacity
-      style={[styles.container, isSelected && styles.selected]}
+    <Pressable
+      style={({ pressed }) => [
+        styles.container,
+        isSelected && styles.selected,
+        pressed && styles.pressed,
+      ]}
       onPress={onPress}
-      activeOpacity={0.7}
     >
-      {isSelected ? (
-        <LinearGradient
-          colors={[colors.accent.primary, colors.accent.secondary]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.gradient}
-        >
-          <View style={styles.content}>
-            <View style={styles.avatarContainer}>
-              <View style={styles.avatar}>
-                {clientAvatarUrl ? (
-                  <Image 
-                    source={{ uri: clientAvatarUrl }} 
-                    style={styles.avatarImage}
-                  />
-                ) : (
-                  <Text style={styles.avatarText}>{getInitials(client.name)}</Text>
-                )}
-              </View>
-            </View>
-            <View style={styles.textContainer}>
-              <Text style={styles.nameSelected} numberOfLines={1}>
-                {client.name || 'Unknown Client'}
-              </Text>
-              {client.username && (
-                <Text style={styles.usernameSelected} numberOfLines={1}>
-                  @{client.username}
-                </Text>
-              )}
-            {client.last_message_timestamp && (
-              <Text style={styles.timestampSelected}>
-                {formatTime(client.last_message_timestamp)}
-              </Text>
-            )}
-            </View>
-            {onDelete && (
-              <TouchableOpacity
-                style={styles.deleteButton}
-                onPress={handleDeletePress}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="trash-outline" size={20} color="rgba(255, 255, 255, 0.9)" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </LinearGradient>
-      ) : (
-          <View style={styles.content}>
-            <View style={styles.avatarContainer}>
-              <View style={styles.avatarUnselected}>
-                {clientAvatarUrl ? (
-                  <Image 
-                    source={{ uri: clientAvatarUrl }} 
-                    style={styles.avatarImage}
-                  />
-                ) : (
-                  <Text style={styles.avatarTextUnselected}>{getInitials(client.name)}</Text>
-                )}
-              </View>
-            </View>
-          <View style={styles.textContainer}>
-            <Text style={styles.name} numberOfLines={1}>
-              {client.name || 'Unknown Client'}
-            </Text>
-            {client.username && (
-              <Text style={styles.username} numberOfLines={1}>
-                @{client.username}
-              </Text>
-            )}
-            {client.last_message_timestamp && (
-              <Text style={styles.timestamp}>
-                {formatTime(client.last_message_timestamp)}
-              </Text>
-            )}
-          </View>
-          {onDelete && (
-            <TouchableOpacity
-              style={styles.deleteButton}
-              onPress={handleDeletePress}
-              activeOpacity={0.7}
+      <View style={[styles.indicator, isSelected && styles.indicatorActive]} />
+      <View style={styles.content} pointerEvents="box-none">
+        <View style={[styles.avatar, isSelected && styles.avatarSelected]}>
+          {clientAvatarUrl ? (
+            <Image source={{ uri: clientAvatarUrl }} style={styles.avatarImage} />
+          ) : (
+            <Text
+              style={[styles.avatarText, isSelected && styles.avatarTextSelected]}
+              pointerEvents="none"
             >
-              <Ionicons name="trash-outline" size={20} color={colors.text.secondary} />
-            </TouchableOpacity>
+              {getInitials(client.name)}
+            </Text>
           )}
         </View>
-      )}
-    </TouchableOpacity>
+        <View style={styles.textContainer} pointerEvents="none">
+          <Text
+            style={[styles.name, isSelected && styles.nameSelected]}
+            numberOfLines={1}
+          >
+            {client.name || 'Unknown Client'}
+          </Text>
+          {client.username && (
+            <Text
+              style={[styles.username, isSelected && styles.usernameSelected]}
+              numberOfLines={1}
+            >
+              @{client.username}
+            </Text>
+          )}
+        </View>
+        <View style={styles.meta} pointerEvents="box-none">
+          {client.last_message_timestamp && (
+            <Text
+              style={[styles.timestamp, isSelected && styles.timestampSelected]}
+              pointerEvents="none"
+            >
+              {formatTime(client.last_message_timestamp)}
+            </Text>
+          )}
+          {onDelete && (
+            <Pressable
+              style={styles.deleteButton}
+              onPress={handleDeletePress}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons
+                name="trash-outline"
+                size={16}
+                color={isSelected ? colors.text.muted : colors.text.muted}
+              />
+            </Pressable>
+          )}
+        </View>
+      </View>
+    </Pressable>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: spacing.sm - 4,
-    marginHorizontal: spacing.sm -4,
-    borderRadius: borderRadius.md,
+    marginVertical: 1,
+    borderRadius: borderRadius.sm,
     overflow: 'hidden',
-    padding: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    flexDirection: 'row',
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' } : {}),
   },
   selected: {
-    borderRadius: borderRadius.md,
+    backgroundColor: colors.accent.primaryMuted,
   },
-  gradient: {
-    borderRadius: borderRadius.md,
-    padding: spacing.sm - 10,
+  pressed: {
+    backgroundColor: colors.surface.hover,
+  },
+  indicator: {
+    width: 3,
+    backgroundColor: 'transparent',
+  },
+  indicatorActive: {
+    backgroundColor: colors.accent.primary,
   },
   content: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.md,
-  },
-  avatarContainer: {
-    marginRight: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.md,
+    gap: spacing.md,
   },
   avatar: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
     borderRadius: borderRadius.full,
-    backgroundColor: colors.text.white,
+    backgroundColor: colors.surface.active,
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden',
+  },
+  avatarSelected: {
+    backgroundColor: colors.accent.primaryMuted,
   },
   avatarImage: {
-    width: 48,
-    height: 48,
+    width: 40,
+    height: 40,
     borderRadius: borderRadius.full,
-  },
-  avatarUnselected: {
-    width: 48,
-    height: 48,
-    borderRadius: borderRadius.full,
-    backgroundColor: colors.accent.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
   },
   avatarText: {
-    fontSize: typography.sizes.lg,
-    fontWeight: typography.weights.bold,
-    color: colors.accent.primary,
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.secondary,
   },
-  avatarTextUnselected: {
-    fontSize: typography.sizes.lg,
-    fontWeight: typography.weights.bold,
-    color: colors.text.white,
+  avatarTextSelected: {
+    color: colors.accent.primary,
   },
   textContainer: {
     flex: 1,
+    minWidth: 0,
   },
   name: {
     fontSize: typography.sizes.base,
-    fontWeight: typography.weights.semibold,
+    fontWeight: typography.weights.medium,
     color: colors.text.primary,
-    marginBottom: spacing.xs / 2,
   },
   nameSelected: {
-    fontSize: typography.sizes.base,
-    fontWeight: typography.weights.bold,
     color: colors.text.white,
-    marginBottom: spacing.xs / 2,
+    fontWeight: typography.weights.semibold,
   },
   username: {
-    fontSize: typography.sizes.sm,
-    color: colors.text.secondary,
-    marginBottom: spacing.xs / 2,
+    fontSize: typography.sizes.xs,
+    color: colors.text.muted,
+    marginTop: 2,
   },
   usernameSelected: {
-    fontSize: typography.sizes.sm,
-    color: 'rgba(255, 255, 255, 0.9)',
-    marginBottom: spacing.xs / 2,
+    color: colors.text.secondary,
+  },
+  meta: {
+    alignItems: 'flex-end',
+    gap: spacing.xs,
   },
   timestamp: {
     fontSize: typography.sizes.xs,
-    color: colors.text.secondary,
+    color: colors.text.muted,
   },
   timestampSelected: {
-    fontSize: typography.sizes.xs,
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: colors.text.secondary,
   },
   deleteButton: {
-    padding: spacing.sm,
-    marginLeft: spacing.sm,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: borderRadius.sm,
-    minWidth: 36,
-    minHeight: 36,
+    padding: 2,
   },
 });
 

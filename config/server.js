@@ -3,59 +3,162 @@ import { Platform } from 'react-native';
 /**
  * Server configuration for WebSocket connection
  *
- * Live server: wss://fiverr-agent-server.onrender.com (no port input; fixed URL).
- * Local server: ws://localhost:8765 or ws://192.168.0.102:8765
+ * Web production builds:
+ * - Edit `public/runtime-config.js` (or `runtime-config.json` on the server) after deploy.
+ * - EXPO_PUBLIC_SERVER_URL is only read at build time; live-server env vars do not affect
+ *   an already-exported static bundle.
+ * - When hosted outside localhost, a baked-in localhost URL is ignored automatically.
  *
- * Web builds always use EXPO_PUBLIC_SERVER_URL from .env (baked in at build time).
  * Native apps can override via the Settings screen (stored in local storage).
- *
- * Environment variables:
- * - EXPO_PUBLIC_SERVER_URL (for Expo public env vars)
- * - SERVER_URL (for build-time env vars)
  */
-export const DEFAULT_SERVER_URL =
-  process.env.EXPO_PUBLIC_SERVER_URL ||
-  process.env.SERVER_URL ||
+export const PRODUCTION_SERVER_URL =
   'https://fiverr-agent-server.onrender.com';
 
+const getBuildTimeServerUrl = () =>
+  process.env.EXPO_PUBLIC_SERVER_URL || process.env.SERVER_URL || null;
+
+export const DEFAULT_SERVER_URL =
+  getBuildTimeServerUrl() || PRODUCTION_SERVER_URL;
+
 const useEnvServerUrl = () => Platform.OS === 'web';
+
+const getBrowserHostname = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  return window.location.hostname?.toLowerCase() || null;
+};
+
+const isBrowserLocalDev = () => {
+  const hostname = getBrowserHostname();
+  if (!hostname) {
+    return false;
+  }
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname.endsWith('.local')
+  );
+};
 
 // Check if host is a local IP or localhost
 const isLocalHost = (host) => {
   if (!host) return false;
   const h = host.toLowerCase().trim();
-  // Check for localhost variants
   if (h === 'localhost' || h.startsWith('localhost:')) return true;
-  // Check for local IP ranges (192.168.x.x, 10.x.x.x, 172.16-31.x.x, 127.x.x.x)
   const ipPattern = /^(\d{1,3}\.){3}\d{1,3}(:\d+)?$/;
   if (ipPattern.test(h)) {
     const parts = h.split(':')[0].split('.');
     const first = parseInt(parts[0], 10);
     const second = parseInt(parts[1], 10);
-    // 127.x.x.x (loopback)
     if (first === 127) return true;
-    // 192.168.x.x (private)
     if (first === 192 && second === 168) return true;
-    // 10.x.x.x (private)
     if (first === 10) return true;
-    // 172.16-31.x.x (private)
     if (first === 172 && second >= 16 && second <= 31) return true;
   }
   return false;
 };
 
+const normalizeHttpServerUrl = (url) => {
+  if (!url) return null;
+  const trimmed = url.trim().replace(/\/+$/, '');
+  if (!trimmed) return null;
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (/^wss?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol === 'wss:') parsed.protocol = 'https:';
+      if (parsed.protocol === 'ws:') parsed.protocol = 'http:';
+      return parsed.toString().replace(/\/+$/, '');
+    } catch {
+      return null;
+    }
+  }
+
+  const host = trimmed.split('/')[0];
+  const isLocal = isLocalHost(host);
+  return `${isLocal ? 'http' : 'https'}://${trimmed}`;
+};
+
+const extractHostname = (url) => {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    const host = String(url).replace(/^https?:\/\//i, '').split('/')[0].split(':')[0];
+    return host || null;
+  }
+};
+
+const getWindowRuntimeServerUrl = () => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const runtimeUrl = window.__RUNTIME_CONFIG__?.serverUrl?.trim();
+  return runtimeUrl || null;
+};
+
+const fetchRuntimeConfigJson = async () => {
+  if (typeof fetch === 'undefined') {
+    return null;
+  }
+
+  try {
+    const response = await fetch('/runtime-config.json', {
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    const serverUrl = data?.serverUrl?.trim();
+    return serverUrl || null;
+  } catch (error) {
+    console.warn('[SERVER_CONFIG] Unable to load runtime-config.json:', error);
+    return null;
+  }
+};
+
+const resolveWebServerUrl = async () => {
+  const runtimeCandidates = [
+    getWindowRuntimeServerUrl(),
+    await fetchRuntimeConfigJson(),
+    getBuildTimeServerUrl(),
+  ].filter(Boolean);
+
+  for (const candidate of runtimeCandidates) {
+    const normalized = normalizeHttpServerUrl(candidate);
+    if (!normalized) {
+      continue;
+    }
+
+    const hostname = extractHostname(normalized);
+    if (!isBrowserLocalDev() && isLocalHost(hostname)) {
+      continue;
+    }
+
+    return normalized;
+  }
+
+  return PRODUCTION_SERVER_URL;
+};
+
 // Convert HTTP/HTTPS URL to WebSocket URL (ws/wss)
 const convertToWebSocketUrl = (httpUrl) => {
   if (!httpUrl || !httpUrl.trim()) return null;
-  
+
   const url = httpUrl.trim();
-  
-  // If already a WebSocket URL, return as-is (normalize trailing slash)
+
   if (url.startsWith('ws://') || url.startsWith('wss://')) {
     return url.replace(/\/+$/, '');
   }
-  
-  // If it's a full HTTP/HTTPS URL, convert to WebSocket
+
   if (url.startsWith('http://') || url.startsWith('https://')) {
     try {
       const urlObj = new URL(url);
@@ -68,11 +171,9 @@ const convertToWebSocketUrl = (httpUrl) => {
       return null;
     }
   }
-  
-  // If it's just a host (with or without port), determine protocol based on local/remote
+
   const isLocal = isLocalHost(url);
   const protocol = isLocal ? 'ws' : 'wss';
-  // Ensure we have the full host:port
   const hostAndPort = url.split('/')[0];
   return `${protocol}://${hostAndPort}`;
 };
@@ -82,51 +183,26 @@ export const SERVER_CONFIG = {
 
   async loadSettings() {
     if (useEnvServerUrl()) {
-      this.serverUrl = DEFAULT_SERVER_URL;
-      console.log('[SERVER_CONFIG] Web build using env server URL:', this.serverUrl);
+      this.serverUrl = await resolveWebServerUrl();
+      console.log('[SERVER_CONFIG] Web build using server URL:', this.serverUrl);
       return;
     }
 
     try {
       const { loadSettings: loadStorage } = await import('../utils/storage');
       const settings = await loadStorage();
-      
-      const normalizeServerUrl = (url) => {
-        if (!url) return null;
-        const trimmed = url.trim().replace(/\/+$/, '');
-        if (/^https?:\/\//i.test(trimmed)) {
-          return trimmed;
-        }
-        if (/^wss?:\/\//i.test(trimmed)) {
-          try {
-            const parsed = new URL(trimmed);
-            if (parsed.protocol === 'wss:') parsed.protocol = 'https:';
-            if (parsed.protocol === 'ws:') parsed.protocol = 'http:';
-            return parsed.toString().replace(/\/+$/, '');
-          } catch (error) {
-            return null;
-          }
-        }
-        const host = trimmed.split('/')[0];
-        const isLocal = isLocalHost(host);
-        return `${isLocal ? 'http' : 'https'}://${trimmed}`;
-      };
 
-      // Support both serverUrl (full URL) and serverHost (backward compatibility)
       const serverUrl = settings?.serverUrl?.trim();
       const serverHost = settings?.serverHost?.trim();
-      
+
       if (serverUrl) {
-        // Full URL or host-like string provided (e.g., localhost:8765 or http://...)
-        this.serverUrl = normalizeServerUrl(serverUrl) || DEFAULT_SERVER_URL;
+        this.serverUrl = normalizeHttpServerUrl(serverUrl) || DEFAULT_SERVER_URL;
       } else if (serverHost) {
-        // Just host provided (backward compatibility)
-        const normalized = normalizeServerUrl(serverHost);
-        this.serverUrl = normalized || DEFAULT_SERVER_URL;
+        this.serverUrl = normalizeHttpServerUrl(serverHost) || DEFAULT_SERVER_URL;
       } else {
         this.serverUrl = DEFAULT_SERVER_URL;
       }
-      
+
       console.log('[SERVER_CONFIG] Loaded server URL:', this.serverUrl);
     } catch (error) {
       console.error('[SERVER_CONFIG] Error loading settings:', error);
@@ -135,17 +211,16 @@ export const SERVER_CONFIG = {
   },
 
   getWebSocketUrl(platform = null) {
-    // Convert the stored HTTP/HTTPS URL to WebSocket URL
     const wsUrl = convertToWebSocketUrl(this.serverUrl);
     if (wsUrl) {
       return wsUrl;
     }
-    
-    // Fallback to default
-    return 'wss://fiverr-agent-server.onrender.com';
+
+    return convertToWebSocketUrl(PRODUCTION_SERVER_URL);
   },
 
   RECONNECT_INTERVAL: 3000,
-  MAX_RECONNECT_ATTEMPTS: 10,
-  PING_INTERVAL: 30000,
+  MAX_RECONNECT_ATTEMPTS: Infinity, // Never permanently give up; backoff still applies
+  PING_INTERVAL: 25000,
+  PONG_TIMEOUT: 70000,
 };
