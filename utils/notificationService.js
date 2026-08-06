@@ -1,5 +1,6 @@
 import * as Notifications from 'expo-notifications';
-import { Platform } from 'react-native';
+import { Audio } from 'expo-av';
+import { AppState, Platform } from 'react-native';
 import {
   NOTIFICATION_CHANNELS,
   NOTIFICATION_TYPES,
@@ -23,6 +24,8 @@ class NotificationService {
     this.notificationListener = null;
     this.responseListener = null;
     this.expoPushToken = null;
+    this.notificationSound = null;
+    this.webAudioContext = null;
   }
 
   /**
@@ -34,16 +37,47 @@ class NotificationService {
   }
 
   /**
+   * Whether the web tab is currently visible to the user
+   * @returns {boolean}
+   */
+  isWebTabVisible() {
+    if (!this.isWebPlatform() || typeof document === 'undefined') {
+      return true;
+    }
+    return document.visibilityState === 'visible';
+  }
+
+  /**
    * Request notification permissions
    * @returns {Promise<boolean>} True if permissions granted, false otherwise
    */
   async requestPermissions() {
     try {
+      if (this.isWebPlatform()) {
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+          if (Notification.permission === 'granted') {
+            return true;
+          }
+          if (Notification.permission === 'denied') {
+            return false;
+          }
+          const permission = await Notification.requestPermission();
+          return permission === 'granted';
+        }
+        return false;
+      }
+
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
       let finalStatus = existingStatus;
 
       if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
+        const { status } = await Notifications.requestPermissionsAsync({
+          ios: {
+            allowAlert: true,
+            allowBadge: true,
+            allowSound: true,
+          },
+        });
         finalStatus = status;
       }
 
@@ -61,13 +95,12 @@ class NotificationService {
   }
 
   /**
-   * Get Expo Push Token (for remote notifications)
+   * Get Expo Push Token (for remote notifications on iOS/Android)
    * @returns {Promise<string|null>} Expo push token or null
    */
   async getExpoPushToken() {
     try {
       if (this.isWebPlatform()) {
-        console.warn('[Notifications] Skipping Expo push token retrieval on web. Use browser notifications or configure web push with `notification.vapidPublicKey` and `notification.serviceWorkerPath` in app.json.');
         return null;
       }
 
@@ -86,27 +119,102 @@ class NotificationService {
   }
 
   /**
+   * Play a short notification sound (foreground use)
+   */
+  async playNotificationSound() {
+    try {
+      if (this.isWebPlatform()) {
+        this.playWebNotificationSound();
+        return;
+      }
+
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+      });
+
+      if (!this.notificationSound) {
+        let soundSource;
+        try {
+          soundSource = require('../assets/notification.wav');
+        } catch (_) {
+          soundSource = null;
+        }
+
+        if (soundSource) {
+          const { sound } = await Audio.Sound.createAsync(soundSource);
+          this.notificationSound = sound;
+        }
+      }
+
+      if (this.notificationSound) {
+        try {
+          await this.notificationSound.setPositionAsync(0);
+        } catch (_) {}
+        await this.notificationSound.playAsync();
+      }
+    } catch (error) {
+      console.warn('[Notifications] Could not play notification sound:', error);
+    }
+  }
+
+  playWebNotificationSound() {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) {
+        return;
+      }
+
+      if (!this.webAudioContext) {
+        this.webAudioContext = new AudioContext();
+      }
+
+      const ctx = this.webAudioContext;
+      if (ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.value = 880;
+      gain.gain.value = 0.08;
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+      oscillator.start();
+      oscillator.stop(ctx.currentTime + 0.18);
+    } catch (error) {
+      console.warn('[Notifications] Web audio fallback failed:', error);
+    }
+  }
+
+  /**
    * Configure Android notification channel
    * Required for Android 8.0+ to show notifications
    */
   async configureAndroidChannel() {
     if (Platform.OS === 'android') {
-      // Configure all notification channels from constants
       const channels = NOTIFICATION_CONFIG.ANDROID_CHANNELS;
-      
+
       for (const [channelId, config] of Object.entries(channels)) {
         const importanceMap = {
-          'min': Notifications.AndroidImportance.MIN,
-          'low': Notifications.AndroidImportance.LOW,
-          'default': Notifications.AndroidImportance.DEFAULT,
-          'high': Notifications.AndroidImportance.HIGH,
-          'max': Notifications.AndroidImportance.MAX,
+          min: Notifications.AndroidImportance.MIN,
+          low: Notifications.AndroidImportance.LOW,
+          default: Notifications.AndroidImportance.DEFAULT,
+          high: Notifications.AndroidImportance.HIGH,
+          max: Notifications.AndroidImportance.MAX,
         };
 
         await Notifications.setNotificationChannelAsync(channelId, {
           name: config.name,
           description: config.description || config.name,
-          importance: importanceMap[config.importance] || Notifications.AndroidImportance.HIGH,
+          importance:
+            importanceMap[config.importance] ||
+            Notifications.AndroidImportance.HIGH,
           vibrationPattern: config.vibrationPattern,
           lightColor: config.lightColor,
           sound: config.sound,
@@ -121,21 +229,27 @@ class NotificationService {
 
   /**
    * Show a local notification
-   * @param {Object} options - Notification options
-   * @param {string} options.title - Notification title
-   * @param {string} options.body - Notification body/message
-   * @param {Object} options.data - Additional data to pass with notification
-   * @param {string} options.channelId - Android channel ID (default: 'messages')
-   * @returns {Promise<string>} Notification identifier
    */
-  async showNotification({ title, body, data = {}, channelId = NOTIFICATION_CHANNELS.MESSAGES }) {
+  async showNotification({
+    title,
+    body,
+    data = {},
+    channelId = NOTIFICATION_CHANNELS.MESSAGES,
+  }) {
     try {
       if (this.isWebPlatform()) {
-        // On web, scheduleNotificationAsync is not available in Expo web.
-        // Use the browser Notification API as a fallback.
         if (typeof window !== 'undefined' && 'Notification' in window) {
+          if (Notification.permission !== 'granted') {
+            const granted = await this.requestPermissions();
+            if (!granted) {
+              throw new Error('Web notification permission not granted');
+            }
+          }
+
           const browserNotification = new window.Notification(title, {
             body,
+            icon: '/favicon.ico',
+            tag: data.type || NOTIFICATION_TYPES.NEW_MESSAGE,
             data: {
               ...data,
               type: data.type || NOTIFICATION_TYPES.NEW_MESSAGE,
@@ -159,7 +273,7 @@ class NotificationService {
           sound: true,
           priority: Notifications.AndroidNotificationPriority.HIGH,
         },
-        trigger: null, // Show immediately
+        trigger: null,
         identifier: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       });
 
@@ -171,25 +285,22 @@ class NotificationService {
     }
   }
 
-  /**
-   * Show notification for new message
-   * @param {Object} messageData - Message data
-   * @param {string} messageData.clientName - Client name
-   * @param {string} messageData.messageText - Message text
-   * @param {string} messageData.conversationId - Conversation ID
-   * @param {string} messageData.username - Username
-   */
-  async showMessageNotification({ clientName, messageText, conversationId, username }) {
-    /*
+  async showMessageNotification({
+    clientName,
+    messageText,
+    conversationId,
+    username,
+  }) {
     const config = NOTIFICATION_CONFIG.MESSAGE_NOTIFICATION;
     const title = `${config.titlePrefix} ${clientName || 'Client'}`;
     const body = messageText || 'You have a new message';
-    
-    // Truncate body if too long
+
     const maxLength = config.maxBodyLength;
-    const truncatedBody = body.length > maxLength 
-      ? body.substring(0, maxLength - config.truncateSuffix.length) + config.truncateSuffix 
-      : body;
+    const truncatedBody =
+      body.length > maxLength
+        ? body.substring(0, maxLength - config.truncateSuffix.length) +
+          config.truncateSuffix
+        : body;
 
     return this.showNotification({
       title,
@@ -203,16 +314,68 @@ class NotificationService {
       },
       channelId: NOTIFICATION_CHANNELS.MESSAGES,
     });
-    */
-    return null;
+  }
+
+  async showNewClientNotification({
+    clientName,
+    clientUsername,
+    conversationId,
+  }) {
+    const config = NOTIFICATION_CONFIG.NEW_CLIENT_NOTIFICATION;
+    const displayName = clientName || clientUsername || 'Client';
+    const title = `${config.titlePrefix} ${displayName}`;
+    const body = `You have a new client message from ${displayName}!`;
+
+    return this.showNotification({
+      title,
+      body,
+      data: {
+        type: NOTIFICATION_TYPES.NEW_CLIENT,
+        conversationId: conversationId || clientUsername,
+        username: clientUsername,
+        clientName: displayName,
+        isNewClient: true,
+      },
+      channelId: NOTIFICATION_CHANNELS.MESSAGES,
+    });
   }
 
   /**
-   * Cancel a specific notification
-   * @param {string} notificationId - Notification identifier
+   * New-client only: sound when app/tab is open and visible, otherwise notify.
    */
+  async handleNewClientAlert({
+    clientName,
+    clientUsername,
+    conversationId,
+  }) {
+    const appIsActive = AppState.currentState === 'active';
+    const tabVisible = this.isWebTabVisible();
+    const isForegroundVisible =
+      appIsActive && (!this.isWebPlatform() || tabVisible);
+
+    if (isForegroundVisible) {
+      await this.playNotificationSound();
+      return { mode: 'sound' };
+    }
+
+    await this.showNewClientNotification({
+      clientName,
+      clientUsername,
+      conversationId,
+    });
+
+    if (!this.isWebPlatform()) {
+      await this.incrementBadge();
+    }
+
+    return { mode: 'notification' };
+  }
+
   async cancelNotification(notificationId) {
     try {
+      if (notificationId === 'browser_notification') {
+        return;
+      }
       await Notifications.cancelScheduledNotificationAsync(notificationId);
       console.log('[Notifications] Notification cancelled:', notificationId);
     } catch (error) {
@@ -220,9 +383,6 @@ class NotificationService {
     }
   }
 
-  /**
-   * Cancel all notifications
-   */
   async cancelAllNotifications() {
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
@@ -232,10 +392,6 @@ class NotificationService {
     }
   }
 
-  /**
-   * Get all scheduled notifications
-   * @returns {Promise<Array>} Array of scheduled notifications
-   */
   async getScheduledNotifications() {
     try {
       return await Notifications.getAllScheduledNotificationsAsync();
@@ -245,37 +401,30 @@ class NotificationService {
     }
   }
 
-  /**
-   * Set up notification listeners
-   * @param {Function} onNotificationReceived - Callback when notification is received
-   * @param {Function} onNotificationTapped - Callback when notification is tapped
-   */
   setupListeners(onNotificationReceived, onNotificationTapped) {
-    // Remove existing listeners if any
     this.removeListeners();
 
-    // Listener for notifications received while app is in foreground
-    this.notificationListener = Notifications.addNotificationReceivedListener((notification) => {
-      console.log('[Notifications] Notification received:', notification);
-      if (onNotificationReceived) {
-        onNotificationReceived(notification);
-      }
-    });
+    this.notificationListener = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        console.log('[Notifications] Notification received:', notification);
+        if (onNotificationReceived) {
+          onNotificationReceived(notification);
+        }
+      },
+    );
 
-    // Listener for when user taps on notification
-    this.responseListener = Notifications.addNotificationResponseReceivedListener((response) => {
-      console.log('[Notifications] Notification tapped:', response);
-      if (onNotificationTapped) {
-        onNotificationTapped(response);
-      }
-    });
+    this.responseListener = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        console.log('[Notifications] Notification tapped:', response);
+        if (onNotificationTapped) {
+          onNotificationTapped(response);
+        }
+      },
+    );
 
     console.log('[Notifications] Listeners set up');
   }
 
-  /**
-   * Remove notification listeners
-   */
   removeListeners() {
     if (this.notificationListener) {
       Notifications.removeNotificationSubscription(this.notificationListener);
@@ -288,30 +437,22 @@ class NotificationService {
     console.log('[Notifications] Listeners removed');
   }
 
-  /**
-   * Initialize notification service
-   * Sets up permissions, Android channels, and gets push token
-   * @returns {Promise<boolean>} True if initialized successfully
-   */
   async initialize() {
     try {
       console.log('[Notifications] Initializing notification service...');
-      
-      // Request permissions
+
       const hasPermission = await this.requestPermissions();
       if (!hasPermission) {
         console.warn('[Notifications] Initialization incomplete: permissions not granted');
         return false;
       }
 
-      // Configure Android channels
       await this.configureAndroidChannel();
 
-      // Get Expo push token (for future remote notifications)
       if (!this.isWebPlatform()) {
         await this.getExpoPushToken();
       } else {
-        console.log('[Notifications] Skipping Expo push token initialization on web.');
+        console.log('[Notifications] Web platform: using browser notifications');
       }
 
       console.log('[Notifications] Notification service initialized successfully');
@@ -322,13 +463,8 @@ class NotificationService {
     }
   }
 
-  /**
-   * Get badge count
-   * @returns {Promise<number>} Current badge count
-   */
   async getBadgeCount() {
     if (this.isWebPlatform()) {
-      console.warn('[Notifications] Badge count is not supported on Expo web without the Web Badging API. Skipping getBadgeCount.');
       return 0;
     }
 
@@ -340,13 +476,8 @@ class NotificationService {
     }
   }
 
-  /**
-   * Set badge count
-   * @param {number} count - Badge count to set
-   */
   async setBadgeCount(count) {
     if (this.isWebPlatform()) {
-      console.warn('[Notifications] Badge count is not supported on Expo web without the Web Badging API. Skipping setBadgeCount.');
       return;
     }
 
@@ -357,12 +488,8 @@ class NotificationService {
     }
   }
 
-  /**
-   * Increment badge count
-   */
   async incrementBadge() {
     if (this.isWebPlatform()) {
-      console.warn('[Notifications] Badge count increment is not supported on Expo web without the Web Badging API. Skipping incrementBadge.');
       return;
     }
 
@@ -370,12 +497,8 @@ class NotificationService {
     await this.setBadgeCount(current + 1);
   }
 
-  /**
-   * Clear badge count
-   */
   async clearBadge() {
     if (this.isWebPlatform()) {
-      console.warn('[Notifications] Badge count clear is not supported on Expo web without the Web Badging API. Skipping clearBadge.');
       return;
     }
 
@@ -383,6 +506,5 @@ class NotificationService {
   }
 }
 
-// Export singleton instance
 export const notificationService = new NotificationService();
 export default notificationService;

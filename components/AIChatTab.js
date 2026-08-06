@@ -22,12 +22,108 @@ import { getAiChatResponse } from '../utils/aiChatService';
 import { formatTime } from '../utils/formatTime';
 import { loadAIChatHistory, saveAIChatHistory, clearAIChatHistory, loadSettings } from '../utils/storage';
 import { useWebSocket } from '../context/WebSocketContext';
+import { getClientConversationId } from '../utils/clientIdentity';
 
 const INPUT_LINE_HEIGHT = 20;
 const INPUT_MIN_HEIGHT = INPUT_LINE_HEIGHT;
 const INPUT_MAX_HEIGHT = INPUT_LINE_HEIGHT * 10;
 const INPUT_ROW_VERTICAL_PADDING = 10;
 const INPUT_ROW_MIN_HEIGHT = INPUT_MIN_HEIGHT + INPUT_ROW_VERTICAL_PADDING * 2;
+
+const PRESET_LABELS = {
+  reply: 'Generate next message',
+  first: 'Generate first message',
+  cost: 'Generate pricing message',
+  quote: 'Generate quotation',
+  quotation: 'Generate quotation',
+  offer: 'Generate custom offer description',
+  clarify: 'Ask clarifying questions',
+  task: 'Explain the task',
+  cursorPrompt: 'Generate Cursor prompt',
+  chatgptPrompt: 'Generate ChatGPT prompt',
+  analysis: 'Analyze communication',
+};
+
+const OPTIONS_TYPE_TO_PRESET = {
+  'first-message': 'first',
+  'next-message': 'reply',
+  'professional-response': 'reply',
+  'follow-up': 'reply',
+  'generate-offer': 'quote',
+  'explain-task': 'task',
+  clarification: 'clarify',
+  greeting: 'first',
+  quotation: 'quote',
+  'cursor-prompt': 'cursorPrompt',
+  'chatgpt-prompt': 'chatgptPrompt',
+};
+
+const QUICK_ACTIONS = [
+  {
+    id: 'reply',
+    presetKind: 'reply',
+    label: 'Next Message',
+    subtitle: 'Continue from your last message and answer the buyer',
+    icon: 'chatbubble-ellipses',
+    styleKey: 'nextMessageButton',
+  },
+  {
+    id: 'quote',
+    presetKind: 'quote',
+    label: 'Quotation',
+    subtitle: 'Structured quote with scope, price, and next step',
+    icon: 'document-text',
+    styleKey: 'quotationButton',
+  },
+  {
+    id: 'task',
+    presetKind: 'task',
+    label: 'Task Explanation',
+    subtitle: 'Bangla + English summary of buyer requirements',
+    icon: 'information-circle',
+    styleKey: 'explainTaskButton',
+  },
+  {
+    id: 'cursorPrompt',
+    presetKind: 'cursorPrompt',
+    label: 'Cursor Prompt',
+    subtitle: 'Engineering prompt for Cursor AI',
+    icon: 'code-slash',
+    styleKey: 'cursorPromptButton',
+  },
+  {
+    id: 'chatgptPrompt',
+    presetKind: 'chatgptPrompt',
+    label: 'ChatGPT Prompt',
+    subtitle: 'Professional prompt for ChatGPT',
+    icon: 'sparkles',
+    styleKey: 'chatgptPromptButton',
+  },
+  {
+    id: 'first',
+    presetKind: 'first',
+    label: 'First Message',
+    subtitle: 'Strong first reply that invites requirements',
+    icon: 'mail',
+    styleKey: 'generateFirstMessageButton',
+  },
+  {
+    id: 'clarify',
+    presetKind: 'clarify',
+    label: 'Clarify',
+    subtitle: 'Ask focused questions from the thread',
+    icon: 'help-circle',
+    styleKey: 'clarifyButton',
+  },
+  {
+    id: 'cost',
+    presetKind: 'cost',
+    label: 'Pricing Message',
+    subtitle: 'Natural pricing discussion for the buyer',
+    icon: 'cash',
+    styleKey: 'generateOfferButton',
+  },
+];
 
 const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) => {
   const { cancelOptimisticMessage } = useWebSocket();
@@ -251,10 +347,14 @@ ${conversationText}
 ${chatMessages.length === 0 ? 'NOTE: This is a new conversation - no previous AI chat history exists.' : ''}
 
 AVAILABLE ACTION TYPES:
-1. "first-message" - Generate a professional first message (use when seller hasn't responded yet)
-2. "generate-offer" - Generate a custom offer/proposal with pricing (use when client mentions price, budget, cost, quote, or payment)
-3. "explain-task" - Explain the client's task/project requirements (use when client describes a project, task, or requirements)
-4. "generate-response" or "next-message" - Generate a professional response (use for general follow-ups, questions, or continuing conversation)
+1. "first-message" - First professional reply when seller hasn't responded yet
+2. "quotation" - Structured quotation with scope + price (use when client asks price/budget/quote)
+3. "generate-offer" - Pricing / offer discussion message
+4. "explain-task" - Bangla + English task explanation
+5. "generate-response" or "next-message" - Professional next reply
+6. "cursor-prompt" - Cursor AI engineering prompt (software/dev work)
+7. "chatgpt-prompt" - ChatGPT prompt for completing the work
+8. "clarify" - Ask clarifying questions
 
 CRITICAL REQUIREMENTS:
 - Return ONLY valid JSON array, no markdown, no code blocks, no explanations
@@ -264,16 +364,18 @@ CRITICAL REQUIREMENTS:
 - Label max length: 20 characters
 - Base suggestions on actual conversation content and context
 - If no seller messages exist, prioritize "first-message"
-- If client asks about pricing/budget, prioritize "generate-offer"
+- If client asks about pricing/budget/quote, prioritize "quotation"
 - If client describes task/project, include "explain-task"
+- For software/dev work, include "cursor-prompt" and/or "chatgpt-prompt"
 - Always include at least one response generation option
 - Use variety: mix different action types to provide comprehensive options
 
 Example (return exactly this format, no other text):
-[{"type": "first-message", "label": "Generate First Message", "priority": 9}, {"type": "generate-offer", "label": "Create Offer", "priority": 7}, {"type": "explain-task", "label": "Explain Task", "priority": 6}, {"type": "next-message", "label": "Generate Response", "priority": 5}, {"type": "generate-offer", "label": "Custom Offer", "priority": 4}]`;
+[{"type": "next-message", "label": "Next Message", "priority": 9}, {"type": "quotation", "label": "Quotation", "priority": 8}, {"type": "explain-task", "label": "Task Explain", "priority": 7}, {"type": "cursor-prompt", "label": "Cursor Prompt", "priority": 6}, {"type": "chatgpt-prompt", "label": "ChatGPT Prompt", "priority": 5}]`;
 
       const aiResponse = await getAiChatResponse({
         userMessage: prompt,
+        mode: 'meta',
         client,
         messages: recentMessages,
         chatHistory: historyForApi,
@@ -308,38 +410,66 @@ Example (return exactly this format, no other text):
       const actionMap = {
         'first-message': {
           id: 'first-message',
-          label: 'Generate First Message',
+          label: 'First Message',
           icon: 'mail',
           handler: handleGenerateFirstMessage,
           style: 'generateFirstMessageButton',
         },
+        quotation: {
+          id: 'quotation',
+          label: 'Quotation',
+          icon: 'document-text',
+          handler: handleGenerateQuotation,
+          style: 'quotationButton',
+        },
         'generate-offer': {
           id: 'generate-offer',
-          label: 'Generate Offer',
-          icon: 'briefcase',
-          handler: handleGenerateOffer,
+          label: 'Pricing Message',
+          icon: 'cash',
+          handler: () => handlePresetAction('cost'),
           style: 'generateOfferButton',
         },
         'explain-task': {
           id: 'explain-task',
-          label: 'Explain Task',
+          label: 'Task Explanation',
           icon: 'information-circle',
           handler: handleExplainTask,
           style: 'explainTaskButton',
         },
         'generate-response': {
           id: 'generate-response',
-          label: 'Generate Response',
+          label: 'Next Message',
           icon: 'chatbubble-ellipses',
           handler: handleGenerateNextMessage,
           style: 'nextMessageButton',
         },
         'next-message': {
           id: 'generate-next',
-          label: 'Generate Next Message',
+          label: 'Next Message',
           icon: 'chatbubble-ellipses',
           handler: handleGenerateNextMessage,
           style: 'nextMessageButton',
+        },
+        'cursor-prompt': {
+          id: 'cursor-prompt',
+          label: 'Cursor Prompt',
+          icon: 'code-slash',
+          handler: handleGenerateCursorPrompt,
+          style: 'cursorPromptButton',
+        },
+        'chatgpt-prompt': {
+          id: 'chatgpt-prompt',
+          label: 'ChatGPT Prompt',
+          icon: 'sparkles',
+          handler: handleGenerateChatgptPrompt,
+          style: 'chatgptPromptButton',
+        },
+        clarify: {
+          id: 'clarify',
+          label: 'Clarify',
+          icon: 'help-circle',
+          handler: () => handlePresetAction('clarify'),
+          style: 'clarifyButton',
         },
       };
 
@@ -362,27 +492,19 @@ Example (return exactly this format, no other text):
 
       // Ensure we have at least 5 actions by adding fallback actions
       const allAvailableActions = [
-        actionMap['first-message'],
-        actionMap['generate-offer'],
-        actionMap['explain-task'],
-        actionMap['generate-response'],
         actionMap['next-message'],
+        actionMap.quotation,
+        actionMap['explain-task'],
+        actionMap['cursor-prompt'],
+        actionMap['chatgpt-prompt'],
+        actionMap['first-message'],
+        actionMap.clarify,
+        actionMap['generate-offer'],
       ];
 
       // If no actions were generated, use all fallback actions
       if (mappedActions.length === 0) {
-        if (chatMessages.length === 0) {
-          mappedActions.push(...allAvailableActions);
-        } else {
-          // For existing conversations, prioritize response generation
-          mappedActions.push(
-            actionMap['next-message'],
-            actionMap['generate-offer'],
-            actionMap['explain-task'],
-            actionMap['generate-response'],
-            actionMap['first-message']
-          );
-        }
+        mappedActions.push(...allAvailableActions);
       } else {
         // Fill up to 5 actions with fallback actions if needed
         const usedActionIds = new Set(mappedActions.map(a => a.id));
@@ -393,8 +515,8 @@ Example (return exactly this format, no other text):
         }
       }
 
-      // Ensure we have exactly 5 actions (take first 5)
-      const finalActions = mappedActions.slice(0, 5);
+      // Keep a focused set of suggested actions
+      const finalActions = mappedActions.slice(0, 6);
 
       setAiSuggestedActions(finalActions);
     } catch (error) {
@@ -611,39 +733,29 @@ Example (return exactly this format, no other text):
     }
   };
 
-  const handleQuickAction = async (prompt) => {
-    if (isLoading) return;
+  const handlePresetAction = async (presetKind) => {
+    if (isLoading || !presetKind) return;
 
-    // Add user message immediately
+    const label = PRESET_LABELS[presetKind] || presetKind;
     const userMessage = {
-      text: prompt,
+      text: label,
       sender: 'user',
       time: new Date().toISOString(),
     };
     setChatMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
-    // Build chat history for context
-    const historyForApi = chatMessages.map((m) => ({
-      sender: m.sender === 'ai' ? 'assistant' : 'user',
-      text: m.text,
-      time: m.time,
-    }));
-
     try {
-      // Ensure prompt is a string
-      const messageText = typeof prompt === 'string' ? prompt : String(prompt || '');
-      
-      // Ensure all messages are passed (including latest)
       const allFiverrMessages = Array.isArray(messages) ? messages : [];
-      console.log(`[AIChatTab] Sending ${allFiverrMessages.length} Fiverr messages to AI for quick action`);
-      
+      console.log(
+        `[AIChatTab] Running extension-style preset "${presetKind}" with ${allFiverrMessages.length} Fiverr messages`,
+      );
+
       const aiText = await getAiChatResponse({
-        userMessage: messageText,
+        presetKind,
         client,
-        messages: allFiverrMessages, // Pass ALL messages from Messages tab
-        chatHistory: historyForApi,
-        userProfile: userProfile,
+        messages: allFiverrMessages,
+        userProfile,
       });
 
       const aiResponse = {
@@ -654,7 +766,6 @@ Example (return exactly this format, no other text):
 
       setChatMessages((prev) => {
         const updated = [...prev, aiResponse];
-        // Generate suggested prompts for this AI response
         const responseIndex = updated.length - 1;
         setTimeout(() => {
           generateSuggestedPrompts(aiResponse, responseIndex);
@@ -677,34 +788,80 @@ Example (return exactly this format, no other text):
   };
 
   const handleGenerateNextMessage = () => {
-    handleQuickAction(
-      'Generate a professional follow-up message I can send directly to this client. Make it contextually relevant based on our conversation history. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, no prefixes like "Here is a message:" or "You can send this:" - just the actual message content that I can copy and send directly to the client.'
-    );
+    handlePresetAction('reply');
   };
 
   const handleExplainTask = () => {
-    handleQuickAction(
-      'Based on the conversation history with this client, explain what their task or project is about. Provide a clear summary of what they need.'
-    );
+    handlePresetAction('task');
   };
 
   const handleGenerateOffer = () => {
-    handleQuickAction(
-      'Generate a professional custom offer message for this client based on their requirements and our conversation. Include pricing suggestions if appropriate.'
-    );
+    handlePresetAction('quote');
   };
 
   const handleGenerateFirstMessage = () => {
-    handleQuickAction(
-      'Generate a professional first message I can send to this client when they message me. Make it welcoming, friendly, and contextually relevant based on their initial message. The message should introduce me professionally and show interest in helping them. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, no prefixes like "Here is a message:" or "You can send this:" - just the actual message content that I can copy and send directly to the client.'
-    );
+    handlePresetAction('first');
   };
 
   const handleGenerateCustomOffer = () => {
-    handleQuickAction(
-      'Generate a professional custom offer message for this client based on our conversation history. The offer should be tailored to their specific requirements mentioned in the conversation. Include appropriate pricing if relevant. CRITICAL: Return ONLY the offer message text itself - no explanations, no descriptions, just the actual offer message that I can send directly to the client.'
-    );
+    handlePresetAction('offer');
   };
+
+  const handleGenerateQuotation = () => {
+    handlePresetAction('quote');
+  };
+
+  const handleGenerateCursorPrompt = () => {
+    handlePresetAction('cursorPrompt');
+  };
+
+  const handleGenerateChatgptPrompt = () => {
+    handlePresetAction('chatgptPrompt');
+  };
+
+  const renderQuickActions = () => (
+    <View style={styles.quickActionsContainer}>
+      <Text style={styles.quickActionsTitle}>Professional Generators</Text>
+      <Text style={styles.quickActionsSubtitle}>
+        Same reply quality as the Fiverr assistant extension
+      </Text>
+      {QUICK_ACTIONS.map((action) => (
+        <TouchableOpacity
+          key={action.id}
+          style={[styles.quickActionButton, styles[action.styleKey]]}
+          onPress={() => handlePresetAction(action.presetKind)}
+          disabled={isLoading}
+        >
+          <Ionicons name={action.icon} size={20} color={colors.text.white} />
+          <View style={styles.quickActionTextWrap}>
+            <Text style={styles.quickActionText}>{action.label}</Text>
+            <Text style={styles.quickActionSubtitle}>{action.subtitle}</Text>
+          </View>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  const renderCompactGenerators = () => (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.compactGeneratorsScroll}
+      contentContainerStyle={styles.compactGeneratorsContent}
+    >
+      {QUICK_ACTIONS.map((action) => (
+        <TouchableOpacity
+          key={`compact-${action.id}`}
+          style={[styles.compactGeneratorChip, styles[action.styleKey]]}
+          onPress={() => handlePresetAction(action.presetKind)}
+          disabled={isLoading}
+        >
+          <Ionicons name={action.icon} size={14} color={colors.text.white} />
+          <Text style={styles.compactGeneratorText}>{action.label}</Text>
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
+  );
 
   const handleCopyMessage = async (text) => {
     try {
@@ -739,7 +896,42 @@ Example (return exactly this format, no other text):
   };
 
   const handleSuggestedPrompt = (prompt) => {
-    // Send the prompt directly
+    const normalized = String(prompt || '').trim().toLowerCase();
+    if (
+      normalized === 'generate next message' ||
+      normalized.includes('next message')
+    ) {
+      handlePresetAction('reply');
+      return;
+    }
+    if (
+      normalized.includes('quotation') ||
+      normalized.includes('quote') ||
+      normalized === 'generate another offer' ||
+      normalized.includes('adjust the pricing') ||
+      normalized.includes('add pricing')
+    ) {
+      handlePresetAction(
+        normalized.includes('pricing') || normalized.includes('offer')
+          ? 'cost'
+          : 'quote',
+      );
+      return;
+    }
+    if (normalized.includes('cursor')) {
+      handlePresetAction('cursorPrompt');
+      return;
+    }
+    if (normalized.includes('chatgpt') || normalized.includes('chat gpt')) {
+      handlePresetAction('chatgptPrompt');
+      return;
+    }
+    if (normalized === 'explain the task better' || normalized.includes('task')) {
+      if (normalized.includes('explain') || normalized.includes('better')) {
+        handlePresetAction('task');
+        return;
+      }
+    }
     handleSendMessage(prompt);
   };
 
@@ -758,7 +950,7 @@ Example (return exactly this format, no other text):
       return; // Prevent multiple sends
     }
 
-    const conversationId = client?.conversationId || client?.username || client?.id;
+    const conversationId = getClientConversationId(client);
     if (!conversationId) {
       Alert.alert('Error', 'Cannot send message: no conversation ID');
       return;
@@ -790,19 +982,12 @@ Example (return exactly this format, no other text):
         cancelOptimisticMessage(trimmedMessage, conversationId);
       }
     } finally {
-      // Ensure stop button displays for minimum 30 seconds
-      const elapsedTime = Date.now() - startTime;
-      const minDisplayTime = 30000; // 30 seconds in milliseconds
-      const remainingTime = Math.max(0, minDisplayTime - elapsedTime);
-      
-      setTimeout(() => {
-        // Only reset if we're still in sending state (not cancelled)
-        if (sendingStartTimeRef.current === startTime) {
-          setSendingToClient(false);
-          setSendingMessageText(null);
-          sendingStartTimeRef.current = null;
-        }
-      }, remainingTime);
+      // Clear sending UI as soon as the send request finishes.
+      if (sendingStartTimeRef.current === startTime) {
+        setSendingToClient(false);
+        setSendingMessageText(null);
+        sendingStartTimeRef.current = null;
+      }
     }
   };
 
@@ -811,7 +996,7 @@ Example (return exactly this format, no other text):
       return;
     }
 
-    const conversationId = client?.conversationId || client?.username || client?.id;
+    const conversationId = getClientConversationId(client);
     if (!conversationId) {
       return;
     }
@@ -962,56 +1147,41 @@ Example (return exactly this format, no other text):
   // Handle message type selection in options modal
   const handleMessageTypeSelect = (type) => {
     setSelectedMessageType(type);
-    
-    // Generate prompt based on type
-    let prompt = '';
+
+    const presetKind = OPTIONS_TYPE_TO_PRESET[type];
+    if (presetKind) {
+      setOptionsModalInputText(PRESET_LABELS[presetKind] || presetKind);
+      return;
+    }
+
     const recentMessages = messages.slice(-3);
     const recentAIChat = chatMessages.slice(-3);
-    
+    let prompt = '';
+
     switch (type) {
-      case 'first-message':
-        prompt = `Generate a professional first message I can send to this client when they message me. Make it welcoming, friendly, and contextually relevant based on their initial message. The message should introduce me professionally and show interest in helping them. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, no prefixes like "Here is a message:" or "You can send this:" - just the actual message content that I can copy and send directly to the client.`;
-        break;
       case 'task-update':
-        prompt = `Generate a professional update message to send to the client after completing their task. Based on the conversation history: ${recentMessages.map(m => m?.text || m?.content || '').join(' ')}. Make it concise, professional, and show that the task is completed. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        prompt =
+          'Write a concise delivery/update message for the buyer after finishing their task. Reference what was completed. Output only the paste-ready Fiverr message.';
         break;
       case 'budget-persuade':
-        prompt = `Generate a persuasive message to help the client agree with my proposed budget. Based on our conversation: ${recentMessages.map(m => m?.text || m?.content || '').join(' ')}. Make it professional, highlight value, and be persuasive but not pushy. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        prompt =
+          'Write a natural pricing discussion reply that explains value without sounding salesy. Output only the paste-ready Fiverr message.';
         break;
       case 'understand-client':
-        prompt = `Based on the conversation history with this client and my AI chat messages: ${recentAIChat.map(m => m?.text || '').join(' ')}, help me understand the client's needs, preferences, and communication style professionally. Provide insights I can use to communicate better.`;
-        break;
-      case 'next-message':
-        prompt = `Generate a professional follow-up message I can send directly to this client. Make it contextually relevant based on our conversation history. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, no prefixes like "Here is a message:" or "You can send this:" - just the actual message content that I can copy and send directly to the client.`;
-        break;
-      case 'explain-task':
-        prompt = `Based on the conversation history with this client, explain what their task or project is about. Provide a clear summary of what they need.`;
-        break;
-      case 'generate-offer':
-        prompt = `Generate a professional custom offer message for this client based on their requirements and our conversation. Include pricing suggestions if appropriate. CRITICAL: Return ONLY the offer message text itself - no explanations, no descriptions, just the actual offer message that I can send directly to the client.`;
-        break;
-      case 'professional-response':
-        prompt = `Generate a professional response message based on the conversation: ${recentMessages.map(m => m?.text || m?.content || '').join(' ')}. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
-        break;
-      case 'follow-up':
-        prompt = `Generate a professional follow-up message to continue the conversation with this client. Based on: ${recentMessages.map(m => m?.text || m?.content || '').join(' ')}. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        prompt = `Based on the conversation history with this client and my AI chat messages: ${recentAIChat.map((m) => m?.text || '').join(' ')}, briefly summarize the client's needs, preferences, and communication style.`;
         break;
       case 'thank-you':
-        prompt = `Generate a professional thank you message for this client. Make it warm and appreciative. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
-        break;
-      case 'clarification':
-        prompt = `Generate a professional message asking the client for clarification about their requirements. Based on: ${recentMessages.map(m => m?.text || m?.content || '').join(' ')}. Make it polite and specific. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
-        break;
-      case 'greeting':
-        prompt = `Generate a professional greeting message for this client. Make it warm and friendly. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        prompt =
+          'Write a short, warm thank-you message for this buyer. Output only the paste-ready Fiverr message.';
         break;
       case 'closing':
-        prompt = `Generate a professional closing message for this client. Make it polite and professional. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        prompt =
+          'Write a short professional closing message for this buyer. Output only the paste-ready Fiverr message.';
         break;
       default:
-        prompt = `Generate a professional message based on the conversation: ${recentMessages.map(m => m?.text || m?.content || '').join(' ')}. CRITICAL: Return ONLY the message text itself - no explanations, no descriptions, just the actual message content that I can copy and send directly to the client.`;
+        prompt = `Write a natural Fiverr reply based on the recent conversation: ${recentMessages.map((m) => m?.text || m?.content || '').join(' ')}. Output only the paste-ready message.`;
     }
-    
+
     setOptionsModalInputText(prompt);
   };
 
@@ -1022,28 +1192,30 @@ Example (return exactly this format, no other text):
     }
 
     setOptionsModalLoading(true);
-    
+
     try {
-      // Build chat history for context
       const historyForApi = chatMessages.map((m) => ({
         sender: m.sender === 'ai' ? 'assistant' : 'user',
         text: m.text,
         time: m.time,
       }));
 
-      // Ensure all messages are passed (including latest)
       const allFiverrMessages = Array.isArray(messages) ? messages : [];
-      console.log(`[AIChatTab] Sending ${allFiverrMessages.length} Fiverr messages to AI for options modal`);
+      const presetKind = OPTIONS_TYPE_TO_PRESET[selectedMessageType];
+      console.log(
+        `[AIChatTab] Options modal AI with ${allFiverrMessages.length} Fiverr messages` +
+          (presetKind ? ` (preset: ${presetKind})` : ''),
+      );
 
       const aiText = await getAiChatResponse({
-        userMessage: optionsModalInputText,
+        presetKind: presetKind || undefined,
+        userMessage: presetKind ? undefined : optionsModalInputText,
         client,
-        messages: allFiverrMessages, // Pass ALL messages from Messages tab
+        messages: allFiverrMessages,
         chatHistory: historyForApi,
-        userProfile: userProfile,
+        userProfile,
       });
 
-      // Update the input text with AI response
       setOptionsModalInputText(aiText);
     } catch (error) {
       console.error('Options modal AI error:', error);
@@ -1282,46 +1454,7 @@ Example (return exactly this format, no other text):
                   </View>
                 )}
             {/* Default buttons when no messages */}
-            {!isLoading && (
-              <>
-                <View style={styles.quickActionsContainer}>
-                  <Text style={styles.quickActionsTitle}>Quick Actions</Text>
-                  <TouchableOpacity
-                    style={[styles.quickActionButton, styles.nextMessageButton]}
-                    onPress={handleGenerateNextMessage}
-                    disabled={isLoading}
-                  >
-                    <Ionicons name="chatbubble-ellipses" size={20} color={colors.text.white} />
-                    <Text style={styles.quickActionText}>Generate Next Message</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.quickActionButton, styles.explainTaskButton]}
-                    onPress={handleExplainTask}
-                    disabled={isLoading}
-                  >
-                    <Ionicons name="information-circle" size={20} color={colors.text.white} />
-                    <Text style={styles.quickActionText}>Explain Task</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.quickActionButton, styles.generateOfferButton]}
-                    onPress={handleGenerateOffer}
-                    disabled={isLoading}
-                  >
-                    <Ionicons name="briefcase" size={20} color={colors.text.white} />
-                    <Text style={styles.quickActionText}>Generate Offer</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.quickActionButton, styles.generateFirstMessageButton]}
-                    onPress={handleGenerateFirstMessage}
-                    disabled={isLoading}
-                  >
-                    <Ionicons name="mail" size={20} color={colors.text.white} />
-                    <Text style={styles.quickActionText}>Generate First Message</Text>
-                  </TouchableOpacity>
-                </View>
-                {/* AI Suggested Action Buttons - Based on last messages */}
-              </>
-            )}
+            {!isLoading && renderQuickActions()}
           </View>
         ) : (
           <>
@@ -1341,41 +1474,7 @@ Example (return exactly this format, no other text):
             })}
             {hasNoChatHistory && !isLoading && (
               <>
-                <View style={styles.quickActionsContainer}>
-                  <Text style={styles.quickActionsTitle}>Quick Actions</Text>
-                  <TouchableOpacity
-                    style={[styles.quickActionButton, styles.nextMessageButton]}
-                    onPress={handleGenerateNextMessage}
-                    disabled={isLoading}
-                  >
-                    <Ionicons name="chatbubble-ellipses" size={20} color={colors.text.white} />
-                    <Text style={styles.quickActionText}>Generate Next Message</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.quickActionButton, styles.explainTaskButton]}
-                    onPress={handleExplainTask}
-                    disabled={isLoading}
-                  >
-                    <Ionicons name="information-circle" size={20} color={colors.text.white} />
-                    <Text style={styles.quickActionText}>Explain Task</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.quickActionButton, styles.generateOfferButton]}
-                    onPress={handleGenerateOffer}
-                    disabled={isLoading}
-                  >
-                    <Ionicons name="briefcase" size={20} color={colors.text.white} />
-                    <Text style={styles.quickActionText}>Generate Offer</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.quickActionButton, styles.generateFirstMessageButton]}
-                    onPress={handleGenerateFirstMessage}
-                    disabled={isLoading}
-                  >
-                    <Ionicons name="mail" size={20} color={colors.text.white} />
-                    <Text style={styles.quickActionText}>Generate First Message</Text>
-                  </TouchableOpacity>
-                </View>
+                {renderQuickActions()}
                 {/* AI Suggested Action Buttons - Based on last messages */}
                 {(aiSuggestedActions.length > 0 || isGeneratingActions) && (
                   <View style={styles.aiSuggestedActionsContainer}>
@@ -1416,19 +1515,7 @@ Example (return exactly this format, no other text):
         )}
       </ScrollView>
 
-      {/* Custom Offer Button - Only show when no chat history
-      {hasNoChatHistory && !isLoading && (
-        <View style={styles.customOfferContainer}>
-          <TouchableOpacity
-            style={[styles.customOfferButton, isLoading && styles.customOfferButtonDisabled]}
-            onPress={handleGenerateCustomOffer}
-            disabled={isLoading}
-          >
-            <Ionicons name="briefcase-outline" size={18} color={colors.text.white} />
-            <Text style={styles.customOfferButtonText}>Generate Custom Offer</Text>
-          </TouchableOpacity>
-        </View>
-      )} */}
+      {!hasNoChatHistory && !isLoading ? renderCompactGenerators() : null}
 
       <View
         style={[styles.inputContainer, { paddingHorizontal: messageHorizontalPadding }]}
@@ -1821,10 +1908,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     textAlign: 'center',
   },
+  quickActionsSubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
   quickActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
@@ -1843,8 +1936,53 @@ const styles = StyleSheet.create({
   generateFirstMessageButton: {
     backgroundColor: colors.accent.warning || '#f59e0b',
   },
+  quotationButton: {
+    backgroundColor: '#0d9488',
+  },
+  cursorPromptButton: {
+    backgroundColor: '#7c3aed',
+  },
+  chatgptPromptButton: {
+    backgroundColor: '#10a37f',
+  },
+  clarifyButton: {
+    backgroundColor: '#64748b',
+  },
+  quickActionTextWrap: {
+    flex: 1,
+  },
   quickActionText: {
     fontSize: typography.sizes.base,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.white,
+  },
+  quickActionSubtitle: {
+    fontSize: typography.sizes.xs || 12,
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: 2,
+  },
+  compactGeneratorsScroll: {
+    maxHeight: 48,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+    backgroundColor: colors.background.card,
+  },
+  compactGeneratorsContent: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+    alignItems: 'center',
+  },
+  compactGeneratorChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full || 999,
+  },
+  compactGeneratorText: {
+    fontSize: typography.sizes.sm,
     fontWeight: typography.weights.semibold,
     color: colors.text.white,
   },

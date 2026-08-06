@@ -104,6 +104,7 @@ export function handleNotificationResponse(response, onNavigate) {
 
   switch (data.type) {
     case NOTIFICATION_TYPES.NEW_MESSAGE:
+    case NOTIFICATION_TYPES.NEW_CLIENT:
       if (onNavigate && (data.conversationId || data.username)) {
         onNavigate({
           conversationId: data.conversationId,

@@ -10,6 +10,7 @@ export const NOTIFICATION_CHANNELS = {
 
 export const NOTIFICATION_TYPES = {
   NEW_MESSAGE: 'new_message',
+  NEW_CLIENT: 'new_client',
   CLIENT_ACTIVATED: 'client_activated',
   CONNECTION_STATUS: 'connection_status',
 };
@@ -60,6 +61,12 @@ export const NOTIFICATION_CONFIG = {
   MESSAGE_NOTIFICATION: {
     titlePrefix: 'New message from',
     maxBodyLength: 100,
+    truncateSuffix: '...',
+  },
+
+  NEW_CLIENT_NOTIFICATION: {
+    titlePrefix: 'New Client:',
+    maxBodyLength: 120,
     truncateSuffix: '...',
   },
   

@@ -11,6 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
+  Switch,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,6 +23,11 @@ import {
   shadows,
 } from "../constants/theme";
 import { loadSettings, saveSettings } from "../utils/storage";
+import { AI_CONFIG, RETIRED_GEMINI_MODELS } from "../config/ai";
+import {
+  AUTO_REPLY_DEFAULT_DELAY_MINUTES,
+  wakeAutoReplyWatcher,
+} from "../utils/autoReplyService";
 import { SERVER_CONFIG } from "../config/server";
 import { useWebSocket } from "../context/WebSocketContext";
 import { useAuth } from "../context/AuthContext";
@@ -41,6 +47,10 @@ const SettingsScreen = ({ onBack }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [isApiKeyMasked, setIsApiKeyMasked] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [aiAutoReplyEnabled, setAiAutoReplyEnabled] = useState(false);
+  const [aiAutoReplyMinutes, setAiAutoReplyMinutes] = useState(
+    String(AUTO_REPLY_DEFAULT_DELAY_MINUTES),
+  );
 
   // Load settings on mount
   useEffect(() => {
@@ -81,18 +91,45 @@ const SettingsScreen = ({ onBack }) => {
           setApiKey(maskedKey);
           setIsApiKeyMasked(true);
         }
-        if (settings.aiModel) {
+        if (
+          settings.aiModel &&
+          !RETIRED_GEMINI_MODELS.includes(settings.aiModel.trim())
+        ) {
           setAiModel(settings.aiModel);
         } else {
-          setAiModel("gemini-2.5-flash");
+          setAiModel(AI_CONFIG.DEFAULT_MODEL);
         }
         if (settings.aiApiUrl) {
           setAiApiUrl(settings.aiApiUrl);
         }
+        setAiAutoReplyEnabled(settings.aiAutoReplyEnabled === true);
+        const delay = Number(settings.aiAutoReplyMinutes);
+        setAiAutoReplyMinutes(
+          Number.isFinite(delay) && delay > 0
+            ? String(delay)
+            : String(AUTO_REPLY_DEFAULT_DELAY_MINUTES),
+        );
       }
     } catch (error) {
       console.error("[SettingsScreen] Error loading settings:", error);
     }
+  };
+
+  const persistAutoReplySettings = async (enabled, minutesText) => {
+    const parsed = parseInt(String(minutesText).trim(), 10);
+    const delayMinutes =
+      Number.isFinite(parsed) && parsed > 0
+        ? parsed
+        : AUTO_REPLY_DEFAULT_DELAY_MINUTES;
+    const saved = await saveSettings({
+      aiAutoReplyEnabled: enabled === true,
+      aiAutoReplyMinutes: delayMinutes,
+    });
+    if (!saved) {
+      throw new Error("Unable to save auto-reply settings");
+    }
+    setAiAutoReplyMinutes(String(delayMinutes));
+    wakeAutoReplyWatcher();
   };
 
   const handleSave = async () => {
@@ -121,6 +158,13 @@ const SettingsScreen = ({ onBack }) => {
         aiApiKey: isApiKeyMasked ? undefined : apiKeyToSave || undefined,
         aiModel: aiModel.trim() || undefined,
         aiApiUrl: aiApiUrl.trim() || undefined,
+        aiAutoReplyEnabled: aiAutoReplyEnabled === true,
+        aiAutoReplyMinutes: (() => {
+          const parsed = parseInt(String(aiAutoReplyMinutes).trim(), 10);
+          return Number.isFinite(parsed) && parsed > 0
+            ? parsed
+            : AUTO_REPLY_DEFAULT_DELAY_MINUTES;
+        })(),
       };
 
       Object.keys(settings).forEach((key) => {
@@ -285,6 +329,75 @@ const SettingsScreen = ({ onBack }) => {
             </View>
           ) : null}
 
+          {/* AI Auto-Reply */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>AI Auto-Reply</Text>
+            <Text style={styles.sectionDescription}>
+              When enabled, if you do not reply to a client within the set time,
+              AI generates a message and sends it to Fiverr via the extension.
+              Keep the Expo app open and the extension connected.
+            </Text>
+
+            <View style={styles.switchRow}>
+              <View style={styles.switchTextWrap}>
+                <Text style={styles.label}>Enable auto-reply</Text>
+                <Text style={styles.hint}>
+                  Uses your Gemini key and profile from Settings.
+                </Text>
+              </View>
+              <Switch
+                value={aiAutoReplyEnabled}
+                onValueChange={async (value) => {
+                  setAiAutoReplyEnabled(value);
+                  try {
+                    await persistAutoReplySettings(value, aiAutoReplyMinutes);
+                  } catch (error) {
+                    console.error(
+                      "[SettingsScreen] Failed to save auto-reply toggle:",
+                      error,
+                    );
+                    setAiAutoReplyEnabled(!value);
+                    Alert.alert("Error", "Failed to update auto-reply setting.");
+                  }
+                }}
+                trackColor={{
+                  false: colors.border.light,
+                  true: colors.accent.primary,
+                }}
+                thumbColor={colors.text.white}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Wait time (minutes)</Text>
+              <TextInput
+                style={styles.input}
+                value={aiAutoReplyMinutes}
+                onChangeText={setAiAutoReplyMinutes}
+                onBlur={async () => {
+                  try {
+                    await persistAutoReplySettings(
+                      aiAutoReplyEnabled,
+                      aiAutoReplyMinutes,
+                    );
+                  } catch (error) {
+                    console.error(
+                      "[SettingsScreen] Failed to save auto-reply delay:",
+                      error,
+                    );
+                  }
+                }}
+                placeholder={String(AUTO_REPLY_DEFAULT_DELAY_MINUTES)}
+                placeholderTextColor={colors.text.secondary}
+                keyboardType="number-pad"
+              />
+              <Text style={styles.hint}>
+                Default is {AUTO_REPLY_DEFAULT_DELAY_MINUTES} minutes after the
+                client's last message.
+              </Text>
+            </View>
+          </View>
+
           {/* API Configuration Section */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>API Configuration</Text>
@@ -328,14 +441,15 @@ const SettingsScreen = ({ onBack }) => {
                 style={styles.input}
                 value={aiModel}
                 onChangeText={setAiModel}
-                placeholder="gemini-2.5-flash"
+                placeholder={AI_CONFIG.DEFAULT_MODEL}
                 placeholderTextColor={colors.text.secondary}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
               <Text style={styles.hint}>
-                Default is gemini-2.5-flash. Older Gemini models are no longer
-                supported by the API.
+                Default is {AI_CONFIG.DEFAULT_MODEL}. Free-tier keys can use the
+                Flash and Flash-Lite models only ({AI_CONFIG.GEMINI_FALLBACK_MODELS.slice(0, 4).join(", ")}).
+                Pro models and gemini-2.5-flash are not available on new keys.
               </Text>
             </View>
 
@@ -529,7 +643,12 @@ const SettingsScreen = ({ onBack }) => {
 
       <Modal visible={showAdminDashboard} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <AdminDashboard onClose={() => setShowAdminDashboard(false)} />
+          <AdminDashboard
+            onClose={() => {
+              setShowAdminDashboard(false);
+              loadSettingsData();
+            }}
+          />
         </View>
       </Modal>
     </KeyboardAvoidingView>
@@ -696,6 +815,29 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.7)",
+  },
+  primaryButton: {
+    backgroundColor: colors.accent.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.md,
+    alignItems: "center",
+    marginTop: spacing.sm,
+  },
+  primaryButtonText: {
+    color: colors.text.white,
+    fontWeight: typography.weights.bold,
+    fontSize: typography.sizes.base,
+  },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.lg,
+    gap: spacing.md,
+  },
+  switchTextWrap: {
+    flex: 1,
+    paddingRight: spacing.sm,
   },
 });
 

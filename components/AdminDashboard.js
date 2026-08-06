@@ -9,10 +9,12 @@ import {
   Alert,
   RefreshControl,
   TextInput,
+  Switch,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../context/AuthContext";
+import { useWebSocket } from "../context/WebSocketContext";
 import {
   colors,
   spacing,
@@ -26,6 +28,13 @@ import {
   listAdminAssignments,
   saveAdminAssignments,
 } from "../utils/adminService";
+import { loadSettings, saveSettings } from "../utils/storage";
+import {
+  AUTO_REPLY_DEFAULT_DELAY_MINUTES,
+  wakeAutoReplyWatcher,
+  resetAutoReplyState,
+} from "../utils/autoReplyService";
+import AdminProfileSettings from "./AdminProfileSettings";
 
 const matchesNameUsernameEmail = (item, query) => {
   const fields = [
@@ -39,8 +48,83 @@ const matchesNameUsernameEmail = (item, query) => {
   );
 };
 
+const getClientMergeKey = (client) =>
+  String(
+    client?.username ||
+      client?.clientUsername ||
+      client?.conversationId ||
+      client?._id ||
+      client?.id ||
+      "",
+  )
+    .trim()
+    .toLowerCase();
+
+const normalizeAdminClientRecord = (client) => {
+  const fallbackId = String(
+    client?._id ||
+      client?.id ||
+      client?.username ||
+      client?.conversationId ||
+      "",
+  ).trim();
+  return {
+    ...client,
+    _id: client?._id ? String(client._id) : fallbackId,
+    id: client?.id ? String(client.id) : fallbackId,
+    name: client?.name || client?.username || "Client",
+    username: client?.username || client?.clientUsername || null,
+  };
+};
+
+const mergeAdminClientSources = (
+  apiClients = [],
+  liveClients = [],
+  newClientData = null,
+) => {
+  const byKey = new Map();
+
+  apiClients.forEach((client) => {
+    const normalized = normalizeAdminClientRecord(client);
+    const key = getClientMergeKey(normalized);
+    if (key) {
+      byKey.set(key, normalized);
+    }
+  });
+
+  liveClients.forEach((client) => {
+    const normalized = normalizeAdminClientRecord(client);
+    const key = getClientMergeKey(normalized);
+    if (!key) return;
+    const existing = byKey.get(key);
+    byKey.set(
+      key,
+      existing ? { ...existing, ...normalized, _id: existing._id, id: existing.id } : normalized,
+    );
+  });
+
+  if (newClientData) {
+    const normalized = normalizeAdminClientRecord(newClientData);
+    const key = getClientMergeKey(normalized);
+    if (key && !byKey.has(key)) {
+      byKey.set(key, normalized);
+    }
+  }
+
+  return Array.from(byKey.values()).sort((left, right) => {
+    const leftTime = Date.parse(left?.updated_at || left?.created_at || "") || 0;
+    const rightTime =
+      Date.parse(right?.updated_at || right?.created_at || "") || 0;
+    if (leftTime !== rightTime) {
+      return rightTime - leftTime;
+    }
+    return String(left?.name || "").localeCompare(String(right?.name || ""));
+  });
+};
+
 const AdminDashboard = ({ onClose }) => {
   const { token, role } = useAuth();
+  const { clients: liveClients, newClientData } = useWebSocket();
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState([]);
   const [assignments, setAssignments] = useState([]);
@@ -50,11 +134,56 @@ const AdminDashboard = ({ onClose }) => {
   const [selectedClientIds, setSelectedClientIds] = useState([]);
   const [userSearchQuery, setUserSearchQuery] = useState("");
   const [clientSearchQuery, setClientSearchQuery] = useState("");
+  const [aiAutoReplyEnabled, setAiAutoReplyEnabled] = useState(false);
+  const [aiAutoReplyMinutes, setAiAutoReplyMinutes] = useState(
+    String(AUTO_REPLY_DEFAULT_DELAY_MINUTES),
+  );
+  const [activeView, setActiveView] = useState("main");
 
   useEffect(() => {
     if (!token) return;
     loadData();
   }, [token]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const settings = await loadSettings();
+        if (!settings) return;
+        setAiAutoReplyEnabled(settings.aiAutoReplyEnabled === true);
+        const delay = Number(settings.aiAutoReplyMinutes);
+        setAiAutoReplyMinutes(
+          Number.isFinite(delay) && delay > 0
+            ? String(delay)
+            : String(AUTO_REPLY_DEFAULT_DELAY_MINUTES),
+        );
+      } catch (error) {
+        console.warn("[AdminDashboard] Failed to load auto-reply settings", error);
+      }
+    })();
+  }, []);
+
+  const persistAutoReplySettings = async (enabled, minutesText) => {
+    const parsed = parseInt(String(minutesText).trim(), 10);
+    const delayMinutes =
+      Number.isFinite(parsed) && parsed > 0
+        ? parsed
+        : AUTO_REPLY_DEFAULT_DELAY_MINUTES;
+    const saved = await saveSettings({
+      aiAutoReplyEnabled: enabled === true,
+      aiAutoReplyMinutes: delayMinutes,
+    });
+    if (!saved) {
+      throw new Error("Unable to save auto-reply settings");
+    }
+    setAiAutoReplyMinutes(String(delayMinutes));
+    // Kick the watcher immediately so enabling doesn't wait for the next poll
+    wakeAutoReplyWatcher();
+    console.log("[AdminDashboard] Auto-reply settings saved", {
+      enabled: enabled === true,
+      delayMinutes,
+    });
+  };
 
   const loadData = async ({ showRefresh = false } = {}) => {
     try {
@@ -91,6 +220,49 @@ const AdminDashboard = ({ onClose }) => {
     }
   };
 
+  const refreshClientsQuietly = async () => {
+    if (!token) return;
+    try {
+      const clientsRes = await listAdminClients(token);
+      setClients((clientsRes.clients || []).map((client) => ({
+        ...client,
+        _id: client._id ? String(client._id) : client.id ? String(client.id) : client._id,
+        id: client.id ? String(client.id) : client._id ? String(client._id) : client.id,
+      })));
+    } catch (error) {
+      console.warn("[AdminDashboard] Failed to refresh clients quietly", error);
+    }
+  };
+
+  const displayClients = useMemo(
+    () => mergeAdminClientSources(clients, liveClients, newClientData),
+    [clients, liveClients, newClientData],
+  );
+
+  useEffect(() => {
+    if (!token || !newClientData?.username) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      refreshClientsQuietly();
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [token, newClientData?.username]);
+
+  useEffect(() => {
+    if (!token || !liveClients?.length) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      refreshClientsQuietly();
+    }, 2500);
+
+    return () => clearTimeout(timer);
+  }, [token, liveClients?.length]);
+
   const roleLabel = role === "admin" ? "Administrator" : "User";
 
   const assignmentsByUser = useMemo(() => {
@@ -110,9 +282,11 @@ const AdminDashboard = ({ onClose }) => {
 
   const filteredClients = useMemo(() => {
     const query = clientSearchQuery.trim().toLowerCase();
-    if (!query) return clients;
-    return clients.filter((client) => matchesNameUsernameEmail(client, query));
-  }, [clients, clientSearchQuery]);
+    if (!query) return displayClients;
+    return displayClients.filter((client) =>
+      matchesNameUsernameEmail(client, query),
+    );
+  }, [displayClients, clientSearchQuery]);
 
   const handleAssignClients = async () => {
     if (!selectedUserId) {
@@ -169,17 +343,32 @@ const AdminDashboard = ({ onClose }) => {
     const normalizedAssignments = currentAssignments
       .map((clientId) => String(clientId))
       .filter((clientId) =>
-        clients.some((client) => String(client._id || client.id) === clientId),
+        displayClients.some(
+          (client) => String(client._id || client.id) === clientId,
+        ),
       );
 
     setSelectedClientIds(normalizedAssignments);
-  }, [selectedUserId, assignmentsByUser, clients]);
+  }, [selectedUserId, assignmentsByUser, displayClients]);
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.accent.primary} />
         <Text style={styles.loadingText}>Loading admin workspace...</Text>
+      </View>
+    );
+  }
+
+  if (activeView === "profileSettings") {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={[colors.background.primary, colors.background.secondary]}
+          style={styles.gradient}
+        >
+          <AdminProfileSettings onBack={() => setActiveView("main")} />
+        </LinearGradient>
       </View>
     );
   }
@@ -194,7 +383,7 @@ const AdminDashboard = ({ onClose }) => {
           <View style={styles.headerInfo}>
             <Text style={styles.headerTitle}>Admin Dashboard</Text>
             <Text style={styles.headerSubtitle}>
-              {roleLabel} • {clients.length} clients
+              {roleLabel} • {displayClients.length} clients
             </Text>
           </View>
           {onClose ? (
@@ -220,7 +409,7 @@ const AdminDashboard = ({ onClose }) => {
             <View style={styles.summaryCard}>
               <Ionicons name="people" size={20} color={colors.accent.primary} />
               <View style={styles.summaryTextWrap}>
-                <Text style={styles.summaryValue}>{clients.length}</Text>
+                <Text style={styles.summaryValue}>{displayClients.length}</Text>
                 <Text style={styles.summaryLabel}>Clients</Text>
               </View>
             </View>
@@ -235,6 +424,128 @@ const AdminDashboard = ({ onClose }) => {
                 <Text style={styles.summaryLabel}>Users</Text>
               </View>
             </View>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Profile Settings</Text>
+            <Text style={styles.sectionHint}>
+              Configure auto-reload intervals for each Fiverr seller profile.
+              Reload times are randomized between your min and max seconds and
+              run through the browser extension on the activated tab.
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.primaryButton,
+                {
+                  flexDirection: "row",
+                  justifyContent: "center",
+                  gap: spacing.sm,
+                },
+              ]}
+              onPress={() => setActiveView("profileSettings")}
+            >
+              <Ionicons
+                name="settings-outline"
+                size={18}
+                color={colors.text.white}
+              />
+              <Text style={styles.primaryButtonText}>Open profile settings</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>AI Auto-Reply</Text>
+            <Text style={styles.sectionHint}>
+              If you do not reply within the wait time after a client message, AI
+              drafts a reply and sends it to Fiverr through the extension. Keep
+              Expo open and the extension connected.
+            </Text>
+
+            <View style={styles.switchRow}>
+              <View style={styles.switchTextWrap}>
+                <Text style={styles.cardTitle}>Enable auto-reply</Text>
+                <Text style={styles.sectionHint}>
+                  Status: {aiAutoReplyEnabled ? "On" : "Off"}
+                </Text>
+              </View>
+              <Switch
+                value={aiAutoReplyEnabled}
+                onValueChange={async (value) => {
+                  setAiAutoReplyEnabled(value);
+                  try {
+                    await persistAutoReplySettings(value, aiAutoReplyMinutes);
+                    Alert.alert(
+                      value ? "AI Auto-Reply On" : "AI Auto-Reply Off",
+                      value
+                        ? `Watcher is active. If a client message goes unanswered for ${aiAutoReplyMinutes || AUTO_REPLY_DEFAULT_DELAY_MINUTES} minutes, AI will generate a reply and send it via the extension.\n\nKeep Expo open and the extension connected.`
+                        : "Automatic AI replies are disabled.",
+                    );
+                  } catch (error) {
+                    setAiAutoReplyEnabled(!value);
+                    Alert.alert(
+                      "Error",
+                      error.message || "Unable to update auto-reply setting",
+                    );
+                  }
+                }}
+                trackColor={{
+                  false: colors.border.light,
+                  true: colors.accent.primary,
+                }}
+                thumbColor={colors.text.white}
+              />
+            </View>
+
+            <Text style={styles.panelHint}>Wait time (minutes)</Text>
+            <TextInput
+              style={styles.input}
+              value={aiAutoReplyMinutes}
+              onChangeText={setAiAutoReplyMinutes}
+              onBlur={async () => {
+                try {
+                  await persistAutoReplySettings(
+                    aiAutoReplyEnabled,
+                    aiAutoReplyMinutes,
+                  );
+                } catch (error) {
+                  Alert.alert(
+                    "Error",
+                    error.message || "Unable to save wait time",
+                  );
+                }
+              }}
+              placeholder={String(AUTO_REPLY_DEFAULT_DELAY_MINUTES)}
+              placeholderTextColor={colors.text.secondary}
+              keyboardType="number-pad"
+            />
+            <Text style={styles.sectionHint}>
+              Default is {AUTO_REPLY_DEFAULT_DELAY_MINUTES} minutes. One
+              auto-reply is sent per unanswered client message.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={async () => {
+                const ok = await resetAutoReplyState();
+                if (ok) {
+                  wakeAutoReplyWatcher();
+                }
+                Alert.alert(
+                  ok ? "Auto-Reply Reset" : "Error",
+                  ok
+                    ? "Cleared auto-reply history. Every unanswered client message is eligible again."
+                    : "Could not reset auto-reply history.",
+                );
+              }}
+            >
+              <Text style={styles.secondaryButtonText}>
+                Reset auto-reply history
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.sectionHint}>
+              Use this if replies stopped sending — it clears records of past
+              attempts that are blocking new ones.
+            </Text>
           </View>
 
           <View style={styles.section}>
@@ -378,7 +689,7 @@ const AdminDashboard = ({ onClose }) => {
                 </View>
                 <View style={styles.clientListContainer}>
                   <View style={styles.clientList}>
-                    {clients.length === 0 ? (
+                    {displayClients.length === 0 ? (
                       <Text style={styles.emptyState}>
                         No clients available.
                       </Text>
@@ -726,6 +1037,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   assignmentRowText: { color: colors.text.primary },
+  switchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+    gap: spacing.md,
+  },
+  switchTextWrap: {
+    flex: 1,
+    paddingRight: spacing.sm,
+  },
 });
 
 export default AdminDashboard;

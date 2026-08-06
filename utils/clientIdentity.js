@@ -393,9 +393,19 @@ export const pickRicherMessage = (left, right) => {
   const primary = score(left) >= score(right) ? left : right;
   const secondary = primary === left ? right : left;
 
+  const leftAbs =
+    typeof left?.absoluteTimestamp === "number" ? left.absoluteTimestamp : 0;
+  const rightAbs =
+    typeof right?.absoluteTimestamp === "number" ? right.absoluteTimestamp : 0;
+  const preservedAbsolute =
+    leftAbs > 0 && rightAbs > 0
+      ? Math.min(leftAbs, rightAbs)
+      : leftAbs || rightAbs || undefined;
+
   return {
     ...secondary,
     ...primary,
+    ...(preservedAbsolute ? { absoluteTimestamp: preservedAbsolute } : {}),
     images: dedupeMessageImages(
       (Array.isArray(primary?.images) && primary.images.length > 0
         ? primary.images

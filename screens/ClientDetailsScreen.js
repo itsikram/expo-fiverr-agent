@@ -235,6 +235,23 @@ const ClientDetailsScreen = ({
             <Text style={styles.clientName} numberOfLines={1}>
               {displayClient?.name || "Unknown Client"}
             </Text>
+            {(displayClient?.lastSeen ||
+              displayClient?.last_seen ||
+              displayClient?.online != null) && (
+              <Text
+                style={[
+                  styles.clientPresence,
+                  displayClient?.online
+                    ? styles.clientPresenceOnline
+                    : styles.clientPresenceAway,
+                ]}
+                numberOfLines={1}
+              >
+                {displayClient?.lastSeen ||
+                  displayClient?.last_seen ||
+                  (displayClient?.online ? "Active now" : "Away")}
+              </Text>
+            )}
             {displayClient?.username && (
               <Text style={styles.clientUsername} numberOfLines={1}>
                 @{displayClient.username}
@@ -740,6 +757,16 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.lg,
     fontWeight: typography.weights.semibold,
     color: colors.text.primary,
+  },
+  clientPresence: {
+    fontSize: typography.sizes.xs,
+    marginTop: 2,
+  },
+  clientPresenceOnline: {
+    color: colors.accent.success,
+  },
+  clientPresenceAway: {
+    color: colors.text.muted,
   },
   clientUsername: {
     fontSize: typography.sizes.sm,

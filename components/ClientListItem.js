@@ -15,6 +15,13 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
   };
 
   const clientAvatarUrl = client?.avatarUrl || client?.avatar_url || null;
+  const isOnline =
+    client?.online === true ||
+    String(client?.presence || '').toLowerCase() === 'online';
+  const lastSeenLabel =
+    client?.lastSeen ||
+    client?.last_seen ||
+    (isOnline ? 'Active now' : null);
 
   const handleDeletePress = (e) => {
     e.stopPropagation();
@@ -34,17 +41,25 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
     >
       <View style={[styles.indicator, isSelected && styles.indicatorActive]} />
       <View style={styles.content} pointerEvents="box-none">
-        <View style={[styles.avatar, isSelected && styles.avatarSelected]}>
-          {clientAvatarUrl ? (
-            <Image source={{ uri: clientAvatarUrl }} style={styles.avatarImage} />
-          ) : (
-            <Text
-              style={[styles.avatarText, isSelected && styles.avatarTextSelected]}
-              pointerEvents="none"
-            >
-              {getInitials(client.name)}
-            </Text>
-          )}
+        <View style={styles.avatarWrap}>
+          <View style={[styles.avatar, isSelected && styles.avatarSelected]}>
+            {clientAvatarUrl ? (
+              <Image source={{ uri: clientAvatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <Text
+                style={[styles.avatarText, isSelected && styles.avatarTextSelected]}
+                pointerEvents="none"
+              >
+                {getInitials(client.name)}
+              </Text>
+            )}
+          </View>
+          <View
+            style={[
+              styles.presenceDot,
+              isOnline ? styles.presenceOnline : styles.presenceAway,
+            ]}
+          />
         </View>
         <View style={styles.textContainer} pointerEvents="none">
           <Text
@@ -53,14 +68,25 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
           >
             {client.name || 'Unknown Client'}
           </Text>
-          {client.username && (
+          {lastSeenLabel ? (
+            <Text
+              style={[
+                styles.presenceText,
+                isOnline ? styles.presenceTextOnline : styles.presenceTextAway,
+                isSelected && styles.presenceTextSelected,
+              ]}
+              numberOfLines={1}
+            >
+              {lastSeenLabel}
+            </Text>
+          ) : client.username ? (
             <Text
               style={[styles.username, isSelected && styles.usernameSelected]}
               numberOfLines={1}
             >
               @{client.username}
             </Text>
-          )}
+          ) : null}
         </View>
         <View style={styles.meta} pointerEvents="box-none">
           {client.last_message_timestamp && (
@@ -119,6 +145,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     gap: spacing.md,
   },
+  avatarWrap: {
+    width: 40,
+    height: 40,
+    position: 'relative',
+  },
   avatar: {
     width: 40,
     height: 40,
@@ -144,6 +175,22 @@ const styles = StyleSheet.create({
   avatarTextSelected: {
     color: colors.accent.primary,
   },
+  presenceDot: {
+    position: 'absolute',
+    right: -1,
+    bottom: -1,
+    width: 11,
+    height: 11,
+    borderRadius: borderRadius.full,
+    borderWidth: 2,
+    borderColor: colors.background.sidebar,
+  },
+  presenceOnline: {
+    backgroundColor: colors.accent.success,
+  },
+  presenceAway: {
+    backgroundColor: colors.text.muted,
+  },
   textContainer: {
     flex: 1,
     minWidth: 0,
@@ -164,6 +211,19 @@ const styles = StyleSheet.create({
   },
   usernameSelected: {
     color: colors.text.secondary,
+  },
+  presenceText: {
+    fontSize: typography.sizes.xs,
+    marginTop: 2,
+  },
+  presenceTextOnline: {
+    color: colors.accent.success,
+  },
+  presenceTextAway: {
+    color: colors.text.muted,
+  },
+  presenceTextSelected: {
+    opacity: 0.9,
   },
   meta: {
     alignItems: 'flex-end',

@@ -51,12 +51,41 @@ const MessagesTab = ({
   });
   const scrollMetricsRef = useRef({
     contentHeight: 0,
+    layoutHeight: 0,
     scrollY: 0,
     preserveOnNextLayout: false,
   });
   const [sendingMessages, setSendingMessages] = useState([]); // Array of messages being sent
   const [isSending, setIsSending] = useState(false);
   const sendingStartTimeRef = useRef(null); // Track when sending started for minimum display time
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+
+  const SCROLL_EDGE_THRESHOLD = 80;
+
+  const updateScrollButtonsVisibility = (
+    scrollY,
+    contentHeight,
+    layoutHeight,
+  ) => {
+    if (!layoutHeight || contentHeight <= layoutHeight + 8) {
+      setShowScrollTop(false);
+      setShowScrollBottom(false);
+      return;
+    }
+
+    const maxScroll = Math.max(0, contentHeight - layoutHeight);
+    setShowScrollTop(scrollY > SCROLL_EDGE_THRESHOLD);
+    setShowScrollBottom(scrollY < maxScroll - SCROLL_EDGE_THRESHOLD);
+  };
+
+  const scrollToTop = () => {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
+  const scrollToBottom = () => {
+    scrollViewRef.current?.scrollToEnd({ animated: true });
+  };
 
   const getMessageStableKey = (message, index) =>
     message.id ||
@@ -87,9 +116,12 @@ const MessagesTab = ({
     };
     scrollMetricsRef.current = {
       contentHeight: 0,
+      layoutHeight: 0,
       scrollY: 0,
       preserveOnNextLayout: false,
     };
+    setShowScrollTop(false);
+    setShowScrollBottom(false);
     setInputHeight(INPUT_MIN_HEIGHT);
   }, [activeConversationKey, client?.listRowId, client?.id]);
 
@@ -108,14 +140,44 @@ const MessagesTab = ({
     setInputHeight(nextHeight);
   };
 
+  const normalizeMessageText = (value) =>
+    String(value || "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const messageExistsInList = (list, text) => {
+    const target = normalizeMessageText(text);
+    if (!target) return false;
+    return (list || []).some((m) => {
+      const candidate = normalizeMessageText(
+        m?.text || m?.content || m?.message,
+      );
+      return candidate === target;
+    });
+  };
+
   // Parent already passes strictly filtered messages for the selected client.
+  // Merge any not-yet-synced pending sends into the same chronological sort —
+  // never append them after the full thread (that pinned AI sends under everything).
   const visibleMessages = React.useMemo(() => {
     if (!Array.isArray(messages)) return [];
 
-    return [...messages].sort(
+    const pendingExtras = (sendingMessages || [])
+      .filter((sm) => !messageExistsInList(messages, sm.text))
+      .map((sm) => ({
+        text: sm.text,
+        sender: "me",
+        isFromMe: true,
+        time: null,
+        absoluteTimestamp: sm.sentAt || Date.now(),
+        optimistic: true,
+        pendingSend: true,
+      }));
+
+    return [...messages, ...pendingExtras].sort(
       (a, b) => getMessageTimestamp(a) - getMessageTimestamp(b),
     );
-  }, [messages]);
+  }, [messages, sendingMessages]);
 
   const handleAdminEdit = async (message) => {
     if (!isAdmin || !token) return;
@@ -174,7 +236,26 @@ const MessagesTab = ({
   };
 
   const handleMessagesScroll = (event) => {
-    scrollMetricsRef.current.scrollY = event.nativeEvent.contentOffset.y;
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const scrollY = contentOffset.y;
+    const contentHeight = contentSize.height;
+    const layoutHeight = layoutMeasurement.height;
+
+    scrollMetricsRef.current.scrollY = scrollY;
+    scrollMetricsRef.current.contentHeight = contentHeight;
+    scrollMetricsRef.current.layoutHeight = layoutHeight;
+    updateScrollButtonsVisibility(scrollY, contentHeight, layoutHeight);
+  };
+
+  const handleMessagesLayout = (event) => {
+    const layoutHeight = event.nativeEvent.layout.height;
+    const metrics = scrollMetricsRef.current;
+    metrics.layoutHeight = layoutHeight;
+    updateScrollButtonsVisibility(
+      metrics.scrollY,
+      metrics.contentHeight,
+      layoutHeight,
+    );
   };
 
   const handleMessagesContentSizeChange = (_width, height) => {
@@ -193,6 +274,11 @@ const MessagesTab = ({
     }
 
     metrics.contentHeight = height;
+    updateScrollButtonsVisibility(
+      metrics.scrollY,
+      height,
+      metrics.layoutHeight,
+    );
   };
 
   // Scroll to bottom only for new messages at the end — not when older history loads in.
@@ -266,55 +352,66 @@ const MessagesTab = ({
     scrollMetricsRef.current.preserveOnNextLayout = true;
   }, [isLoadingAllMessages]);
 
-  // Clear sending state when a new message appears (message was successfully sent)
-  // But ensure stop button displays for minimum 30 seconds
+  const clearSendingState = (textToClear = null) => {
+    if (!textToClear) {
+      setSendingMessages([]);
+      setIsSending(false);
+      sendingStartTimeRef.current = null;
+      return;
+    }
+
+    const target = normalizeMessageText(textToClear);
+    setSendingMessages((prev) => {
+      const next = prev.filter(
+        (msg) => normalizeMessageText(msg.text) !== target,
+      );
+      if (next.length === 0) {
+        setIsSending(false);
+        sendingStartTimeRef.current = null;
+      }
+      return next;
+    });
+  };
+
+  // Clear sending state as soon as the message appears in the conversation
+  // (optimistic local message or confirmed sync from the extension).
   useEffect(() => {
-    if (sendingMessages.length > 0 && visibleMessages.length > 0) {
-      // Check if any of the messages we were sending now have a time (meaning they were sent successfully)
-      const updatedSendingMessages = sendingMessages.filter((sendingMsg) => {
-        const sentMessage = messages.find(
-          (m) =>
-            (m.text === sendingMsg.text || m.content === sendingMsg.text) &&
-            m.time,
-        );
-        return !sentMessage; // Keep messages that haven't been confirmed yet
-      });
+    if (sendingMessages.length === 0) {
+      return;
+    }
 
-      if (updatedSendingMessages.length !== sendingMessages.length) {
-        // Message was confirmed as sent
-        const startTime = sendingStartTimeRef.current;
-        if (startTime && updatedSendingMessages.length === 0) {
-          // All messages confirmed, but ensure minimum 30 seconds display
-          const elapsedTime = Date.now() - startTime;
-          const minDisplayTime = 30000; // 30 seconds in milliseconds
-          const remainingTime = Math.max(0, minDisplayTime - elapsedTime);
+    const stillPending = sendingMessages.filter(
+      (sendingMsg) =>
+        !messageExistsInList(visibleMessages, sendingMsg.text) &&
+        !messageExistsInList(messages, sendingMsg.text),
+    );
 
-          if (remainingTime > 0) {
-            // Still need to wait for minimum display time
-            setTimeout(() => {
-              // Double-check we're still in sending state before clearing
-              if (sendingStartTimeRef.current === startTime) {
-                setIsSending(false);
-                setSendingMessages([]);
-                sendingStartTimeRef.current = null;
-              }
-            }, remainingTime);
-          } else {
-            // Minimum time has passed, can clear immediately
-            setIsSending(false);
-            setSendingMessages(updatedSendingMessages);
-            sendingStartTimeRef.current = null;
-          }
-        } else {
-          setSendingMessages(updatedSendingMessages);
-          if (updatedSendingMessages.length === 0) {
-            setIsSending(false);
-            sendingStartTimeRef.current = null;
-          }
-        }
+    if (stillPending.length !== sendingMessages.length) {
+      setSendingMessages(stillPending);
+      if (stillPending.length === 0) {
+        setIsSending(false);
+        sendingStartTimeRef.current = null;
       }
     }
-  }, [messages, sendingMessages]);
+  }, [messages, visibleMessages, sendingMessages]);
+
+  // Safety: never leave the UI stuck in sending forever if confirmation is missed.
+  useEffect(() => {
+    if (!isSending || sendingMessages.length === 0) {
+      return undefined;
+    }
+
+    const startTime = sendingStartTimeRef.current;
+    const timeoutId = setTimeout(() => {
+      if (sendingStartTimeRef.current === startTime) {
+        setSendingMessages([]);
+        setIsSending(false);
+        sendingStartTimeRef.current = null;
+      }
+    }, 45000);
+
+    return () => clearTimeout(timeoutId);
+  }, [isSending, sendingMessages.length]);
 
   const handleSend = async () => {
     if (!messageText.trim() || isSending) {
@@ -324,62 +421,25 @@ const MessagesTab = ({
     const textToSend = messageText.trim();
     const startTime = Date.now();
     setIsSending(true);
-    sendingStartTimeRef.current = startTime; // Record start time for minimum display
+    sendingStartTimeRef.current = startTime;
+    setSendingMessages((prev) => [
+      ...prev,
+      { text: textToSend, sentAt: startTime },
+    ]);
 
-    // Add temporary sending message
-    const tempMessage = {
-      text: textToSend,
-      sender: "me",
-      isFromMe: true,
-      time: null, // No time means it's still sending
-    };
-    setSendingMessages((prev) => [...prev, { text: textToSend }]);
-
-    // Call the onSend callback
     if (onSend) {
       const success = onSend();
-      // If send fails immediately, still show stop button for minimum 30 seconds
       if (success === false) {
-        // Cancel optimistic message if send failed
         if (client && cancelOptimisticMessage) {
-          const conversationId =
-            client?.conversationId || client?.username || client?.id;
+          const conversationId = getClientConversationId(client);
           if (conversationId) {
             cancelOptimisticMessage(textToSend, conversationId);
           }
         }
-        // Ensure minimum 30 seconds display even on failure
-        const elapsedTime = Date.now() - startTime;
-        const minDisplayTime = 30000; // 30 seconds in milliseconds
-        const remainingTime = Math.max(0, minDisplayTime - elapsedTime);
-
-        setTimeout(() => {
-          // Only reset if we're still in sending state (not cancelled)
-          if (sendingStartTimeRef.current === startTime) {
-            setSendingMessages((prev) =>
-              prev.filter((msg) => msg.text !== textToSend),
-            );
-            setIsSending(false);
-            sendingStartTimeRef.current = null;
-          }
-        }, remainingTime);
+        clearSendingState(textToSend);
       }
     } else {
-      // No onSend callback, still ensure minimum 30 seconds display
-      const elapsedTime = Date.now() - startTime;
-      const minDisplayTime = 30000; // 30 seconds in milliseconds
-      const remainingTime = Math.max(0, minDisplayTime - elapsedTime);
-
-      setTimeout(() => {
-        // Only reset if we're still in sending state (not cancelled)
-        if (sendingStartTimeRef.current === startTime) {
-          setSendingMessages((prev) =>
-            prev.filter((msg) => msg.text !== textToSend),
-          );
-          setIsSending(false);
-          sendingStartTimeRef.current = null;
-        }
-      }, remainingTime);
+      clearSendingState(textToSend);
     }
   };
 
@@ -394,8 +454,7 @@ const MessagesTab = ({
       return;
     }
 
-    const conversationId =
-      client?.conversationId || client?.username || client?.id;
+    const conversationId = getClientConversationId(client);
     if (!conversationId) {
       return;
     }
@@ -405,13 +464,7 @@ const MessagesTab = ({
       cancelOptimisticMessage(lastSendingMessage.text, conversationId);
     }
 
-    // Remove from sending messages and reset state immediately when user clicks stop
-    setSendingMessages((prev) =>
-      prev.filter((msg) => msg.text !== lastSendingMessage.text),
-    );
-    setIsSending(false);
-    sendingStartTimeRef.current = null; // Clear start time reference
-
+    clearSendingState(lastSendingMessage.text);
     Alert.alert("Cancelled", "Message sending cancelled");
   };
 
@@ -421,6 +474,7 @@ const MessagesTab = ({
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={Platform.OS === "ios" ? 215 : 200}
     >
+      <View style={styles.messagesArea} onLayout={handleMessagesLayout}>
       <ScrollView
         ref={scrollViewRef}
         style={styles.messagesScroll}
@@ -499,16 +553,31 @@ const MessagesTab = ({
           </View>
         ) : (
           <>
-            {/* Show all regular messages */}
             {visibleMessages.map((message, index) => {
               const messageText = message.text || message.content || "";
+              const isOptimisticPending =
+                Boolean(message.optimistic || message.pendingSend) &&
+                sendingMessages.some(
+                  (sm) =>
+                    normalizeMessageText(sm.text) ===
+                    normalizeMessageText(messageText),
+                );
               const isMessageSending =
-                !message.time &&
-                sendingMessages.some((sm) => sm.text === messageText);
+                isOptimisticPending ||
+                Boolean(message.pendingSend) ||
+                (!message.time &&
+                  sendingMessages.some(
+                    (sm) =>
+                      normalizeMessageText(sm.text) ===
+                      normalizeMessageText(messageText),
+                  ));
               const messageKey =
                 message.id ||
                 message._id ||
-                `${messageText}|${message.sender || "client"}|${message.time || message.timestamp || index}`;
+                (message.pendingSend
+                  ? `pending-${normalizeMessageText(messageText)}`
+                  : null) ||
+                `${messageText}|${message.sender || "client"}|${message.time || message.timestamp || message.absoluteTimestamp || index}`;
 
               return (
                 <MessageBubble
@@ -522,35 +591,35 @@ const MessagesTab = ({
                 />
               );
             })}
-            {/* Show temporary sending messages that aren't in the messages array yet */}
-            {sendingMessages.map((sendingMsg, index) => {
-              // Only show if this message isn't already in the messages array
-              const existsInMessages = visibleMessages.some(
-                (m) =>
-                  m.text === sendingMsg.text || m.content === sendingMsg.text,
-              );
-
-              if (existsInMessages) {
-                return null;
-              }
-
-              return (
-                <MessageBubble
-                  key={`sending-${index}`}
-                  message={{
-                    text: sendingMsg.text,
-                    sender: "me",
-                    isFromMe: true,
-                    time: null,
-                  }}
-                  isFromMe={true}
-                  isSending={true}
-                />
-              );
-            })}
           </>
         )}
       </ScrollView>
+
+      {(showScrollTop || showScrollBottom) && visibleMessages.length > 0 ? (
+        <View style={styles.scrollFabContainer} pointerEvents="box-none">
+          {showScrollTop ? (
+            <TouchableOpacity
+              style={styles.scrollFab}
+              onPress={scrollToTop}
+              activeOpacity={0.85}
+              accessibilityLabel="Scroll to top"
+            >
+              <Ionicons name="chevron-up" size={20} color={colors.text.primary} />
+            </TouchableOpacity>
+          ) : null}
+          {showScrollBottom ? (
+            <TouchableOpacity
+              style={styles.scrollFab}
+              onPress={scrollToBottom}
+              activeOpacity={0.85}
+              accessibilityLabel="Scroll to bottom"
+            >
+              <Ionicons name="chevron-down" size={20} color={colors.text.primary} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
+      </View>
       {!isInputMinimized ? (
         <View
           style={[styles.inputContainer, { paddingHorizontal: messageHorizontalPadding }]}
@@ -617,9 +686,37 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
   },
+  messagesArea: {
+    flex: 1,
+    width: "100%",
+    position: "relative",
+  },
   messagesScroll: {
     flex: 1,
     width: "100%",
+  },
+  scrollFabContainer: {
+    position: "absolute",
+    right: spacing.md,
+    bottom: spacing.lg,
+    zIndex: 20,
+    gap: spacing.sm,
+    alignItems: "center",
+  },
+  scrollFab: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.background.elevated,
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
   },
   messagesContent: {
     paddingVertical: spacing.md,

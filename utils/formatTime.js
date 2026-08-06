@@ -10,6 +10,21 @@ export const formatTime = (timestamp) => {
     if (timestamp.match(/[A-Za-z]{3}\s+\d{1,2}/) || timestamp.includes('PM') || timestamp.includes('AM')) {
       return timestamp;
     }
+    // Fiverr inbox relative times: "12 minutes", "3 hours", "2 weeks"
+    const relativeMatch = timestamp.match(
+      /^(\d+)\s*(minute|minutes|min|hour|hours|hr|day|days|week|weeks|month|months|year|years)$/i,
+    );
+    if (relativeMatch) {
+      const value = relativeMatch[1];
+      const unit = relativeMatch[2].toLowerCase();
+      const short =
+        unit.startsWith('min') ? 'm' :
+        unit.startsWith('hour') || unit.startsWith('hr') ? 'h' :
+        unit.startsWith('day') ? 'd' :
+        unit.startsWith('week') ? 'w' :
+        unit.startsWith('month') ? 'mo' : 'y';
+      return `${value}${short} ago`;
+    }
   }
   
   try {

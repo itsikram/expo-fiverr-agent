@@ -16,8 +16,14 @@ import {
   loadClientData,
   saveLastSync,
   clearAIChatHistory,
+  loadSettings,
 } from "../utils/storage";
-// import notificationService from "../utils/notificationService";
+import { startAutoReplyWatcher } from "../utils/autoReplyService";
+import {
+  loadProfileReloadSettings,
+  TAB_RELOAD_SETTINGS_EVENT,
+} from "../utils/tabReloadService";
+import notificationService from "../utils/notificationService";
 import { useAuth } from "./AuthContext";
 import {
   getClientConversationId,
@@ -27,6 +33,14 @@ import {
 } from "../utils/clientIdentity";
 
 const WebSocketContext = createContext(null);
+
+// How long to wait for the extension to confirm a send before treating it as
+// failed. This has to clear the extension's own worst case (up to 10 delivery
+// retries, then opening the conversation and typing into Fiverr) or a slow
+// success gets retried and the client receives the reply twice. The server
+// reports "no extension connected" immediately, so this only applies once an
+// extension has actually taken the command.
+const SEND_CONFIRMATION_TIMEOUT_MS = 120000;
 
 export const useWebSocket = () => {
   const context = useContext(WebSocketContext);
@@ -398,18 +412,36 @@ const filterClientsForCurrentUser = (
 
 export const getMessageTimestamp = (message) => {
   if (!message) return 0;
+
+  // Prefer frozen absolute timestamps so relative Fiverr labels ("26 minutes")
+  // and ISO optimistic/AI sends sort in true chronological order.
+  if (
+    typeof message.absoluteTimestamp === "number" &&
+    message.absoluteTimestamp > 0
+  ) {
+    return message.absoluteTimestamp;
+  }
+
   const raw =
     message.time ||
     message.timestamp ||
     message.date ||
     message.created_at ||
     message.createdAt;
-  if (!raw) return 0;
+  if (!raw && raw !== 0) return 0;
   if (typeof raw === "number") return raw;
 
   const parsed = new Date(raw);
-  if (!isNaN(parsed.getTime())) {
-    return parsed.getTime();
+  if (!isNaN(parsed.getTime()) && String(raw).length > 8) {
+    // Avoid treating relative labels like "2 hours" as Date.parse successes.
+    if (
+      String(raw).includes("T") ||
+      String(raw).includes("-") ||
+      String(raw).includes("/") ||
+      /,/.test(String(raw))
+    ) {
+      return parsed.getTime();
+    }
   }
 
   const priorityInfo = getTimeUnitPriority(raw);
@@ -476,6 +508,8 @@ export const WebSocketProvider = ({ children }) => {
   const isAssignmentsLoadedRef = useRef(false);
   const { token, role } = useAuth();
   const fetchDetailsCallbacksRef = useRef({}); // Track callbacks for fetch_details requests
+  // Pending send confirmations keyed by lowercase conversation id.
+  const sendConfirmationsRef = useRef({});
 
   const isAdminRole =
     typeof role === "string" &&
@@ -500,6 +534,21 @@ export const WebSocketProvider = ({ children }) => {
     clientData: new Map(),
     triggers: new Map(),
   });
+  const notifiedNewClientsRef = useRef(new Map());
+  const NEW_CLIENT_NOTIFY_COOLDOWN_MS = 60 * 60 * 1000;
+
+  const shouldNotifyNewClient = useCallback((username) => {
+    const key = String(username || "").trim().toLowerCase();
+    if (!key) {
+      return false;
+    }
+    const lastAt = notifiedNewClientsRef.current.get(key) || 0;
+    if (Date.now() - lastAt < NEW_CLIENT_NOTIFY_COOLDOWN_MS) {
+      return false;
+    }
+    notifiedNewClientsRef.current.set(key, Date.now());
+    return true;
+  }, []);
 
   const shouldThrottleRequest = useCallback((type, key, ttlMs = 2500) => {
     const now = Date.now();
@@ -773,6 +822,27 @@ export const WebSocketProvider = ({ children }) => {
           }),
         );
 
+        try {
+          const pushToken = await notificationService.getExpoPushToken();
+          if (
+            pushToken &&
+            ws.readyState === WebSocket.OPEN &&
+            connectGenerationRef.current === thisGeneration &&
+            wsRef.current === ws
+          ) {
+            ws.send(
+              JSON.stringify({
+                type: "register_push_token",
+                pushToken,
+                session_id: sessionIdRef.current,
+              }),
+            );
+            console.log("[WebSocket] Registered Expo push token with server");
+          }
+        } catch (pushError) {
+          console.warn("[WebSocket] Failed to register push token:", pushError);
+        }
+
         // Start ping interval
         pingIntervalRef.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
@@ -938,7 +1008,11 @@ export const WebSocketProvider = ({ children }) => {
 
   const requestMessages = useCallback(
     (conversationIdOrUsername, options = {}) => {
-      const { force = false, triggerExtraction = false } = options;
+      const {
+        force = false,
+        triggerExtraction = false,
+        background = false,
+      } = options;
       const payload = { type: "request_messages" };
       const clientKey = getClientKey(conversationIdOrUsername);
 
@@ -960,10 +1034,13 @@ export const WebSocketProvider = ({ children }) => {
       if (clientKey) {
         payload.conversationId = clientKey;
         payload.username = clientKey;
-        loadingConversationIdRef.current = clientKey;
-        setLoadingConversationId(clientKey);
-        setIsLoadingMessages(true);
-      } else {
+        // Background callers (auto-reply watcher) must not hijack the UI spinner
+        if (!background) {
+          loadingConversationIdRef.current = clientKey;
+          setLoadingConversationId(clientKey);
+          setIsLoadingMessages(true);
+        }
+      } else if (!background) {
         loadingConversationIdRef.current = null;
         setLoadingConversationId(null);
         setIsLoadingMessages(false);
@@ -1172,6 +1249,7 @@ export const WebSocketProvider = ({ children }) => {
       isFromMe: true,
       time: now,
       timestamp: now,
+      absoluteTimestamp: Date.now(),
       conversationId: conversationId,
       optimistic: true, // Flag to identify optimistic messages
     };
@@ -1180,7 +1258,9 @@ export const WebSocketProvider = ({ children }) => {
       const existingMessages = prev[conversationId] || [];
       return {
         ...prev,
-        [conversationId]: [...existingMessages, optimisticMessage],
+        [conversationId]: [...existingMessages, optimisticMessage].sort(
+          (a, b) => getMessageTimestamp(a) - getMessageTimestamp(b),
+        ),
       };
     });
 
@@ -1229,7 +1309,7 @@ export const WebSocketProvider = ({ children }) => {
   }, []);
 
   const sendMessageToClient = useCallback(
-    (messageText, conversationId) => {
+    (messageText, conversationId, options = {}) => {
       // Send message to client via browser extension
       if (!messageText || !messageText.trim()) {
         console.warn(
@@ -1246,10 +1326,43 @@ export const WebSocketProvider = ({ children }) => {
         conversationId,
         messageText.substring(0, 50),
       );
-      return sendMessage({
+      const queued = sendMessage({
         type: "send_message",
         message: messageText.trim(),
         conversationId: conversationId,
+        // Lets the extension apply its own auto-reply kill-switch without
+        // blocking messages the user sent by hand.
+        autoReply: options.autoReply === true,
+      });
+
+      if (!options.awaitConfirmation) {
+        return queued;
+      }
+
+      // A socket write only proves the server got the command. Wait for the
+      // extension to report whether Fiverr actually accepted the message.
+      if (!queued) {
+        return Promise.resolve({
+          success: false,
+          error: "Not connected to the message server",
+        });
+      }
+
+      const key = String(conversationId || "").toLowerCase();
+      return new Promise((resolve) => {
+        const timeoutId = setTimeout(() => {
+          if (sendConfirmationsRef.current[key] === entry) {
+            delete sendConfirmationsRef.current[key];
+          }
+          resolve({
+            success: false,
+            error:
+              "Timed out waiting for the browser extension to confirm the send. Check the extension's service worker console for the reason.",
+          });
+        }, SEND_CONFIRMATION_TIMEOUT_MS);
+
+        const entry = { resolve, timeoutId };
+        sendConfirmationsRef.current[key] = entry;
       });
     },
     [sendMessage, addOptimisticMessage],
@@ -1377,6 +1490,13 @@ export const WebSocketProvider = ({ children }) => {
           const transformedClients = incomingClients.map((client, index) => {
             // Build the transformed client object, ensuring each row has a unique stable id
             const uniqueId = getClientListId(client, index);
+            const isOnline =
+              client.online === true ||
+              String(client.presence || "").toLowerCase() === "online";
+            const lastSeen =
+              client.lastSeen ||
+              client.last_seen ||
+              (isOnline ? "Active now" : "Away");
             const transformed = {
               id: uniqueId,
               clientKey: uniqueId,
@@ -1394,10 +1514,19 @@ export const WebSocketProvider = ({ children }) => {
                 client.last_message_timestamp !== undefined
                   ? client.last_message_timestamp
                   : null,
+              online: isOnline,
+              presence: client.presence || (isOnline ? "online" : "away"),
+              lastSeen,
+              last_seen: lastSeen,
               ...client, // Include all other properties (this should preserve last_message_timestamp)
             };
             transformed.id = uniqueId;
             transformed.clientKey = uniqueId;
+            transformed.online = isOnline;
+            transformed.presence =
+              client.presence || (isOnline ? "online" : "away");
+            transformed.lastSeen = lastSeen;
+            transformed.last_seen = lastSeen;
             // Ensure last_message_timestamp is set (spread might override with undefined)
             if (client.last_message_timestamp !== undefined) {
               transformed.last_message_timestamp =
@@ -1545,6 +1674,33 @@ export const WebSocketProvider = ({ children }) => {
                   review_count: data.data.review_count,
                   ...data.data,
                 });
+
+                const clientId = String(
+                  data.data.conversationId || data.data.username,
+                ).trim();
+                return [
+                  {
+                    id: clientId,
+                    clientKey: clientId,
+                    _id: clientId,
+                    username: data.data.username,
+                    conversationId:
+                      data.data.conversationId || data.data.username,
+                    name: data.data.name || data.data.username || "Unknown",
+                    country: data.data.country || "",
+                    language: data.data.language || "",
+                    review_avg_rating: data.data.review_avg_rating || 0,
+                    review_count: data.data.review_count || 0,
+                    avatar_url:
+                      data.data.avatar_url || data.data.avatarUrl || "",
+                    avatarUrl:
+                      data.data.avatarUrl || data.data.avatar_url || "",
+                    last_message_timestamp:
+                      data.data.last_message_timestamp || "now",
+                    ...data.data,
+                  },
+                  ...prevClients,
+                ];
               }
 
               // Update the client in the clients list with the fetched data
@@ -1726,47 +1882,10 @@ export const WebSocketProvider = ({ children }) => {
                 .filter(Boolean),
             );
 
-            const transformedMessages = data.data.messages
-              .filter((msg) => {
-                if (!msg) return false;
-
-                if (msg.isFromMe || msg.sender === "me") {
-                  return true;
-                }
-
-                const msgConv =
-                  msg.conversationId ||
-                  msg.conversation_id ||
-                  msg.clientUsername ||
-                  msg.clientId ||
-                  msg.client_id;
-                const msgConvNorm = normalizeClientLookupValue(msgConv);
-                if (msgConvNorm && !validStorageNorms.has(msgConvNorm)) {
-                  return false;
-                }
-
-                return true;
-              })
-              .map((msg) => {
-                const taggedConversationId = storageIdentity;
-                const taggedClientUsername = usernameKey
-                  ? String(usernameKey)
-                  : taggedConversationId;
-
-                return {
-                  ...msg,
-                  text: collapseDuplicateParagraphs(
-                    msg.text || msg.content || msg.message || "",
-                  ),
-                  sender: msg.isFromMe
-                    ? "me"
-                    : msg.senderUsername || msg.sender || "client",
-                  isFromMe: Boolean(msg.isFromMe),
-                  time: msg.timestamp || msg.time || msg.date,
-                  conversationId: taggedConversationId,
-                  clientUsername: msg.clientUsername || taggedClientUsername,
-                };
-              });
+            const normalizeText = (value) =>
+              String(value || "")
+                .replace(/\s+/g, " ")
+                .trim();
 
             setMessages((prev) => {
               const updatedMessages = { ...prev };
@@ -1774,8 +1893,103 @@ export const WebSocketProvider = ({ children }) => {
               const storageKey = String(storageIdentity);
 
               const existing = Array.isArray(prev[storageKey]) ? prev[storageKey] : [];
+
+              const transformedMessages = data.data.messages
+                .filter((msg) => {
+                  if (!msg) return false;
+
+                  if (msg.isFromMe || msg.sender === "me") {
+                    return true;
+                  }
+
+                  const msgConv =
+                    msg.conversationId ||
+                    msg.conversation_id ||
+                    msg.clientUsername ||
+                    msg.clientId ||
+                    msg.client_id;
+                  const msgConvNorm = normalizeClientLookupValue(msgConv);
+                  if (msgConvNorm && !validStorageNorms.has(msgConvNorm)) {
+                    return false;
+                  }
+
+                  return true;
+                })
+                .map((msg) => {
+                  const taggedConversationId = storageIdentity;
+                  const taggedClientUsername = usernameKey
+                    ? String(usernameKey)
+                    : taggedConversationId;
+                  const rawTime = msg.timestamp || msg.time || msg.date;
+                  const msgText = normalizeText(
+                    msg.text || msg.content || msg.message || "",
+                  );
+                  const existingMatch = existing.find((prevMsg) => {
+                    if (!prevMsg) return false;
+                    if (msg.id && prevMsg.id && String(msg.id) === String(prevMsg.id)) {
+                      return true;
+                    }
+                    const prevText = normalizeText(
+                      prevMsg.text || prevMsg.content || prevMsg.message || "",
+                    );
+                    const sameSide =
+                      Boolean(prevMsg.isFromMe) === Boolean(msg.isFromMe);
+                    return sameSide && prevText && prevText === msgText;
+                  });
+                  // Freeze an absolute timestamp once so relative Fiverr times
+                  // ("26 minutes") can still age for auto-reply.
+                  const absoluteTimestamp =
+                    (typeof existingMatch?.absoluteTimestamp === "number" &&
+                    existingMatch.absoluteTimestamp > 0
+                      ? existingMatch.absoluteTimestamp
+                      : null) ||
+                    (typeof msg.absoluteTimestamp === "number" &&
+                    msg.absoluteTimestamp > 0
+                      ? msg.absoluteTimestamp
+                      : null) ||
+                    getMessageTimestamp({
+                      time: rawTime,
+                      timestamp: rawTime,
+                    }) ||
+                    Date.now();
+
+                  return {
+                    ...msg,
+                    text: collapseDuplicateParagraphs(
+                      msg.text || msg.content || msg.message || "",
+                    ),
+                    sender: msg.isFromMe
+                      ? "me"
+                      : msg.senderUsername || msg.sender || "client",
+                    isFromMe: Boolean(msg.isFromMe),
+                    time: rawTime,
+                    absoluteTimestamp,
+                    conversationId: taggedConversationId,
+                    clientUsername: msg.clientUsername || taggedClientUsername,
+                  };
+                });
+
               const keepOptimistic = existing.filter((message) => {
                 if (!message?.optimistic) {
+                  return false;
+                }
+                const optimisticText = normalizeText(
+                  message.text || message.content || message.message,
+                );
+                // Drop optimistic copies once the extension has synced the same message.
+                if (
+                  optimisticText &&
+                  transformedMessages.some((incoming) => {
+                    const incomingText = normalizeText(
+                      incoming.text || incoming.content || incoming.message,
+                    );
+                    const fromMe =
+                      incoming.isFromMe === true ||
+                      incoming.sender === "me" ||
+                      incoming.sender === "Me";
+                    return fromMe && incomingText === optimisticText;
+                  })
+                ) {
                   return false;
                 }
                 const messageConv =
@@ -1877,37 +2091,7 @@ export const WebSocketProvider = ({ children }) => {
             const messageCount = data.data?.messageCount || 1;
             const isTest = data.data?.isTest === true;
 
-            // Notifications disabled
-            /*
-            const appState = AppState.currentState;
-            const isAppInBackground =
-              appState === "background" || appState === "inactive";
-            const isConversationSelected =
-              selectedConversationId === conversationId ||
-              selectedConversationId === clientUsername;
-
-            if (isTest || isAppInBackground || !isConversationSelected) {
-              notificationService
-                .showMessageNotification({
-                  clientName: isTest ? "🧪 Test Notification" : clientName,
-                  messageText: isTest ? "📱 " + messageText : messageText,
-                  conversationId,
-                  username: clientUsername,
-                })
-                .catch((error) => {
-                  console.error(
-                    "[WebSocket] Error showing notification:",
-                    error,
-                  );
-                });
-
-              if (!isTest) {
-                notificationService.incrementBadge().catch((error) => {
-                  console.error("[WebSocket] Error incrementing badge:", error);
-                });
-              }
-            }
-            */
+            // Regular messages do not trigger sounds or push — new clients only.
 
             // Emit event for UI to show popup
             // We'll use a callback system similar to fetchClientDetails
@@ -1937,35 +2121,23 @@ export const WebSocketProvider = ({ children }) => {
               clientData.username || clientData.clientUsername;
             const conversationId = clientData.conversationId || clientUsername;
 
-            // Notifications disabled
-            /*
-            const appState = AppState.currentState;
-            const isAppInBackground =
-              appState === "background" || appState === "inactive";
-            const isConversationSelected =
-              selectedConversationId === conversationId ||
-              selectedConversationId === clientUsername;
-
-            if (isAppInBackground || !isConversationSelected) {
+            if (
+              clientUsername &&
+              shouldNotifyNewClient(clientUsername)
+            ) {
               notificationService
-                .showMessageNotification({
-                  clientName: `🎉 New Client: ${clientName}`,
-                  messageText: `You have a new client message from ${clientName}!`,
+                .handleNewClientAlert({
+                  clientName,
+                  clientUsername,
                   conversationId,
-                  username: clientUsername,
                 })
                 .catch((error) => {
                   console.error(
-                    "[WebSocket] Error showing new client notification:",
+                    "[WebSocket] Error handling new client alert:",
                     error,
                   );
                 });
-
-              notificationService.incrementBadge().catch((error) => {
-                console.error("[WebSocket] Error incrementing badge:", error);
-              });
             }
-            */
 
             // Set new client data to show in UI
             setNewClientData({
@@ -1974,6 +2146,53 @@ export const WebSocketProvider = ({ children }) => {
               username: clientUsername,
               name: clientName,
             });
+
+            if (clientUsername) {
+              setClients((prevClients) => {
+                const alreadyListed = prevClients.some((client) => {
+                  const key =
+                    client.username ||
+                    client.conversationId ||
+                    client.id ||
+                    client._id;
+                  return (
+                    key === clientUsername ||
+                    key === conversationId ||
+                    client.username === clientUsername
+                  );
+                });
+                if (alreadyListed) {
+                  return prevClients;
+                }
+
+                const clientId = String(
+                  conversationId || clientUsername,
+                ).trim();
+                const newClient = {
+                  id: clientId,
+                  clientKey: clientId,
+                  _id: clientId,
+                  username: clientUsername,
+                  conversationId: conversationId || clientUsername,
+                  name: clientName || clientUsername,
+                  country: clientData.country || "",
+                  language: clientData.language || "",
+                  avatar_url:
+                    clientData.avatar_url || clientData.avatarUrl || "",
+                  avatarUrl:
+                    clientData.avatarUrl || clientData.avatar_url || "",
+                  isNewClient: true,
+                  last_message_timestamp: "now",
+                  ...clientData,
+                };
+
+                console.log(
+                  "[WebSocket] Added new client to live list:",
+                  clientUsername,
+                );
+                return [newClient, ...prevClients];
+              });
+            }
 
             // Emit event for UI
             if (typeof window !== "undefined" && window.dispatchEvent) {
@@ -2138,6 +2357,32 @@ export const WebSocketProvider = ({ children }) => {
           break;
         }
 
+        case "send_message_result": {
+          const result = data.data || {};
+          const key = String(result.conversationId || "").toLowerCase();
+          console.log("[WebSocket] Extension send result:", {
+            conversationId: result.conversationId,
+            success: result.success === true,
+            autoReply: result.autoReply === true,
+            error: result.error || null,
+          });
+          const pending = sendConfirmationsRef.current[key];
+          if (pending) {
+            clearTimeout(pending.timeoutId);
+            delete sendConfirmationsRef.current[key];
+            pending.resolve({
+              success: result.success === true,
+              error: result.error || null,
+            });
+          } else {
+            console.warn(
+              "[WebSocket] Send result had no pending waiter for",
+              key || "(empty id)",
+            );
+          }
+          break;
+        }
+
         case "ack":
           console.log("[WebSocket] Acknowledgment:", data.message);
           // Handle error acks for fetch_client_details
@@ -2193,6 +2438,7 @@ export const WebSocketProvider = ({ children }) => {
       assignedClientIds,
       isAdminRole,
       isAssignmentsLoaded,
+      shouldNotifyNewClient,
     ],
   );
 
@@ -2292,6 +2538,166 @@ export const WebSocketProvider = ({ children }) => {
       disconnect();
     };
   }, [connect, disconnect, ensureConnected]);
+
+  // AI auto-reply: when enabled in Settings, unanswered client messages
+  // past the delay generate a reply and send via the extension.
+  const clientsRef = useRef(clients);
+  const messagesRef = useRef(messages);
+  const isConnectedRef = useRef(isConnected);
+  const sendMessageToClientRef = useRef(sendMessageToClient);
+  const requestMessagesRef = useRef(requestMessages);
+  const triggerMessageExtractionRef = useRef(triggerMessageExtraction);
+
+  useEffect(() => {
+    clientsRef.current = clients;
+  }, [clients]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
+  useEffect(() => {
+    sendMessageToClientRef.current = sendMessageToClient;
+  }, [sendMessageToClient]);
+  useEffect(() => {
+    requestMessagesRef.current = requestMessages;
+  }, [requestMessages]);
+  useEffect(() => {
+    triggerMessageExtractionRef.current = triggerMessageExtraction;
+  }, [triggerMessageExtraction]);
+
+  useEffect(() => {
+    const stop = startAutoReplyWatcher({
+      getState: () => ({
+        clients: clientsRef.current,
+        messages: messagesRef.current,
+        isConnected: isConnectedRef.current,
+      }),
+      sendMessageToClient: (text, conversationId) =>
+        sendMessageToClientRef.current(text, conversationId, {
+          autoReply: true,
+          awaitConfirmation: true,
+        }),
+      requestMessages: (conversationId, options) =>
+        requestMessagesRef.current(conversationId, options),
+      triggerMessageExtraction: (conversationId, options) =>
+        triggerMessageExtractionRef.current(conversationId, options),
+    });
+    return stop;
+  }, []);
+
+  // Keep the extension supplied with everything it needs to continue
+  // auto-replying after this web app is backgrounded or closed. The server
+  // only relays this payload; the API key remains in extension-local storage.
+  useEffect(() => {
+    if (!isConnected) return undefined;
+
+    let cancelled = false;
+    const syncAutoReplySettings = async () => {
+      try {
+        const settings = await loadSettings();
+        if (cancelled) return;
+
+        const delay = Number(settings.aiAutoReplyMinutes);
+        const synced = sendMessage({
+          type: "auto_reply_settings",
+          data: {
+            enabled: settings.aiAutoReplyEnabled === true,
+            delayMinutes:
+              Number.isFinite(delay) && delay > 0 ? delay : 30,
+            apiKey:
+              settings.geminiApiKey ||
+              settings.aiApiKey ||
+              process.env.EXPO_PUBLIC_GEMINI_API_KEY ||
+              "",
+            model:
+              settings.aiModel ||
+              process.env.EXPO_PUBLIC_GEMINI_MODEL ||
+              "gemini-3.5-flash",
+            userProfile: {
+              name: settings.name || "",
+              skills: settings.skills || "",
+              aboutMe: settings.aboutMe || "",
+            },
+          },
+        });
+        if (!synced) {
+          console.warn(
+            "[AutoReply] Settings sync could not be sent (socket not open)",
+          );
+        }
+      } catch (error) {
+        console.warn(
+          "[AutoReply] Could not sync background settings to extension:",
+          error,
+        );
+      }
+    };
+
+    syncAutoReplySettings();
+    const intervalId = setInterval(syncAutoReplySettings, 60000);
+    const onSettingsChanged = () => syncAutoReplySettings();
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.addEventListener(
+        "fiverr-auto-reply-settings-changed",
+        onSettingsChanged,
+      );
+    }
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.removeEventListener(
+          "fiverr-auto-reply-settings-changed",
+          onSettingsChanged,
+        );
+      }
+    };
+  }, [isConnected, sendMessage]);
+
+  useEffect(() => {
+    if (!isConnected) return undefined;
+
+    let cancelled = false;
+    const syncTabReloadSettings = async () => {
+      try {
+        const profileReloadSettings = await loadProfileReloadSettings();
+        if (cancelled) return;
+
+        const synced = sendMessage({
+          type: "tab_reload_settings",
+          data: profileReloadSettings,
+        });
+        if (!synced) {
+          console.warn(
+            "[TabReload] Settings sync could not be sent (socket not open)",
+          );
+        }
+      } catch (error) {
+        console.warn(
+          "[TabReload] Could not sync reload settings to extension:",
+          error,
+        );
+      }
+    };
+
+    syncTabReloadSettings();
+    const intervalId = setInterval(syncTabReloadSettings, 60000);
+    const onSettingsChanged = () => syncTabReloadSettings();
+    if (Platform.OS === "web" && typeof window !== "undefined") {
+      window.addEventListener(TAB_RELOAD_SETTINGS_EVENT, onSettingsChanged);
+    }
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        window.removeEventListener(TAB_RELOAD_SETTINGS_EVENT, onSettingsChanged);
+      }
+    };
+  }, [isConnected, sendMessage]);
 
   const value = {
     isConnected,
