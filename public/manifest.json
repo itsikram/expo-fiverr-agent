@@ -1,12 +1,12 @@
 {
   "name": "Fiverr Expo",
   "short_name": "FiverrAgent",
-  "start_url": ".",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
   "scope": "/",
-  "display_override": ["standalone", "browser"],
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "icons": [
     {
       "src": "/apple-touch-icon.png",

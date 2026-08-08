@@ -565,17 +565,18 @@ class NotificationService {
 
   }
 
-  async initialize() {
+  async initialize(serverUrl = null) {
     try {
-
-
       const hasPermission = await this.requestPermissions();
       if (!hasPermission) {
-
         return false;
       }
 
       await this.configureAndroidChannel();
+
+      if (this.isWebPlatform() && serverUrl) {
+        await this.registerWebPushSubscription(serverUrl);
+      }
 
       if (!this.isWebPlatform()) {
         await this.getExpoPushToken();
@@ -583,7 +584,6 @@ class NotificationService {
 
       return true;
     } catch (error) {
-
       return false;
     }
   }

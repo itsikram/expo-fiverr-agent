@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { AppState } from 'react-native';
 import notificationService from '../utils/notificationService';
 import { useWebSocket } from '../context/WebSocketContext';
+import { SERVER_CONFIG } from '../config/server';
 
 /**
  * Custom hook for managing notifications
@@ -31,10 +32,13 @@ export function useNotifications({ onNotificationTapped, autoClearBadge = true }
 
     const initialize = async () => {
       try {
-        // Initialize notification service
-        const initialized = await notificationService.initialize();
-        if (!initialized) {
+        await SERVER_CONFIG.loadSettings();
 
+        // Initialize notification service with the resolved server URL
+        const initialized = await notificationService.initialize(
+          SERVER_CONFIG.serverUrl,
+        );
+        if (!initialized) {
           return;
         }
 

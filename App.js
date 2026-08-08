@@ -38,10 +38,13 @@ function AppContent({
 
     const initializeNotifications = async () => {
       try {
-        // Initialize notification service
-        const initialized = await notificationService.initialize();
-        if (!initialized) {
+        await SERVER_CONFIG.loadSettings();
 
+        // Initialize notification service with the resolved server URL
+        const initialized = await notificationService.initialize(
+          SERVER_CONFIG.serverUrl,
+        );
+        if (!initialized) {
           return;
         }
 
@@ -49,26 +52,11 @@ function AppContent({
         notificationService.setupListeners(
           // When notification is received (foreground)
           (notification) => {
-
-
-
-
-
           },
           // When notification is tapped
           (response) => {
-
             const { conversationId, username } =
-            response.notification.request.content.data || {};
-
-            // Navigate to the conversation if needed
-
-
-
-
-
-
-
+              response.notification.request.content.data || {};
           }
         );
 

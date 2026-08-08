@@ -998,10 +998,30 @@ export const WebSocketProvider = ({ children }) => {
   }, [clearReconnectTimer, connect]);
 
   const sendMessage = useCallback((message) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
-      return true;
-    } else {
+    try {
+      // Debug: log outbound messages locally to help diagnose missing server/extension
+      try {
+        // Avoid heavy objects in logs
+        const short = {
+          type: message && message.type,
+          conversationId: message && (message.conversationId || message.username),
+          len: message && message.message ? String(message.message).length : 0,
+        };
+        // eslint-disable-next-line no-console
+        console.log('[WebSocket] sendMessage called', short, { readyState: wsRef.current?.readyState });
+      } catch (_) {}
+
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify(message));
+        return true;
+      }
+      // If not open, log and return false so callers can handle it
+      // eslint-disable-next-line no-console
+      console.warn('[WebSocket] sendMessage failed - socket not open', { readyState: wsRef.current?.readyState, messageType: message && message.type });
+      return false;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[WebSocket] sendMessage error', err);
       return false;
     }
   }, []);
