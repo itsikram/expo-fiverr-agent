@@ -1339,13 +1339,25 @@ export const WebSocketProvider = ({ children }) => {
         return false;
       }
 
+      const normalizedMessage = String(messageText).trim();
+
       // Add message optimistically to show it immediately
-      addOptimisticMessage(messageText, conversationId);
+      addOptimisticMessage(normalizedMessage, conversationId);
+
+      console.log("[Expo] send_message outbound", {
+        conversationId,
+        messageLength: normalizedMessage.length,
+        messagePreview: normalizedMessage.slice(0, 240),
+        autoReply: options.autoReply === true,
+      });
 
       const queued = sendMessage({
         type: "send_message",
-        message: messageText.trim(),
+        message: normalizedMessage,
+        text: normalizedMessage,
+        body: normalizedMessage,
         conversationId: conversationId,
+        username: conversationId,
         // Lets the extension apply its own auto-reply kill-switch without
         // blocking messages the user sent by hand.
         autoReply: options.autoReply === true,
