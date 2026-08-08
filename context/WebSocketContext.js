@@ -540,7 +540,7 @@ export const WebSocketProvider = ({ children }) => {
   const [isAssignmentsLoaded, setIsAssignmentsLoaded] = useState(false);
   const assignedClientIdsRef = useRef([]);
   const isAssignmentsLoadedRef = useRef(false);
-  const { token, role } = useAuth();
+  const { token, role, isAuthReady } = useAuth();
   const fetchDetailsCallbacksRef = useRef({}); // Track callbacks for fetch_details requests
   // Pending send confirmations keyed by lowercase conversation id.
   const sendConfirmationsRef = useRef({});
@@ -808,11 +808,11 @@ export const WebSocketProvider = ({ children }) => {
 
       setConnectionStatus("connecting");
 
-      // Wake Render (and similar hosts) over HTTP first so the WS upgrade
-      // does not race a cold-start timeout.
+      // Quick health ping — don't block the UI for a long cold-start budget.
+      // If wake fails, still attempt the WebSocket (reconnect handles cold hosts).
       await SERVER_CONFIG.wakeServer({
-        attempts: 4,
-        timeoutMs: 25000
+        attempts: 2,
+        timeoutMs: 4000
       });
 
       // Invalidate any stale socket callbacks from a previous attempt
@@ -2781,8 +2781,13 @@ export const WebSocketProvider = ({ children }) => {
     };
   }, [clientData]);
 
-  // Connect on mount and recover after long idle / tab focus
+  // Connect only after auth has a token — avoids an empty unauthenticated sync
+  // and a second full reconnect when authMe finishes.
   useEffect(() => {
+    if (!isAuthReady || !token) {
+      return;
+    }
+
     intentionalDisconnectRef.current = false;
     connect();
 
@@ -2829,7 +2834,7 @@ export const WebSocketProvider = ({ children }) => {
       }
       disconnect();
     };
-  }, [connect, disconnect, ensureConnected]);
+  }, [connect, disconnect, ensureConnected, isAuthReady, token]);
 
   // AI auto-reply: when enabled in Settings, unanswered client messages
   // past the delay generate a reply and send via the extension.

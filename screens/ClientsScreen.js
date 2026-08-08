@@ -91,6 +91,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   const [isAssignmentsLoaded, setIsAssignmentsLoaded] = useState(false);
   const prevClientsCountRef = React.useRef(0);
   const prevMessagesKeysRef = React.useRef(new Set());
+  const clientsRef = React.useRef(clients);
   const isFetchingClientsRef = React.useRef(false);
   const isFetchingMessagesRef = React.useRef(false);
   const fetchSnackbarConversationRef = React.useRef(null);
@@ -396,7 +397,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     ({
       includeClientList = true,
       includeMessages = true,
-      selectedOnly = false
+      selectedOnly = false,
+      forceClientListExtract = false
     } = {}) => {
       if (!isConnected) {
         return;
@@ -404,8 +406,11 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
       if (isAdminRole) {
         if (includeClientList) {
-          triggerClientListExtraction();
+          // Prefer server/Mongo cache first; scrape only when empty or forced.
           requestClientList();
+          if (forceClientListExtract || (clients || []).length === 0) {
+            triggerClientListExtraction();
+          }
         }
 
         if (includeMessages) {
@@ -421,9 +426,19 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
               triggerMessageExtraction(conversationId, { force: true });
             }
           } else if (!selectedOnly) {
-            requestAllData();
-            triggerMessageExtraction();
-            requestMessages();
+            // Avoid a full requestAllData storm on every connect — server already
+            // syncs clients/messages on WebSocket connect.
+            if (selectedClientRef.current) {
+              const conversationId = getClientConversationId(
+                selectedClientRef.current
+              );
+              if (conversationId) {
+                requestMessages(conversationId, {
+                  force: true,
+                  triggerExtraction: true
+                });
+              }
+            }
           }
         }
 
@@ -431,8 +446,10 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       }
 
       if (includeClientList) {
-        triggerClientListExtraction();
         requestClientList();
+        if (forceClientListExtract || (clients || []).length === 0) {
+          triggerClientListExtraction();
+        }
       }
 
       const targets = selectedOnly ?
@@ -467,10 +484,10 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       });
     },
     [
+    clients,
     getRefreshTargets,
     isAdminRole,
     isConnected,
-    requestAllData,
     requestClientData,
     requestClientList,
     requestMessages,
@@ -479,13 +496,27 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
   );
 
-  // Request data when connected and auto-fetch client list
-  useEffect(() => {
-    if (isConnected) {
+  React.useEffect(() => {
+    clientsRef.current = clients;
+  }, [clients]);
 
-      refreshVisibleClients({ includeClientList: true, includeMessages: true });
+  // On connect: paint cached clients immediately; only scrape the extension if
+  // the server still has no clients after a short wait.
+  useEffect(() => {
+    if (!isConnected) {
+      return;
     }
-  }, [isConnected]);
+
+    requestClientList();
+
+    const extractTimer = setTimeout(() => {
+      if ((clientsRef.current || []).length === 0) {
+        triggerClientListExtraction();
+      }
+    }, 1500);
+
+    return () => clearTimeout(extractTimer);
+  }, [isConnected, requestClientList, triggerClientListExtraction]);
 
   useEffect(() => {
     setIsMessageInputMinimized(false);
@@ -977,7 +1008,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       refreshVisibleClients({
         includeClientList: true,
         includeMessages: true,
-        selectedOnly: true
+        selectedOnly: true,
+        forceClientListExtract: true
       });
 
       const currentClient = selectedClientRef.current;

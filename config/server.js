@@ -224,22 +224,30 @@ export const SERVER_CONFIG = {
     return `${base.replace(/\/+$/, '')}/health`;
   },
 
+  _lastWakeOkAt: 0,
+
   /**
    * Ping HTTP /health before opening the WebSocket.
-   * Render free-tier instances can take 30–60s to wake; a bare WS
-   * attempt during cold start often fails and confuses Firefox.
+   * Keep the warm path fast; only escalate timeouts on cold-start failures.
    */
-  async wakeServer({ attempts = 6, timeoutMs = 20000 } = {}) {
+  async wakeServer({ attempts = 3, timeoutMs = 4000 } = {}) {
     const healthUrl = this.getHealthUrl();
     if (!healthUrl || typeof fetch === 'undefined') {
       return false;
     }
 
+    // Skip repeat wake pings when the server was just confirmed healthy.
+    if (this._lastWakeOkAt && Date.now() - this._lastWakeOkAt < 30000) {
+      return true;
+    }
+
     for (let attempt = 1; attempt <= attempts; attempt++) {
+      const attemptTimeout =
+        attempt === 1 ? Math.min(timeoutMs, 2500) : Math.min(timeoutMs * attempt, 12000);
       const controller =
         typeof AbortController !== 'undefined' ? new AbortController() : null;
       const timer = controller
-        ? setTimeout(() => controller.abort(), timeoutMs)
+        ? setTimeout(() => controller.abort(), attemptTimeout)
         : null;
 
       try {
@@ -249,6 +257,7 @@ export const SERVER_CONFIG = {
           ...(controller ? { signal: controller.signal } : {})
         });
         if (response.ok) {
+          this._lastWakeOkAt = Date.now();
           return true;
         }
       } catch (_) {
@@ -260,7 +269,7 @@ export const SERVER_CONFIG = {
       }
 
       if (attempt < attempts) {
-        await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+        await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
       }
     }
 

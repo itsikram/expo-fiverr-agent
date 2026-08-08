@@ -33,6 +33,17 @@ export const AuthProvider = ({ children }) => {
       try {
         const savedAuth = await loadAuthData();
         if (savedAuth?.token) {
+          // Restore cached auth immediately so the WebSocket can connect while
+          // authMe verifies the token in the background.
+          setAuth({
+            token: savedAuth.token,
+            username: savedAuth.username || null,
+            email: savedAuth.email || null,
+            role: savedAuth.role || "user"
+          });
+          setIsAuthenticated(true);
+          setIsAuthReady(true);
+
           try {
             const user = await authMe(savedAuth.token);
             setAuth({
@@ -41,19 +52,14 @@ export const AuthProvider = ({ children }) => {
               email: user.email || savedAuth.email || null,
               role: user.role || savedAuth.role || "user"
             });
-            setIsAuthenticated(true);
           } catch (error) {
-
-
-
-
             await clearAuthData();
             setAuth({ token: null, username: null, email: null, role: "user" });
             setIsAuthenticated(false);
           }
+          return;
         }
       } catch (error) {
-
         setAuthError(error.message || "Failed to initialize auth");
         setAuth({ token: null, username: null, email: null, role: "user" });
         setIsAuthenticated(false);
