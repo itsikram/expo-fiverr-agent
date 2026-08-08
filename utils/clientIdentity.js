@@ -191,8 +191,7 @@ export const messageBelongsToClient = (
     message.conversationId ||
     message.conversation_id ||
     message.clientId ||
-    message.client_id ||
-    message.clientUsername;
+    message.client_id;
 
   const senderValue = message.senderUsername || message.sender;
   const isFromMe =
@@ -202,7 +201,14 @@ export const messageBelongsToClient = (
     senderValue === "Me";
 
   if (conversationValue && !isGenericClientKey(conversationValue)) {
-    return matchesLookup(conversationValue);
+    if (matchesLookup(conversationValue)) {
+      return true;
+    }
+  }
+
+  // Recover messages stored under orphaned ObjectId/slug keys when username matches.
+  if (message.clientUsername && matchesLookup(message.clientUsername)) {
+    return true;
   }
 
   if (message.optimistic && conversationValue) {
@@ -210,7 +216,15 @@ export const messageBelongsToClient = (
   }
 
   if (isFromMe) {
-    // Outgoing messages belong once conversationId is stamped during ingest.
+    if (message.clientUsername && matchesLookup(message.clientUsername)) {
+      return true;
+    }
+    if (conversationValue && matchesLookup(conversationValue)) {
+      return true;
+    }
+    if (message.optimistic && conversationValue) {
+      return matchesLookup(conversationValue);
+    }
     return false;
   }
 
@@ -336,7 +350,7 @@ const getMessageSenderKey = (message) => {
   return raw.replace(/[^a-z0-9]+/g, "") || "client";
 };
 
-/** Stable content key — ignores DOM index and generic message-N ids. */
+/** Stable content key — ignores generic non-unique ids when stronger signals exist. */
 export const getMessageContentKey = (message) => {
   if (!message) {
     return null;
@@ -344,40 +358,99 @@ export const getMessageContentKey = (message) => {
 
   const text = getMessageTextKey(message);
   const sender = getMessageSenderKey(message);
-  if (!text) {
+  const hasImages = Array.isArray(message?.images) && message.images.length > 0;
+  if (!text && !hasImages) {
     return null;
   }
 
   const timeKey = normalizeMessageTimeKey(
     message.time || message.timestamp || message.date,
   );
-
-  if (timeKey) {
-    return `content:${text}|${sender}|${timeKey}`;
-  }
-
   const absTs =
     typeof message.absoluteTimestamp === "number" && message.absoluteTimestamp > 0
       ? String(message.absoluteTimestamp)
       : "";
   const domIndex =
     typeof message.index === "number" ? String(message.index) : "";
-  const suffix = absTs || domIndex;
+
+  // Prefer the most specific suffix available so distinct rows stay distinct.
+  const suffix = timeKey || absTs || domIndex;
   return suffix
-    ? `content:${text}|${sender}|${suffix}`
-    : `content:${text}|${sender}`;
+    ? `content:${text || "img"}|${sender}|${suffix}`
+    : `content:${text || "img"}|${sender}`;
+};
+
+/**
+ * Normalize Fiverr + Mongo message ids so the same row collapses across sources.
+ * Live extract:  d033cf0f-..._b3237a60-...
+ * Mongo upsert:  briana_lyn_d033cf0f-..._b3237a60-..._Aug 06, 4:12 AM
+ */
+export const getCanonicalMessageId = (message) => {
+  const raw = message?.id || message?._id || message?.messageId;
+  if (!raw || /^message-\d+$/i.test(String(raw))) {
+    return null;
+  }
+
+  let id = String(raw).trim();
+
+  // Strip human / ISO timestamp suffixes appended by Mongo persistence.
+  id = id.replace(
+    /_[A-Z][a-z]{2}\s+\d{1,2},\s+\d{1,2}:\d{2}\s*(?:AM|PM)$/i,
+    "",
+  );
+  id = id.replace(/_\d{4}-\d{2}-\d{2}T[\d:.+-]+Z?$/i, "");
+
+  // Prefer the Fiverr conversationUUID_messageUUID core when present.
+  const fiverrCore = id.match(
+    /([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9-]{4,}-[a-f0-9]{12}_[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9-]{4,}-[a-f0-9]{12})/i,
+  );
+  if (fiverrCore) {
+    return fiverrCore[1].toLowerCase();
+  }
+
+  const hints = [
+    message?.conversationId,
+    message?.conversation_id,
+    message?.clientId,
+    message?.clientUsername,
+    message?.client_username,
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+
+  for (const hint of hints) {
+    const prefix = `${hint}_`;
+    if (id.toLowerCase().startsWith(prefix.toLowerCase())) {
+      id = id.slice(prefix.length);
+      break;
+    }
+  }
+
+  return id.toLowerCase();
 };
 
 export const getMessageDedupKey = (message) => {
+  const canonicalId = getCanonicalMessageId(message);
+  // DOM-generated message-N ids collide across extracts and crush newest rows.
+  // Only trust real/server ids here — after normalizing Mongo prefixes/suffixes.
+  if (canonicalId) {
+    return `id:${canonicalId}`;
+  }
+
   const contentKey = getMessageContentKey(message);
   if (contentKey) {
     return contentKey;
   }
 
+  // Last resort: keep message-N scoped with text so latest extracts survive.
   const msgId = message?.id || message?._id || message?.messageId;
-  if (msgId && !/^message-\d+$/i.test(String(msgId))) {
-    return `id:${msgId}`;
+  if (msgId) {
+    const text = getMessageTextKey(message);
+    const sender = getMessageSenderKey(message);
+    return text ? `dom:${msgId}|${sender}|${text}` : `dom:${msgId}|${sender}`;
   }
+
   return null;
 };
 
@@ -394,11 +467,20 @@ export const pickRicherMessage = (left, right) => {
     const id = message?.id || message?._id;
     if (id && !/^message-\d+$/i.test(String(id))) {
       value += 4;
+      // Prefer raw Fiverr ids over Mongo-prefixed variants.
+      const raw = String(id);
+      const canonical = getCanonicalMessageId(message);
+      if (canonical && raw.toLowerCase() === canonical) {
+        value += 2;
+      }
     }
     if (Array.isArray(message?.images) && message.images.length > 0) {
       value += 4;
     }
     if (message?.conversationId || message?.conversation_id) {
+      value += 1;
+    }
+    if (message?.isFromMe === true || message?.sender === "me") {
       value += 1;
     }
     const abs =
@@ -465,17 +547,37 @@ export const dedupeMessages = (messageList = []) => {
   }
 
   const byKey = new Map();
+  const seenObjects = new WeakSet();
 
   for (const message of messageList) {
     if (!message) {
       continue;
     }
 
+    // Same object referenced from multiple alias buckets.
+    if (typeof message === "object") {
+      try {
+        if (seenObjects.has(message)) {
+          continue;
+        }
+        seenObjects.add(message);
+      } catch (_) {
+        // Ignore WeakSet edge cases and fall through to key dedupe.
+      }
+    }
+
     const text = getMessageTextKey(message);
     const sender = getMessageSenderKey(message);
-    const key = getMessageDedupKey(message) || (text ? `content:${text}|${sender}` : null);
+    const key =
+      getMessageDedupKey(message) ||
+      (text ? `content:${text}|${sender}` : null) ||
+      (Array.isArray(message?.images) && message.images.length > 0
+        ? `images:${sender}|${message.absoluteTimestamp || message.index || byKey.size}`
+        : null);
 
     if (!key) {
+      // Keep rows we cannot key rather than dropping the whole thread.
+      byKey.set(`row:${byKey.size}`, message);
       continue;
     }
 
@@ -486,7 +588,25 @@ export const dedupeMessages = (messageList = []) => {
     }
   }
 
-  return Array.from(byKey.values());
+  // Second pass: collapse rows that still diverge by id but share content+time.
+  const byContent = new Map();
+  for (const message of byKey.values()) {
+    const contentKey = getMessageContentKey(message);
+    if (!contentKey) {
+      byContent.set(`row:${byContent.size}`, message);
+      continue;
+    }
+    if (byContent.has(contentKey)) {
+      byContent.set(
+        contentKey,
+        pickRicherMessage(byContent.get(contentKey), message),
+      );
+    } else {
+      byContent.set(contentKey, message);
+    }
+  }
+
+  return Array.from(byContent.values());
 };
 
 /** Messages that should render for a client (strict ownership). */
@@ -516,12 +636,19 @@ export const filterMessagesForClient = (
 
       const messageConversation =
         message?.conversationId || message?.conversation_id;
+      const clientUsernameNorm = normalizeClientKey(message?.clientUsername);
+
+      if (clientUsernameNorm && lookupKeys.has(clientUsernameNorm)) {
+        return true;
+      }
+
       if (messageConversation && !isGenericClientKey(messageConversation)) {
         const msgNorm = normalizeClientKey(messageConversation);
         if (msgNorm && lookupKeys.has(msgNorm)) {
           return true;
         }
-        if (msgNorm && msgNorm !== activeNorm) {
+        // Only drop when conversationId clearly points at a different client.
+        if (msgNorm && activeNorm && msgNorm !== activeNorm) {
           return false;
         }
       }
@@ -531,17 +658,26 @@ export const filterMessagesForClient = (
         message.sender === "me" ||
         message.sender === "Me"
       ) {
-        const messageConversation =
-          message.conversationId || message.conversation_id;
+        if (clientUsernameNorm && lookupKeys.has(clientUsernameNorm)) {
+          return true;
+        }
         if (messageConversation && !isGenericClientKey(messageConversation)) {
           const msgNorm = normalizeClientKey(messageConversation);
-          return Boolean(msgNorm && lookupKeys.has(msgNorm));
+          if (msgNorm && lookupKeys.has(msgNorm)) {
+            return true;
+          }
+          // Outgoing rows stamped with an orphaned id still belong if this is
+          // the active conversation bucket being rendered.
+          if (msgNorm && activeNorm && msgNorm === activeNorm) {
+            return true;
+          }
         }
         if (message.optimistic && messageConversation) {
           const msgNorm = normalizeClientKey(messageConversation);
           return Boolean(msgNorm && lookupKeys.has(msgNorm));
         }
-        return false;
+        // Keep untagged outgoing seller rows from this matched thread.
+        return true;
       }
 
       return messageBelongsToClient(message, client, activeConversationKey);
@@ -567,12 +703,22 @@ export const findMessagesForClient = (
   const lookupKeys = getClientMessageLookupKeys(client, primaryKey);
 
   const merged = [];
+  const seenBuckets = new Set();
+  let matchedByKey = false;
+
   for (const [key, bucket] of Object.entries(messagesByKey)) {
     if (!Array.isArray(bucket) || bucket.length === 0 || isGenericClientKey(key)) {
       continue;
     }
+    // Alias mirrors share one array reference — only merge once.
+    if (seenBuckets.has(bucket)) {
+      continue;
+    }
+
     const keyNorm = normalizeClientKey(key);
     if (keyNorm && lookupKeys.has(keyNorm)) {
+      seenBuckets.add(bucket);
+      matchedByKey = true;
       merged.push(...bucket);
       continue;
     }
@@ -581,6 +727,7 @@ export const findMessagesForClient = (
       messageBelongsToClient(message, client, primaryKey),
     );
     if (ownedInBucket.length > 0) {
+      seenBuckets.add(bucket);
       merged.push(...ownedInBucket);
     }
   }
@@ -588,8 +735,15 @@ export const findMessagesForClient = (
   if (merged.length === 0 && primaryKey && messagesByKey[primaryKey]) {
     const directBucket = messagesByKey[primaryKey];
     if (Array.isArray(directBucket) && directBucket.length > 0) {
+      matchedByKey = true;
       merged.push(...directBucket);
     }
+  }
+
+  // Bucket-key matches are already scoped to this client — only dedupe.
+  // Ownership filter is for orphaned / cross-key recovery paths.
+  if (matchedByKey && merged.length > 0) {
+    return dedupeMessages(merged);
   }
 
   return filterMessagesForClient(merged, client, primaryKey);

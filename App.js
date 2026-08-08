@@ -5,8 +5,8 @@ import {
   StyleSheet,
   AppState,
   ActivityIndicator,
-  Text,
-} from "react-native";
+  Text } from
+"react-native";
 import { WebSocketProvider, useWebSocket } from "./context/WebSocketContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import ClientsScreen from "./screens/ClientsScreen";
@@ -19,7 +19,7 @@ import notificationService from "./utils/notificationService";
 function AppContent({
   currentScreen,
   onNavigateToSettings,
-  onNavigateToClients,
+  onNavigateToClients
 }) {
   const appState = useRef(AppState.currentState);
 
@@ -41,7 +41,7 @@ function AppContent({
         // Initialize notification service
         const initialized = await notificationService.initialize();
         if (!initialized) {
-          console.warn("[App] Notification service initialization failed");
+
           return;
         }
 
@@ -49,27 +49,27 @@ function AppContent({
         notificationService.setupListeners(
           // When notification is received (foreground)
           (notification) => {
-            console.log(
-              "[App] Notification received in foreground:",
-              notification,
-            );
-            // You can handle foreground notifications here if needed
+
+
+
+
+
           },
           // When notification is tapped
           (response) => {
-            console.log("[App] Notification tapped:", response);
+
             const { conversationId, username } =
-              response.notification.request.content.data || {};
+            response.notification.request.content.data || {};
 
             // Navigate to the conversation if needed
-            if (conversationId || username) {
-              // You can add navigation logic here
-              console.log(
-                "[App] Navigate to conversation:",
-                conversationId || username,
-              );
-            }
-          },
+
+
+
+
+
+
+
+          }
         );
 
         // Listen for app state changes to handle background notifications
@@ -77,15 +77,15 @@ function AppContent({
           "change",
           (nextAppState) => {
             if (
-              appState.current.match(/inactive|background/) &&
-              nextAppState === "active"
-            ) {
-              console.log("[App] App has come to the foreground");
+            appState.current.match(/inactive|background/) &&
+            nextAppState === "active")
+            {
+
               // Clear badge when app comes to foreground
               notificationService.clearBadge();
             }
             appState.current = nextAppState;
-          },
+          }
         );
 
         return () => {
@@ -95,7 +95,7 @@ function AppContent({
           }
         };
       } catch (error) {
-        console.error("[App] Error setting up notifications:", error);
+
       }
     };
 
@@ -109,13 +109,13 @@ function AppContent({
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      {currentScreen === "clients" ? (
-        <ClientsScreen onNavigateToSettings={onNavigateToSettings} />
-      ) : (
-        <SettingsScreen onBack={onNavigateToClients} />
-      )}
-    </View>
-  );
+      {currentScreen === "clients" ?
+      <ClientsScreen onNavigateToSettings={onNavigateToSettings} /> :
+
+      <SettingsScreen onBack={onNavigateToClients} />
+      }
+    </View>);
+
 }
 
 function AppWrapper() {
@@ -125,7 +125,7 @@ function AppWrapper() {
   // Load server settings on mount
   useEffect(() => {
     SERVER_CONFIG.loadSettings().catch((error) => {
-      console.warn("[App] Failed to load server settings:", error);
+
     });
   }, []);
 
@@ -142,8 +142,8 @@ function AppWrapper() {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.accent.primary} />
         <Text style={styles.loadingText}>Loading authentication...</Text>
-      </View>
-    );
+      </View>);
+
   }
 
   if (!isAuthenticated) {
@@ -154,9 +154,9 @@ function AppWrapper() {
     <AppContent
       currentScreen={currentScreen}
       onNavigateToSettings={handleNavigateToSettings}
-      onNavigateToClients={handleNavigateToClients}
-    />
-  );
+      onNavigateToClients={handleNavigateToClients} />);
+
+
 }
 
 export default function App() {
@@ -165,8 +165,8 @@ export default function App() {
       <WebSocketProvider>
         <AppWrapper />
       </WebSocketProvider>
-    </AuthProvider>
-  );
+    </AuthProvider>);
+
 }
 
 const styles = StyleSheet.create({
@@ -174,17 +174,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background.primary,
     maxHeight: "100vh",
-    maxWidth: "100vw",
+    maxWidth: "100vw"
   },
   loadingContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.background.primary,
+    backgroundColor: colors.background.primary
   },
   loadingText: {
     marginTop: 16,
     color: colors.text.secondary,
-    fontSize: 16,
-  },
+    fontSize: 16
+  }
 });

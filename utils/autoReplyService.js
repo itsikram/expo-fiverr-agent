@@ -21,9 +21,9 @@ const RETRY_AFTER_MS = 5 * 60 * 1000;
 const SENT_RECORD_TTL_MS = 24 * 60 * 60 * 1000;
 
 const fallbackStorage =
-  typeof window !== "undefined" && window.localStorage
-    ? window.localStorage
-    : null;
+typeof window !== "undefined" && window.localStorage ?
+window.localStorage :
+null;
 
 /** @type {null | (() => void)} */
 let wakeWatcherFn = null;
@@ -61,10 +61,10 @@ const getTimeUnitPriority = (timeString) => {
   const now = Date.now();
 
   if (
-    typeof timeString === "string" &&
-    (timeString.includes("T") ||
-      (timeString.includes("-") && timeString.length > 10))
-  ) {
+  typeof timeString === "string" && (
+  timeString.includes("T") ||
+  timeString.includes("-") && timeString.length > 10))
+  {
     const date = new Date(timeString);
     if (!isNaN(date.getTime())) {
       return { priority: 7, timestamp: date.getTime(), absolute: true };
@@ -79,20 +79,20 @@ const getTimeUnitPriority = (timeString) => {
   if (!isNaN(dateAttempt.getTime()) && String(timeString).length > 8) {
     // Avoid treating bare numbers / short strings as dates
     if (
-      typeof timeString === "string" &&
-      (timeString.includes("/") ||
-        timeString.includes("-") ||
-        timeString.includes(":"))
-    ) {
+    typeof timeString === "string" && (
+    timeString.includes("/") ||
+    timeString.includes("-") ||
+    timeString.includes(":")))
+    {
       return { priority: 7, timestamp: dateAttempt.getTime(), absolute: true };
     }
   }
 
   const lowerTime = String(timeString).toLowerCase().trim();
   if (
-    lowerTime.includes("just now") ||
-    (lowerTime.includes("now") && !lowerTime.includes("ago"))
-  ) {
+  lowerTime.includes("just now") ||
+  lowerTime.includes("now") && !lowerTime.includes("ago"))
+  {
     return { priority: 1, timestamp: now, absolute: false };
   }
 
@@ -101,7 +101,7 @@ const getTimeUnitPriority = (timeString) => {
     return {
       priority: 1,
       timestamp: now - parseInt(minutesMatch[1], 10) * 60 * 1000,
-      absolute: false,
+      absolute: false
     };
   }
 
@@ -110,7 +110,7 @@ const getTimeUnitPriority = (timeString) => {
     return {
       priority: 2,
       timestamp: now - parseInt(hoursMatch[1], 10) * 60 * 60 * 1000,
-      absolute: false,
+      absolute: false
     };
   }
 
@@ -119,7 +119,7 @@ const getTimeUnitPriority = (timeString) => {
     return {
       priority: 3,
       timestamp: now - parseInt(daysMatch[1], 10) * 24 * 60 * 60 * 1000,
-      absolute: false,
+      absolute: false
     };
   }
 
@@ -128,7 +128,7 @@ const getTimeUnitPriority = (timeString) => {
     return {
       priority: 4,
       timestamp: now - parseInt(weeksMatch[1], 10) * 7 * 24 * 60 * 60 * 1000,
-      absolute: false,
+      absolute: false
     };
   }
 
@@ -143,16 +143,16 @@ const isFromSeller = (message) => {
 };
 
 const getMessageText = (message) =>
-  String(message?.text || message?.content || message?.body || "").trim();
+String(message?.text || message?.content || message?.body || "").trim();
 
 const buildFingerprint = (conversationId, message) => {
   // Stable key: do NOT include changing relative timestamps / shifting DOM ids,
   // or the watcher will treat the same client message as new and re-send.
-  const text = getMessageText(message)
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase()
-    .slice(0, 120);
+  const text = getMessageText(message).
+  replace(/\s+/g, " ").
+  trim().
+  toLowerCase().
+  slice(0, 120);
   return `${String(conversationId).toLowerCase()}|${text}`;
 };
 
@@ -160,28 +160,28 @@ export const getAutoReplyMessageTimestamp = (message) => {
   if (!message) return 0;
 
   if (
-    typeof message.absoluteTimestamp === "number" &&
-    message.absoluteTimestamp > 0
-  ) {
+  typeof message.absoluteTimestamp === "number" &&
+  message.absoluteTimestamp > 0)
+  {
     return message.absoluteTimestamp;
   }
 
   const raw =
-    message.time ||
-    message.timestamp ||
-    message.date ||
-    message.created_at ||
-    message.createdAt;
+  message.time ||
+  message.timestamp ||
+  message.date ||
+  message.created_at ||
+  message.createdAt;
   if (!raw && raw !== 0) return 0;
   if (typeof raw === "number") return raw;
 
   const parsed = new Date(raw);
   if (!isNaN(parsed.getTime()) && String(raw).length > 8) {
     if (
-      String(raw).includes("T") ||
-      String(raw).includes("-") ||
-      String(raw).includes("/")
-    ) {
+    String(raw).includes("T") ||
+    String(raw).includes("-") ||
+    String(raw).includes("/"))
+    {
       return parsed.getTime();
     }
   }
@@ -203,8 +203,8 @@ const isRelativeTimeValue = (raw) => {
     text.includes("day") ||
     text.includes("week") ||
     text.includes("just now") ||
-    /\d+\s*(?:m|h|d|w)\b/.test(text)
-  );
+    /\d+\s*(?:m|h|d|w)\b/.test(text));
+
 };
 
 /**
@@ -215,18 +215,18 @@ const getUnansweredAgeMs = (conversationId, message) => {
   const fingerprint = buildFingerprint(conversationId, message);
 
   if (
-    typeof message.absoluteTimestamp === "number" &&
-    message.absoluteTimestamp > 0
-  ) {
+  typeof message.absoluteTimestamp === "number" &&
+  message.absoluteTimestamp > 0)
+  {
     return Math.max(0, now - message.absoluteTimestamp);
   }
 
   const raw =
-    message.time ||
-    message.timestamp ||
-    message.date ||
-    message.created_at ||
-    message.createdAt;
+  message.time ||
+  message.timestamp ||
+  message.date ||
+  message.created_at ||
+  message.createdAt;
   const info = getTimeUnitPriority(raw);
   const parsedTs = info.timestamp || 0;
 
@@ -239,7 +239,7 @@ const getUnansweredAgeMs = (conversationId, message) => {
     const initialAge = parsedTs > 0 ? Math.max(0, now - parsedTs) : 0;
     observedUnanswered[fingerprint] = {
       seenAt: now,
-      initialAgeMs: initialAge,
+      initialAgeMs: initialAge
     };
   }
 
@@ -249,15 +249,15 @@ const getUnansweredAgeMs = (conversationId, message) => {
 
 const getClientIdentityKeys = (client, fallbackKey) => {
   const keys = [
-    fallbackKey,
-    client?.conversationId,
-    client?.username,
-    client?.clientUsername,
-    client?.clientKey,
-    client?.id,
-  ]
-    .filter(Boolean)
-    .map(String);
+  fallbackKey,
+  client?.conversationId,
+  client?.username,
+  client?.clientUsername,
+  client?.clientKey,
+  client?.id].
+
+  filter(Boolean).
+  map(String);
   return Array.from(new Set(keys));
 };
 
@@ -289,7 +289,7 @@ const loadSentFingerprints = async () => {
     }
     return fresh;
   } catch (error) {
-    console.warn("[AutoReply] Failed to load sent fingerprints:", error);
+
     return {};
   }
 };
@@ -307,10 +307,10 @@ export const resetAutoReplyState = async () => {
     Object.keys(conversationCooldownUntil).forEach((key) => {
       delete conversationCooldownUntil[key];
     });
-    console.log("[AutoReply] State reset — all conversations eligible again");
+
     return true;
   } catch (error) {
-    console.warn("[AutoReply] Failed to reset state:", error);
+
     return false;
   }
 };
@@ -333,12 +333,12 @@ const saveSentFingerprints = async (map) => {
   try {
     const entries = Object.entries(map || {});
     const trimmed =
-      entries.length > MAX_TRACKED_FINGERPRINTS
-        ? Object.fromEntries(entries.slice(-MAX_TRACKED_FINGERPRINTS))
-        : map;
+    entries.length > MAX_TRACKED_FINGERPRINTS ?
+    Object.fromEntries(entries.slice(-MAX_TRACKED_FINGERPRINTS)) :
+    map;
     await storageSetItem(AUTO_REPLY_SENT_KEY, JSON.stringify(trimmed));
   } catch (error) {
-    console.warn("[AutoReply] Failed to save sent fingerprints:", error);
+
   }
 };
 
@@ -348,14 +348,14 @@ export const getAutoReplySettings = async () => {
   return {
     enabled: settings.aiAutoReplyEnabled === true,
     delayMinutes:
-      Number.isFinite(delayMinutes) && delayMinutes > 0
-        ? delayMinutes
-        : DEFAULT_DELAY_MINUTES,
+    Number.isFinite(delayMinutes) && delayMinutes > 0 ?
+    delayMinutes :
+    DEFAULT_DELAY_MINUTES,
     userProfile: {
       name: settings.name || "",
       skills: settings.skills || "",
-      aboutMe: settings.aboutMe || "",
-    },
+      aboutMe: settings.aboutMe || ""
+    }
   };
 };
 
@@ -367,15 +367,15 @@ export const wakeAutoReplyWatcher = () => {
   try {
     if (typeof window !== "undefined" && window.dispatchEvent) {
       window.dispatchEvent(
-        new Event("fiverr-auto-reply-settings-changed"),
+        new Event("fiverr-auto-reply-settings-changed")
       );
     }
     if (typeof wakeWatcherFn === "function") {
-      console.log("[AutoReply] Wake requested (settings changed)");
+
       wakeWatcherFn();
     }
   } catch (error) {
-    console.warn("[AutoReply] Wake failed:", error);
+
   }
 };
 
@@ -387,7 +387,7 @@ export const findOverdueConversations = ({
   messages = {},
   delayMinutes = DEFAULT_DELAY_MINUTES,
   sentFingerprints = {},
-  inFlight = {},
+  inFlight = {}
 }) => {
   const delayMs = Math.max(1, delayMinutes) * 60 * 1000;
   const overdue = [];
@@ -401,7 +401,7 @@ export const findOverdueConversations = ({
   const candidates = [];
   for (const client of clientList) {
     const primary = String(
-      client.username || client.conversationId || client.id || "",
+      client.username || client.conversationId || client.id || ""
     );
     if (!primary || seenClients.has(primary.toLowerCase())) continue;
     seenClients.add(primary.toLowerCase());
@@ -416,39 +416,39 @@ export const findOverdueConversations = ({
       client: {
         username: key,
         name: key,
-        conversationId: key,
+        conversationId: key
       },
-      fallbackKey: key,
+      fallbackKey: key
     });
   }
 
   for (const { client, fallbackKey } of candidates) {
     const { storageKey, messages: conversationMessages } =
-      resolveConversationMessages(messages, client, fallbackKey);
+    resolveConversationMessages(messages, client, fallbackKey);
 
     if (!conversationMessages.length) continue;
 
     const sorted = [...conversationMessages].sort(
-      (a, b) => getAutoReplyMessageTimestamp(a) - getAutoReplyMessageTimestamp(b),
+      (a, b) => getAutoReplyMessageTimestamp(a) - getAutoReplyMessageTimestamp(b)
     );
     const lastMessage = sorted[sorted.length - 1];
     if (!lastMessage || isFromSeller(lastMessage)) continue;
 
     const sendKey = String(
-      client.username || client.conversationId || storageKey || fallbackKey,
+      client.username || client.conversationId || storageKey || fallbackKey
     );
     const cooldownKey = sendKey.toLowerCase();
     if (
-      conversationCooldownUntil[cooldownKey] &&
-      Date.now() < conversationCooldownUntil[cooldownKey]
-    ) {
+    conversationCooldownUntil[cooldownKey] &&
+    Date.now() < conversationCooldownUntil[cooldownKey])
+    {
       continue;
     }
 
     const unansweredMs = getUnansweredAgeMs(sendKey, lastMessage);
     if (unansweredMs < delayMs) {
       skipped.push(
-        `${sendKey}: waiting (${Math.round(unansweredMs / 60000)}/${delayMinutes} min)`,
+        `${sendKey}: waiting (${Math.round(unansweredMs / 60000)}/${delayMinutes} min)`
       );
       continue;
     }
@@ -461,7 +461,7 @@ export const findOverdueConversations = ({
     const record = sentFingerprints[fingerprint];
     if (shouldBlockForRecord(record)) {
       skipped.push(
-        `${sendKey}: already handled (attempts=${record.attempts || 1})`,
+        `${sendKey}: already handled (attempts=${record.attempts || 1})`
       );
       continue;
     }
@@ -474,19 +474,19 @@ export const findOverdueConversations = ({
         ...client,
         username: client.username || sendKey,
         conversationId: client.conversationId || sendKey,
-        name: client.name || client.username || sendKey,
+        name: client.name || client.username || sendKey
       },
       messages: sorted,
       lastMessage,
       fingerprint,
       unansweredMs,
-      previousAttempts: Number(sentFingerprints[fingerprint]?.attempts || 0),
+      previousAttempts: Number(sentFingerprints[fingerprint]?.attempts || 0)
     });
   }
 
-  if (!overdue.length && skipped.length) {
-    console.log("[AutoReply] Skipped:", skipped.slice(0, 8).join(" | "));
-  }
+
+
+
 
   // Most recently messaged clients first (who contacted you last).
   overdue.sort((a, b) => {
@@ -501,35 +501,35 @@ export const findOverdueConversations = ({
 export const generateAutoReplyText = async ({
   client,
   messages,
-  userProfile,
+  userProfile
 }) => {
   const result = await getAiChatResponse({
     presetKind: "reply",
     mode: "reply",
     client,
     messages,
-    userProfile,
+    userProfile
   });
 
   const text =
-    typeof result === "string"
-      ? result
-      : result?.text || result?.content || result?.message || "";
+  typeof result === "string" ?
+  result :
+  result?.text || result?.content || result?.message || "";
 
   const cleaned = obfuscateSensitiveTerms(
     sanitizeReplyUrls(String(text || "").trim(), {
-    allowedSources: [
+      allowedSources: [
       ...(Array.isArray(messages) ? messages : []).map(
-        (message) => message?.text || message?.content || message?.message || "",
+        (message) => message?.text || message?.content || message?.message || ""
       ),
       userProfile?.aboutMe,
       userProfile?.experience,
       userProfile?.portfolio,
-      Array.isArray(userProfile?.skills)
-        ? userProfile.skills.join(" ")
-        : userProfile?.skills,
-    ],
-  }),
+      Array.isArray(userProfile?.skills) ?
+      userProfile.skills.join(" ") :
+      userProfile?.skills]
+
+    })
   );
   if (!cleaned) {
     throw new Error("AI returned an empty auto-reply.");
@@ -554,40 +554,40 @@ const EXTRACT_POLL_MS = 1500;
  * Rank inbox clients by most recent activity (who messaged last first).
  */
 const rankClientsByRecentActivity = (clients = [], messages = {}) => {
-  return (clients || [])
-    .map((client) => {
-      const key = String(
-        client.username || client.conversationId || client.id || "",
-      );
-      const { messages: existing } = resolveConversationMessages(
-        messages,
-        client,
-        key,
-      );
-      let lastMsgTs = 0;
-      if (existing.length) {
-        for (const msg of existing) {
-          lastMsgTs = Math.max(lastMsgTs, getAutoReplyMessageTimestamp(msg));
-        }
+  return (clients || []).
+  map((client) => {
+    const key = String(
+      client.username || client.conversationId || client.id || ""
+    );
+    const { messages: existing } = resolveConversationMessages(
+      messages,
+      client,
+      key
+    );
+    let lastMsgTs = 0;
+    if (existing.length) {
+      for (const msg of existing) {
+        lastMsgTs = Math.max(lastMsgTs, getAutoReplyMessageTimestamp(msg));
       }
-      const listTs = parseClientListTimestamp(client.last_message_timestamp);
-      return {
-        client,
-        key,
-        existing,
-        activityTs: Math.max(listTs, lastMsgTs),
-        listTs,
-      };
-    })
-    .filter((entry) => entry.key)
-    .sort((a, b) => b.activityTs - a.activityTs);
+    }
+    const listTs = parseClientListTimestamp(client.last_message_timestamp);
+    return {
+      client,
+      key,
+      existing,
+      activityTs: Math.max(listTs, lastMsgTs),
+      listTs
+    };
+  }).
+  filter((entry) => entry.key).
+  sort((a, b) => b.activityTs - a.activityTs);
 };
 
 const waitForConversationMessages = async ({
   getState,
   client,
   key,
-  timeoutMs = EXTRACT_WAIT_MS,
+  timeoutMs = EXTRACT_WAIT_MS
 }) => {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
@@ -596,7 +596,7 @@ const waitForConversationMessages = async ({
     const { messages: existing } = resolveConversationMessages(
       state?.messages || {},
       client,
-      key,
+      key
     );
     if (existing.length > 0) {
       return existing;
@@ -608,7 +608,7 @@ const waitForConversationMessages = async ({
   const { messages: existing } = resolveConversationMessages(
     state?.messages || {},
     client,
-    key,
+    key
   );
   return existing;
 };
@@ -622,11 +622,11 @@ const activateAndExtractConversation = async ({
   client,
   getState,
   requestMessages,
-  triggerMessageExtraction,
+  triggerMessageExtraction
 }) => {
-  console.log(
-    `[AutoReply] Activating client for extract/send: ${key}`,
-  );
+
+
+
 
   if (typeof requestMessages === "function") {
     requestMessages(key, { force: true, background: true });
@@ -639,12 +639,12 @@ const activateAndExtractConversation = async ({
     getState,
     client,
     key,
-    timeoutMs: EXTRACT_WAIT_MS,
+    timeoutMs: EXTRACT_WAIT_MS
   });
 
-  console.log(
-    `[AutoReply] Extract finished for ${key}: ${loaded.length} message(s)`,
-  );
+
+
+
   return loaded;
 };
 
@@ -655,7 +655,7 @@ export const startAutoReplyWatcher = ({
   getState,
   sendMessageToClient,
   requestMessages,
-  triggerMessageExtraction,
+  triggerMessageExtraction
 }) => {
   const inFlight = {};
   let stopped = false;
@@ -672,17 +672,17 @@ export const startAutoReplyWatcher = ({
       }
       let state = typeof getState === "function" ? getState() : null;
       if (!state?.isConnected) {
-        console.log(
-          `[AutoReply] Enabled but not connected (skip tick: ${reason})`,
-        );
+
+
+
         return;
       }
 
-      console.log(
-        `[AutoReply] Tick (${reason}) delay=${delayMinutes}m clients=${
-          state.clients?.length || 0
-        } conversations=${Object.keys(state.messages || {}).length}`,
-      );
+
+
+
+
+
 
       const delayMs = Math.max(1, delayMinutes) * 60 * 1000;
       const now = Date.now();
@@ -691,7 +691,7 @@ export const startAutoReplyWatcher = ({
       // One client at a time, most recent inbox activity first.
       const ranked = rankClientsByRecentActivity(state.clients, state.messages);
       if (!ranked.length) {
-        console.log("[AutoReply] No clients available yet");
+
         return;
       }
 
@@ -704,7 +704,7 @@ export const startAutoReplyWatcher = ({
         messages: state.messages,
         delayMinutes,
         sentFingerprints,
-        inFlight,
+        inFlight
       });
       if (overdue.length) {
         workItem = { kind: "send", overdue: overdue[0] };
@@ -715,15 +715,15 @@ export const startAutoReplyWatcher = ({
         for (const entry of ranked) {
           const cooldownKey = entry.key.toLowerCase();
           if (
-            conversationCooldownUntil[cooldownKey] &&
-            now < conversationCooldownUntil[cooldownKey]
-          ) {
+          conversationCooldownUntil[cooldownKey] &&
+          now < conversationCooldownUntil[cooldownKey])
+          {
             continue;
           }
           if (
-            lastPrimedAt[entry.key] &&
-            now - lastPrimedAt[entry.key] < PRIME_COOLDOWN_MS
-          ) {
+          lastPrimedAt[entry.key] &&
+          now - lastPrimedAt[entry.key] < PRIME_COOLDOWN_MS)
+          {
             continue;
           }
 
@@ -741,7 +741,7 @@ export const startAutoReplyWatcher = ({
       }
 
       if (!workItem) {
-        console.log("[AutoReply] No overdue unanswered client messages");
+
         return;
       }
 
@@ -756,16 +756,16 @@ export const startAutoReplyWatcher = ({
           client: entry.client,
           getState,
           requestMessages,
-          triggerMessageExtraction,
+          triggerMessageExtraction
         });
         alreadyActivatedKey = entry.key;
 
         if (stopped) return;
 
         if (!loaded.length) {
-          console.log(
-            `[AutoReply] Still no messages for ${entry.key} — will retry later`,
-          );
+
+
+
           return;
         }
 
@@ -776,17 +776,17 @@ export const startAutoReplyWatcher = ({
           messages: state.messages,
           delayMinutes,
           sentFingerprints,
-          inFlight,
+          inFlight
         }).find(
           (item) =>
-            String(item.conversationId).toLowerCase() ===
-            entry.key.toLowerCase(),
+          String(item.conversationId).toLowerCase() ===
+          entry.key.toLowerCase()
         );
 
         if (!afterExtract) {
-          console.log(
-            `[AutoReply] ${entry.key} loaded but not overdue/unanswered — moving on`,
-          );
+
+
+
           return;
         }
 
@@ -799,28 +799,28 @@ export const startAutoReplyWatcher = ({
       const attemptNumber = item.previousAttempts + 1;
       inFlight[item.fingerprint] = true;
       conversationCooldownUntil[String(item.conversationId).toLowerCase()] =
-        Date.now() + CONVERSATION_COOLDOWN_MS;
+      Date.now() + CONVERSATION_COOLDOWN_MS;
 
-      console.log(
-        "[AutoReply] Generating reply for",
-        item.conversationId,
-        `(unanswered ${Math.round(item.unansweredMs / 60000)} min, attempt ${attemptNumber}/${MAX_SEND_ATTEMPTS})`,
-      );
+
+
+
+
+
 
       try {
         // Ensure Fiverr is on THIS conversation before send, unless we just
         // activated them in the extract step above.
         if (
-          !alreadyActivatedKey ||
-          alreadyActivatedKey.toLowerCase() !==
-            String(item.conversationId).toLowerCase()
-        ) {
+        !alreadyActivatedKey ||
+        alreadyActivatedKey.toLowerCase() !==
+        String(item.conversationId).toLowerCase())
+        {
           await activateAndExtractConversation({
             key: item.conversationId,
             client: item.client,
             getState,
             requestMessages,
-            triggerMessageExtraction,
+            triggerMessageExtraction
           });
         }
 
@@ -834,25 +834,25 @@ export const startAutoReplyWatcher = ({
           messages: state.messages,
           delayMinutes,
           sentFingerprints,
-          inFlight: inFlightForRecheck,
+          inFlight: inFlightForRecheck
         }).find(
           (row) =>
-            String(row.conversationId).toLowerCase() ===
-            String(item.conversationId).toLowerCase(),
+          String(row.conversationId).toLowerCase() ===
+          String(item.conversationId).toLowerCase()
         );
 
         // If seller already answered after extract, stop.
         if (!refreshed) {
-          console.log(
-            `[AutoReply] ${item.conversationId} no longer needs a reply after refresh`,
-          );
+
+
+
           return;
         }
 
         const replyText = await generateAutoReplyText({
           client: refreshed.client,
           messages: refreshed.messages,
-          userProfile,
+          userProfile
         });
 
         if (stopped) return;
@@ -862,28 +862,28 @@ export const startAutoReplyWatcher = ({
           throw new Error("AI reply too short; refusing to send");
         }
 
-        console.log(
-          "[AutoReply] Sending via extension:",
-          refreshed.conversationId,
-          `(${cleaned.length} chars)`,
-        );
+
+
+
+
+
 
         const sendResult = await sendMessageToClient(
           cleaned,
-          refreshed.conversationId,
+          refreshed.conversationId
         );
 
-        console.log("[AutoReply] Extension confirmation:", {
-          conversationId: refreshed.conversationId,
-          result: sendResult,
-        });
+
+
+
+
 
         if (!sendResult || sendResult.success !== true) {
           throw new Error(
-            (sendResult && sendResult.error) ||
-              (sendResult === false
-                ? "Failed to send auto-reply (not connected?)"
-                : "Extension did not confirm the auto-reply was sent"),
+            sendResult && sendResult.error || (
+            sendResult === false ?
+            "Failed to send auto-reply (not connected?)" :
+            "Extension did not confirm the auto-reply was sent")
           );
         }
 
@@ -893,20 +893,20 @@ export const startAutoReplyWatcher = ({
           at: new Date().toISOString(),
           conversationId: refreshed.conversationId,
           attempts: attemptNumber,
-          preview: cleaned.substring(0, 80),
+          preview: cleaned.substring(0, 80)
         };
         await saveSentFingerprints(sentFingerprints);
-        console.log(
-          "[AutoReply] Confirmed on Fiverr for",
-          refreshed.conversationId,
-          cleaned.substring(0, 80),
-        );
+
+
+
+
+
       } catch (error) {
         const errorMessage = String(error?.message || error || "");
         const blockedByPolicyAlert =
-          /blocked send|policy alert|direct payments|conversations on fiverr/i.test(
-            errorMessage,
-          );
+        /blocked send|policy alert|direct payments|conversations on fiverr/i.test(
+          errorMessage
+        );
 
         if (blockedByPolicyAlert) {
           // Do not keep retrying chats Fiverr has flagged — that risks the account.
@@ -915,30 +915,30 @@ export const startAutoReplyWatcher = ({
             conversationId: item.conversationId,
             attempts: MAX_SEND_ATTEMPTS,
             preview: "skipped: fiverr policy alert",
-            blockedByAlert: true,
+            blockedByAlert: true
           };
           await saveSentFingerprints(sentFingerprints);
-          console.warn(
-            "[AutoReply] Skipping",
-            item.conversationId,
-            "because Fiverr shows a policy alert in that inbox:",
-            errorMessage,
-          );
+
+
+
+
+
+
         } else {
           delete conversationCooldownUntil[
-            String(item.conversationId).toLowerCase()
-          ];
-          console.error(
-            "[AutoReply] Failed for",
-            item.conversationId,
-            errorMessage,
-          );
+          String(item.conversationId).toLowerCase()];
+
+
+
+
+
+
         }
       } finally {
         delete inFlight[item.fingerprint];
       }
     } catch (error) {
-      console.error("[AutoReply] Watcher tick failed:", error);
+
     } finally {
       tickInProgress = false;
     }
@@ -952,18 +952,18 @@ export const startAutoReplyWatcher = ({
   const initialTimer = setTimeout(() => tick("startup"), 4000);
   const intervalId = setInterval(() => tick("interval"), CHECK_INTERVAL_MS);
 
-  console.log(
-    "[AutoReply] Watcher started (checks every",
-    CHECK_INTERVAL_MS / 1000,
-    "s)",
-  );
+
+
+
+
+
 
   return () => {
     stopped = true;
     wakeWatcherFn = null;
     clearTimeout(initialTimer);
     clearInterval(intervalId);
-    console.log("[AutoReply] Watcher stopped");
+
   };
 };
 

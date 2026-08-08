@@ -10,8 +10,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  Modal,
-} from 'react-native';
+  Modal } from
+'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
@@ -41,7 +41,7 @@ const PRESET_LABELS = {
   task: 'Explain the task',
   cursorPrompt: 'Generate Cursor prompt',
   chatgptPrompt: 'Generate ChatGPT prompt',
-  analysis: 'Analyze communication',
+  analysis: 'Analyze communication'
 };
 
 const OPTIONS_TYPE_TO_PRESET = {
@@ -55,75 +55,75 @@ const OPTIONS_TYPE_TO_PRESET = {
   greeting: 'first',
   quotation: 'quote',
   'cursor-prompt': 'cursorPrompt',
-  'chatgpt-prompt': 'chatgptPrompt',
+  'chatgpt-prompt': 'chatgptPrompt'
 };
 
 const QUICK_ACTIONS = [
-  {
-    id: 'reply',
-    presetKind: 'reply',
-    label: 'Next Message',
-    subtitle: 'Continue from your last message and answer the buyer',
-    icon: 'chatbubble-ellipses',
-    styleKey: 'nextMessageButton',
-  },
-  {
-    id: 'quote',
-    presetKind: 'quote',
-    label: 'Quotation',
-    subtitle: 'Structured quote with scope, price, and next step',
-    icon: 'document-text',
-    styleKey: 'quotationButton',
-  },
-  {
-    id: 'task',
-    presetKind: 'task',
-    label: 'Task Explanation',
-    subtitle: 'Bangla + English summary of buyer requirements',
-    icon: 'information-circle',
-    styleKey: 'explainTaskButton',
-  },
-  {
-    id: 'cursorPrompt',
-    presetKind: 'cursorPrompt',
-    label: 'Cursor Prompt',
-    subtitle: 'Engineering prompt for Cursor AI',
-    icon: 'code-slash',
-    styleKey: 'cursorPromptButton',
-  },
-  {
-    id: 'chatgptPrompt',
-    presetKind: 'chatgptPrompt',
-    label: 'ChatGPT Prompt',
-    subtitle: 'Professional prompt for ChatGPT',
-    icon: 'sparkles',
-    styleKey: 'chatgptPromptButton',
-  },
-  {
-    id: 'first',
-    presetKind: 'first',
-    label: 'First Message',
-    subtitle: 'Strong first reply that invites requirements',
-    icon: 'mail',
-    styleKey: 'generateFirstMessageButton',
-  },
-  {
-    id: 'clarify',
-    presetKind: 'clarify',
-    label: 'Clarify',
-    subtitle: 'Ask focused questions from the thread',
-    icon: 'help-circle',
-    styleKey: 'clarifyButton',
-  },
-  {
-    id: 'cost',
-    presetKind: 'cost',
-    label: 'Pricing Message',
-    subtitle: 'Natural pricing discussion for the buyer',
-    icon: 'cash',
-    styleKey: 'generateOfferButton',
-  },
-];
+{
+  id: 'reply',
+  presetKind: 'reply',
+  label: 'Next Message',
+  subtitle: 'Continue from your last message and answer the buyer',
+  icon: 'chatbubble-ellipses',
+  styleKey: 'nextMessageButton'
+},
+{
+  id: 'quote',
+  presetKind: 'quote',
+  label: 'Quotation',
+  subtitle: 'Structured quote with scope, price, and next step',
+  icon: 'document-text',
+  styleKey: 'quotationButton'
+},
+{
+  id: 'task',
+  presetKind: 'task',
+  label: 'Task Explanation',
+  subtitle: 'Bangla + English summary of buyer requirements',
+  icon: 'information-circle',
+  styleKey: 'explainTaskButton'
+},
+{
+  id: 'cursorPrompt',
+  presetKind: 'cursorPrompt',
+  label: 'Cursor Prompt',
+  subtitle: 'Engineering prompt for Cursor AI',
+  icon: 'code-slash',
+  styleKey: 'cursorPromptButton'
+},
+{
+  id: 'chatgptPrompt',
+  presetKind: 'chatgptPrompt',
+  label: 'ChatGPT Prompt',
+  subtitle: 'Professional prompt for ChatGPT',
+  icon: 'sparkles',
+  styleKey: 'chatgptPromptButton'
+},
+{
+  id: 'first',
+  presetKind: 'first',
+  label: 'First Message',
+  subtitle: 'Strong first reply that invites requirements',
+  icon: 'mail',
+  styleKey: 'generateFirstMessageButton'
+},
+{
+  id: 'clarify',
+  presetKind: 'clarify',
+  label: 'Clarify',
+  subtitle: 'Ask focused questions from the thread',
+  icon: 'help-circle',
+  styleKey: 'clarifyButton'
+},
+{
+  id: 'cost',
+  presetKind: 'cost',
+  label: 'Pricing Message',
+  subtitle: 'Natural pricing discussion for the buyer',
+  icon: 'cash',
+  styleKey: 'generateOfferButton'
+}];
+
 
 const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) => {
   const { cancelOptimisticMessage } = useWebSocket();
@@ -156,7 +156,7 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
   };
 
   const clientStorageKey =
-    client?.conversationId || client?.username || client?.id || 'unknown';
+  client?.conversationId || client?.username || client?.id || 'unknown';
 
   useEffect(() => {
     setInputHeight(INPUT_MIN_HEIGHT);
@@ -172,7 +172,7 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
     const contentHeight = event.nativeEvent.contentSize.height;
     const nextHeight = Math.min(
       INPUT_MAX_HEIGHT,
-      Math.max(INPUT_MIN_HEIGHT, contentHeight),
+      Math.max(INPUT_MIN_HEIGHT, contentHeight)
     );
     setInputHeight(nextHeight);
   };
@@ -187,16 +187,16 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
           const profile = {
             name: settings.name || '',
             skills: settings.skills || '',
-            aboutMe: settings.aboutMe || '',
+            aboutMe: settings.aboutMe || ''
           };
           setUserProfile(profile);
-          console.log('[AIChatTab] Loaded user profile from settings:', profile.name || 'Not set');
+
         } else {
-          console.log('[AIChatTab] No settings found, using empty profile');
+
           setUserProfile({});
         }
       } catch (error) {
-        console.error('[AIChatTab] Error loading user profile:', error);
+
         setUserProfile({});
       }
     };
@@ -208,10 +208,10 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
     const loadHistory = async () => {
       // Don't load if we're currently clearing
       if (isClearingRef.current) {
-        console.log('[AIChatTab] Skipping load - currently clearing history');
+
         return;
       }
-      
+
       if (!client) {
         setChatMessages([]);
         setPreviousClientId(null);
@@ -219,26 +219,26 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
       }
 
       const clientId = getClientId();
-      
+
       // Only load if client actually changed
       if (clientId === previousClientId) {
-        console.log('[AIChatTab] Skipping load - same client, no change');
+
         return;
       }
-      
+
       setPreviousClientId(clientId); // Update previous client ID
-      
+
       try {
         const savedHistory = await loadAIChatHistory(clientId);
         if (savedHistory && savedHistory.length > 0) {
           setChatMessages(savedHistory);
-          console.log('[AIChatTab] Loaded chat history for client:', clientId, '-', savedHistory.length, 'messages');
+
         } else {
           setChatMessages([]);
-          console.log('[AIChatTab] No saved chat history for client:', clientId);
+
         }
       } catch (error) {
-        console.error('[AIChatTab] Error loading chat history:', error);
+
         setChatMessages([]);
       }
     };
@@ -250,12 +250,12 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
   // Save chat history whenever messages change (but not when loading from storage)
   useEffect(() => {
     const currentClientId = getClientId();
-    
+
     // Don't save if we're currently clearing history
     if (isClearingRef.current) {
       return;
     }
-    
+
     // Don't save if client changed (we just loaded history) or if no client
     if (!client || currentClientId !== previousClientId) {
       setPreviousClientId(currentClientId);
@@ -272,12 +272,12 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
       if (isClearingRef.current) {
         return;
       }
-      
+
       try {
         await saveAIChatHistory(currentClientId, chatMessages);
-        console.log('[AIChatTab] Saved chat history for client:', currentClientId, '-', chatMessages.length, 'messages');
+
       } catch (error) {
-        console.error('[AIChatTab] Error saving chat history:', error);
+
       }
     };
 
@@ -323,19 +323,19 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
       // Build context from recent messages (last 10 messages for better context)
       const recentMessages = messages.slice(-10);
       const sellerName = userProfile.name || 'Md';
-      const conversationText = recentMessages
-        .map((m, idx) => {
-          const sender = m.isFromMe || m.sender === 'me' ? sellerName : 'Client';
-          const text = m.text || m.content || '';
-          return `${sender}: ${text}`;
-        })
-        .join('\n');
+      const conversationText = recentMessages.
+      map((m, idx) => {
+        const sender = m.isFromMe || m.sender === 'me' ? sellerName : 'Client';
+        const text = m.text || m.content || '';
+        return `${sender}: ${text}`;
+      }).
+      join('\n');
 
       // Build chat history for context
       const historyForApi = chatMessages.map((m) => ({
         sender: m.sender === 'ai' ? 'assistant' : 'user',
         text: m.text,
-        time: m.time,
+        time: m.time
       }));
 
       // Create prompt for AI to generate suggested actions
@@ -379,7 +379,7 @@ Example (return exactly this format, no other text):
         client,
         messages: recentMessages,
         chatHistory: historyForApi,
-        userProfile: userProfile,
+        userProfile: userProfile
       });
 
       // Parse AI response - try to extract JSON array
@@ -400,8 +400,8 @@ Example (return exactly this format, no other text):
           }
         }
       } catch (parseError) {
-        console.warn('[AIChatTab] Failed to parse AI action suggestions:', parseError);
-        console.log('[AIChatTab] AI response:', aiResponse);
+
+
         // Fallback to default actions if parsing fails
         suggestedActions = [];
       }
@@ -413,103 +413,103 @@ Example (return exactly this format, no other text):
           label: 'First Message',
           icon: 'mail',
           handler: handleGenerateFirstMessage,
-          style: 'generateFirstMessageButton',
+          style: 'generateFirstMessageButton'
         },
         quotation: {
           id: 'quotation',
           label: 'Quotation',
           icon: 'document-text',
           handler: handleGenerateQuotation,
-          style: 'quotationButton',
+          style: 'quotationButton'
         },
         'generate-offer': {
           id: 'generate-offer',
           label: 'Pricing Message',
           icon: 'cash',
           handler: () => handlePresetAction('cost'),
-          style: 'generateOfferButton',
+          style: 'generateOfferButton'
         },
         'explain-task': {
           id: 'explain-task',
           label: 'Task Explanation',
           icon: 'information-circle',
           handler: handleExplainTask,
-          style: 'explainTaskButton',
+          style: 'explainTaskButton'
         },
         'generate-response': {
           id: 'generate-response',
           label: 'Next Message',
           icon: 'chatbubble-ellipses',
           handler: handleGenerateNextMessage,
-          style: 'nextMessageButton',
+          style: 'nextMessageButton'
         },
         'next-message': {
           id: 'generate-next',
           label: 'Next Message',
           icon: 'chatbubble-ellipses',
           handler: handleGenerateNextMessage,
-          style: 'nextMessageButton',
+          style: 'nextMessageButton'
         },
         'cursor-prompt': {
           id: 'cursor-prompt',
           label: 'Cursor Prompt',
           icon: 'code-slash',
           handler: handleGenerateCursorPrompt,
-          style: 'cursorPromptButton',
+          style: 'cursorPromptButton'
         },
         'chatgpt-prompt': {
           id: 'chatgpt-prompt',
           label: 'ChatGPT Prompt',
           icon: 'sparkles',
           handler: handleGenerateChatgptPrompt,
-          style: 'chatgptPromptButton',
+          style: 'chatgptPromptButton'
         },
         clarify: {
           id: 'clarify',
           label: 'Clarify',
           icon: 'help-circle',
           handler: () => handlePresetAction('clarify'),
-          style: 'clarifyButton',
-        },
+          style: 'clarifyButton'
+        }
       };
 
       // Convert AI suggestions to action objects
-      const mappedActions = suggestedActions
-        .map((suggestion) => {
-          const actionType = suggestion.type || suggestion.action;
-          const action = actionMap[actionType];
-          if (action) {
-            // Use AI-provided label if available and valid, otherwise use default
-            return {
-              ...action,
-              label: suggestion.label && suggestion.label.length <= 25 ? suggestion.label : action.label,
-            };
-          }
-          return null;
-        })
-        .filter((action) => action !== null)
-        .slice(0, 7); // Allow up to 7 actions from AI
+      const mappedActions = suggestedActions.
+      map((suggestion) => {
+        const actionType = suggestion.type || suggestion.action;
+        const action = actionMap[actionType];
+        if (action) {
+          // Use AI-provided label if available and valid, otherwise use default
+          return {
+            ...action,
+            label: suggestion.label && suggestion.label.length <= 25 ? suggestion.label : action.label
+          };
+        }
+        return null;
+      }).
+      filter((action) => action !== null).
+      slice(0, 7); // Allow up to 7 actions from AI
 
       // Ensure we have at least 5 actions by adding fallback actions
       const allAvailableActions = [
-        actionMap['next-message'],
-        actionMap.quotation,
-        actionMap['explain-task'],
-        actionMap['cursor-prompt'],
-        actionMap['chatgpt-prompt'],
-        actionMap['first-message'],
-        actionMap.clarify,
-        actionMap['generate-offer'],
-      ];
+      actionMap['next-message'],
+      actionMap.quotation,
+      actionMap['explain-task'],
+      actionMap['cursor-prompt'],
+      actionMap['chatgpt-prompt'],
+      actionMap['first-message'],
+      actionMap.clarify,
+      actionMap['generate-offer']];
+
 
       // If no actions were generated, use all fallback actions
       if (mappedActions.length === 0) {
         mappedActions.push(...allAvailableActions);
       } else {
         // Fill up to 5 actions with fallback actions if needed
-        const usedActionIds = new Set(mappedActions.map(a => a.id));
-        const fallbackActions = allAvailableActions.filter(a => !usedActionIds.has(a.id));
-        
+        const usedActionIds = new Set(mappedActions.map((a) => a.id));
+        const fallbackActions = allAvailableActions.filter((a) => !usedActionIds.has(a.id));
+
         while (mappedActions.length < 5 && fallbackActions.length > 0) {
           mappedActions.push(fallbackActions.shift());
         }
@@ -520,7 +520,7 @@ Example (return exactly this format, no other text):
 
       setAiSuggestedActions(finalActions);
     } catch (error) {
-      console.error('[AIChatTab] Error generating AI suggested actions:', error);
+
       // Fallback to default actions on error - ensure at least 5 actions
       const fallbackActions = [];
       if (chatMessages.length === 0) {
@@ -530,35 +530,35 @@ Example (return exactly this format, no other text):
             label: 'Generate First Message',
             icon: 'mail',
             handler: handleGenerateFirstMessage,
-            style: 'generateFirstMessageButton',
+            style: 'generateFirstMessageButton'
           },
           {
             id: 'generate-offer',
             label: 'Generate Offer',
             icon: 'briefcase',
             handler: handleGenerateOffer,
-            style: 'generateOfferButton',
+            style: 'generateOfferButton'
           },
           {
             id: 'explain-task',
             label: 'Explain Task',
             icon: 'information-circle',
             handler: handleExplainTask,
-            style: 'explainTaskButton',
+            style: 'explainTaskButton'
           },
           {
             id: 'generate-response',
             label: 'Generate Response',
             icon: 'chatbubble-ellipses',
             handler: handleGenerateNextMessage,
-            style: 'nextMessageButton',
+            style: 'nextMessageButton'
           },
           {
             id: 'generate-next',
             label: 'Generate Next Message',
             icon: 'chatbubble-ellipses',
             handler: handleGenerateNextMessage,
-            style: 'nextMessageButton',
+            style: 'nextMessageButton'
           }
         );
       } else {
@@ -568,35 +568,35 @@ Example (return exactly this format, no other text):
             label: 'Generate Next Message',
             icon: 'chatbubble-ellipses',
             handler: handleGenerateNextMessage,
-            style: 'nextMessageButton',
+            style: 'nextMessageButton'
           },
           {
             id: 'generate-offer',
             label: 'Generate Offer',
             icon: 'briefcase',
             handler: handleGenerateOffer,
-            style: 'generateOfferButton',
+            style: 'generateOfferButton'
           },
           {
             id: 'explain-task',
             label: 'Explain Task',
             icon: 'information-circle',
             handler: handleExplainTask,
-            style: 'explainTaskButton',
+            style: 'explainTaskButton'
           },
           {
             id: 'first-message',
             label: 'Generate First Message',
             icon: 'mail',
             handler: handleGenerateFirstMessage,
-            style: 'generateFirstMessageButton',
+            style: 'generateFirstMessageButton'
           },
           {
             id: 'generate-response',
             label: 'Generate Response',
             icon: 'chatbubble-ellipses',
             handler: handleGenerateNextMessage,
-            style: 'nextMessageButton',
+            style: 'nextMessageButton'
           }
         );
       }
@@ -641,7 +641,7 @@ Example (return exactly this format, no other text):
 
     setSuggestedPrompts((prev) => ({
       ...prev,
-      [messageIndex]: prompts.slice(0, 3), // Show max 3 suggestions
+      [messageIndex]: prompts.slice(0, 3) // Show max 3 suggestions
     }));
   };
 
@@ -656,7 +656,7 @@ Example (return exactly this format, no other text):
       // If it's an event object or something else, use inputText
       textToSend = inputText.trim();
     }
-    
+
     if (!textToSend || isLoading) {
       return;
     }
@@ -664,14 +664,14 @@ Example (return exactly this format, no other text):
     const userMessage = {
       text: textToSend,
       sender: 'user',
-      time: new Date().toISOString(),
+      time: new Date().toISOString()
     };
 
     // Add user message immediately
     setChatMessages((prev) => [...prev, userMessage]);
     setInputText('');
     setIsLoading(true);
-    
+
     // Clear suggested prompts when user sends a message
     setSuggestedPrompts({});
 
@@ -679,35 +679,35 @@ Example (return exactly this format, no other text):
     const historyForApi = chatMessages.map((m) => ({
       sender: m.sender === 'ai' ? 'assistant' : 'user',
       text: m.text,
-      time: m.time,
+      time: m.time
     }));
 
     try {
       // Ensure userMessage.text is a string
       const messageText = typeof userMessage?.text === 'string' ? userMessage.text : String(userMessage?.text || textToSend || '');
-      
+
       if (!messageText || !messageText.trim()) {
-        console.error('Invalid message text:', messageText);
+
         setIsLoading(false);
         return;
       }
-      
+
       // Ensure all messages are passed (including latest)
       const allFiverrMessages = Array.isArray(messages) ? messages : [];
-      console.log(`[AIChatTab] Sending ${allFiverrMessages.length} Fiverr messages to AI for response generation`);
-      
+
+
       const aiText = await getAiChatResponse({
         userMessage: messageText,
         client,
         messages: allFiverrMessages, // Pass ALL messages from Messages tab
         chatHistory: historyForApi,
-        userProfile: userProfile,
+        userProfile: userProfile
       });
 
       const aiResponse = {
         text: aiText,
         sender: 'ai',
-        time: new Date().toISOString(),
+        time: new Date().toISOString()
       };
       setChatMessages((prev) => {
         const updated = [...prev, aiResponse];
@@ -719,13 +719,13 @@ Example (return exactly this format, no other text):
         return updated;
       });
     } catch (error) {
-      console.error('AI chat error:', error);
+
       const errorResponse = {
         text:
-          error.message ||
-          'AI error: Unable to generate a response. Please check your Gemini API key and network.',
+        error.message ||
+        'AI error: Unable to generate a response. Please check your Gemini API key and network.',
         sender: 'ai',
-        time: new Date().toISOString(),
+        time: new Date().toISOString()
       };
       setChatMessages((prev) => [...prev, errorResponse]);
     } finally {
@@ -740,28 +740,28 @@ Example (return exactly this format, no other text):
     const userMessage = {
       text: label,
       sender: 'user',
-      time: new Date().toISOString(),
+      time: new Date().toISOString()
     };
     setChatMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
 
     try {
       const allFiverrMessages = Array.isArray(messages) ? messages : [];
-      console.log(
-        `[AIChatTab] Running extension-style preset "${presetKind}" with ${allFiverrMessages.length} Fiverr messages`,
-      );
+
+
+
 
       const aiText = await getAiChatResponse({
         presetKind,
         client,
         messages: allFiverrMessages,
-        userProfile,
+        userProfile
       });
 
       const aiResponse = {
         text: aiText,
         sender: 'ai',
-        time: new Date().toISOString(),
+        time: new Date().toISOString()
       };
 
       setChatMessages((prev) => {
@@ -773,13 +773,13 @@ Example (return exactly this format, no other text):
         return updated;
       });
     } catch (error) {
-      console.error('AI chat error:', error);
+
       const errorResponse = {
         text:
-          error.message ||
-          'AI error: Unable to generate a response. Please check your Gemini API key and network.',
+        error.message ||
+        'AI error: Unable to generate a response. Please check your Gemini API key and network.',
         sender: 'ai',
-        time: new Date().toISOString(),
+        time: new Date().toISOString()
       };
       setChatMessages((prev) => [...prev, errorResponse]);
     } finally {
@@ -819,56 +819,56 @@ Example (return exactly this format, no other text):
     handlePresetAction('chatgptPrompt');
   };
 
-  const renderQuickActions = () => (
-    <View style={styles.quickActionsContainer}>
+  const renderQuickActions = () =>
+  <View style={styles.quickActionsContainer}>
       <Text style={styles.quickActionsTitle}>Professional Generators</Text>
       <Text style={styles.quickActionsSubtitle}>
         Same reply quality as the Fiverr assistant extension
       </Text>
-      {QUICK_ACTIONS.map((action) => (
-        <TouchableOpacity
-          key={action.id}
-          style={[styles.quickActionButton, styles[action.styleKey]]}
-          onPress={() => handlePresetAction(action.presetKind)}
-          disabled={isLoading}
-        >
+      {QUICK_ACTIONS.map((action) =>
+    <TouchableOpacity
+      key={action.id}
+      style={[styles.quickActionButton, styles[action.styleKey]]}
+      onPress={() => handlePresetAction(action.presetKind)}
+      disabled={isLoading}>
+      
           <Ionicons name={action.icon} size={20} color={colors.text.white} />
           <View style={styles.quickActionTextWrap}>
             <Text style={styles.quickActionText}>{action.label}</Text>
             <Text style={styles.quickActionSubtitle}>{action.subtitle}</Text>
           </View>
         </TouchableOpacity>
-      ))}
-    </View>
-  );
+    )}
+    </View>;
 
-  const renderCompactGenerators = () => (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.compactGeneratorsScroll}
-      contentContainerStyle={styles.compactGeneratorsContent}
-    >
-      {QUICK_ACTIONS.map((action) => (
-        <TouchableOpacity
-          key={`compact-${action.id}`}
-          style={[styles.compactGeneratorChip, styles[action.styleKey]]}
-          onPress={() => handlePresetAction(action.presetKind)}
-          disabled={isLoading}
-        >
+
+  const renderCompactGenerators = () =>
+  <ScrollView
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    style={styles.compactGeneratorsScroll}
+    contentContainerStyle={styles.compactGeneratorsContent}>
+    
+      {QUICK_ACTIONS.map((action) =>
+    <TouchableOpacity
+      key={`compact-${action.id}`}
+      style={[styles.compactGeneratorChip, styles[action.styleKey]]}
+      onPress={() => handlePresetAction(action.presetKind)}
+      disabled={isLoading}>
+      
           <Ionicons name={action.icon} size={14} color={colors.text.white} />
           <Text style={styles.compactGeneratorText}>{action.label}</Text>
         </TouchableOpacity>
-      ))}
-    </ScrollView>
-  );
+    )}
+    </ScrollView>;
+
 
   const handleCopyMessage = async (text) => {
     try {
       await Clipboard.setStringAsync(text);
       Alert.alert('Copied!', 'Message copied to clipboard');
     } catch (error) {
-      console.error('Error copying to clipboard:', error);
+
       Alert.alert('Error', 'Failed to copy message');
     }
   };
@@ -898,23 +898,23 @@ Example (return exactly this format, no other text):
   const handleSuggestedPrompt = (prompt) => {
     const normalized = String(prompt || '').trim().toLowerCase();
     if (
-      normalized === 'generate next message' ||
-      normalized.includes('next message')
-    ) {
+    normalized === 'generate next message' ||
+    normalized.includes('next message'))
+    {
       handlePresetAction('reply');
       return;
     }
     if (
-      normalized.includes('quotation') ||
-      normalized.includes('quote') ||
-      normalized === 'generate another offer' ||
-      normalized.includes('adjust the pricing') ||
-      normalized.includes('add pricing')
-    ) {
+    normalized.includes('quotation') ||
+    normalized.includes('quote') ||
+    normalized === 'generate another offer' ||
+    normalized.includes('adjust the pricing') ||
+    normalized.includes('add pricing'))
+    {
       handlePresetAction(
-        normalized.includes('pricing') || normalized.includes('offer')
-          ? 'cost'
-          : 'quote',
+        normalized.includes('pricing') || normalized.includes('offer') ?
+        'cost' :
+        'quote'
       );
       return;
     }
@@ -961,7 +961,7 @@ Example (return exactly this format, no other text):
     setSendingToClient(true);
     setSendingMessageText(trimmedMessage);
     sendingStartTimeRef.current = startTime; // Record start time
-    
+
     try {
       const success = onSendMessage(trimmedMessage, conversationId);
       if (success) {
@@ -975,7 +975,7 @@ Example (return exactly this format, no other text):
         }
       }
     } catch (error) {
-      console.error('Error sending message to client:', error);
+
       Alert.alert('Error', 'Failed to send message. Please try again.');
       // Cancel optimistic message on error
       if (cancelOptimisticMessage) {
@@ -1010,136 +1010,136 @@ Example (return exactly this format, no other text):
     setSendingToClient(false);
     setSendingMessageText(null);
     sendingStartTimeRef.current = null; // Clear start time reference
-    
+
     Alert.alert('Cancelled', 'Message sending cancelled');
   };
 
   // Generate AI suggestions based on latest client messages and AI chat messages
   const generateOptionsModalSuggestions = () => {
     const suggestions = [];
-    
+
     // Check if user has sent any messages to the client
-    const hasUserSentMessages = messages.some(m => m?.isFromMe === true || m?.sender === 'user');
-    
+    const hasUserSentMessages = messages.some((m) => m?.isFromMe === true || m?.sender === 'user');
+
     // Get latest client messages (last 5)
     const recentClientMessages = messages.slice(-5);
     const recentAIChatMessages = chatMessages.slice(-5);
-    
+
     // Combine text from recent messages
-    const clientMessagesText = recentClientMessages
-      .map(m => (m?.text || m?.content || '').toLowerCase())
-      .join(' ');
-    
-    const aiChatMessagesText = recentAIChatMessages
-      .filter(m => m.sender === 'ai')
-      .map(m => (m?.text || '').toLowerCase())
-      .join(' ');
-    
+    const clientMessagesText = recentClientMessages.
+    map((m) => (m?.text || m?.content || '').toLowerCase()).
+    join(' ');
+
+    const aiChatMessagesText = recentAIChatMessages.
+    filter((m) => m.sender === 'ai').
+    map((m) => (m?.text || '').toLowerCase()).
+    join(' ');
+
     const combinedText = (clientMessagesText + ' ' + aiChatMessagesText).toLowerCase();
-    
+
     // Show "Generate First Message" if user hasn't sent any messages
     if (!hasUserSentMessages) {
       suggestions.push({
         id: 'first-message',
         label: 'Generate First Message',
         icon: 'mail',
-        type: 'first-message',
+        type: 'first-message'
       });
     }
-    
+
     // Analyze and suggest based on context
     if (combinedText.includes('task') || combinedText.includes('project') || combinedText.includes('complete')) {
       suggestions.push({
         id: 'task-update',
         label: 'Update after task completion',
         icon: 'checkmark-circle',
-        type: 'task-update',
+        type: 'task-update'
       });
     }
-    
+
     if (combinedText.includes('price') || combinedText.includes('budget') || combinedText.includes('cost') || combinedText.includes('offer')) {
       suggestions.push({
         id: 'budget-persuade',
         label: 'Persuade client on budget',
         icon: 'cash',
-        type: 'budget-persuade',
+        type: 'budget-persuade'
       });
     }
-    
+
     if (combinedText.includes('understand') || combinedText.includes('explain') || combinedText.includes('clarify')) {
       suggestions.push({
         id: 'understand-client',
         label: 'Understand client professionally',
         icon: 'person',
-        type: 'understand-client',
+        type: 'understand-client'
       });
     }
-    
+
     // Add more general suggestions to reach at least 5
-    if (!suggestions.find(s => s.id === 'next-message')) {
+    if (!suggestions.find((s) => s.id === 'next-message')) {
       suggestions.push({
         id: 'next-message',
         label: 'Generate Next Message',
         icon: 'chatbubble-ellipses',
-        type: 'next-message',
+        type: 'next-message'
       });
     }
-    
-    if (!suggestions.find(s => s.id === 'explain-task')) {
+
+    if (!suggestions.find((s) => s.id === 'explain-task')) {
       suggestions.push({
         id: 'explain-task',
         label: 'Explain Task',
         icon: 'information-circle',
-        type: 'explain-task',
+        type: 'explain-task'
       });
     }
-    
-    if (!suggestions.find(s => s.id === 'generate-offer')) {
+
+    if (!suggestions.find((s) => s.id === 'generate-offer')) {
       suggestions.push({
         id: 'generate-offer',
         label: 'Generate Offer',
         icon: 'briefcase',
-        type: 'generate-offer',
+        type: 'generate-offer'
       });
     }
-    
-    if (!suggestions.find(s => s.id === 'professional-response')) {
+
+    if (!suggestions.find((s) => s.id === 'professional-response')) {
       suggestions.push({
         id: 'professional-response',
         label: 'Professional Response',
         icon: 'chatbubble',
-        type: 'professional-response',
+        type: 'professional-response'
       });
     }
-    
-    if (!suggestions.find(s => s.id === 'follow-up')) {
+
+    if (!suggestions.find((s) => s.id === 'follow-up')) {
       suggestions.push({
         id: 'follow-up',
         label: 'Follow-up Message',
         icon: 'arrow-forward-circle',
-        type: 'follow-up',
+        type: 'follow-up'
       });
     }
-    
+
     // Always ensure we have at least 5 suggestions
     const defaultSuggestions = [
-      { id: 'general-response', label: 'Generate Response', icon: 'chatbubble-ellipses', type: 'general' },
-      { id: 'thank-you', label: 'Thank You Message', icon: 'heart', type: 'thank-you' },
-      { id: 'clarification', label: 'Ask for Clarification', icon: 'help-circle', type: 'clarification' },
-      { id: 'greeting', label: 'Greeting Message', icon: 'hand-right', type: 'greeting' },
-      { id: 'closing', label: 'Closing Message', icon: 'checkmark-done', type: 'closing' },
-    ];
-    
+    { id: 'general-response', label: 'Generate Response', icon: 'chatbubble-ellipses', type: 'general' },
+    { id: 'thank-you', label: 'Thank You Message', icon: 'heart', type: 'thank-you' },
+    { id: 'clarification', label: 'Ask for Clarification', icon: 'help-circle', type: 'clarification' },
+    { id: 'greeting', label: 'Greeting Message', icon: 'hand-right', type: 'greeting' },
+    { id: 'closing', label: 'Closing Message', icon: 'checkmark-done', type: 'closing' }];
+
+
     // Add default suggestions if we still don't have 5
     let defaultIndex = 0;
     while (suggestions.length < 5 && defaultIndex < defaultSuggestions.length) {
       const defaultSuggestion = defaultSuggestions[defaultIndex];
-      if (!suggestions.find(s => s.id === defaultSuggestion.id)) {
+      if (!suggestions.find((s) => s.id === defaultSuggestion.id)) {
         suggestions.push(defaultSuggestion);
       }
       defaultIndex++;
     }
-    
+
     // Return suggestions (should have at least 5 after the while loop)
     return suggestions;
   };
@@ -1161,22 +1161,22 @@ Example (return exactly this format, no other text):
     switch (type) {
       case 'task-update':
         prompt =
-          'Write a concise delivery/update message for the buyer after finishing their task. Reference what was completed. Output only the paste-ready Fiverr message.';
+        'Write a concise delivery/update message for the buyer after finishing their task. Reference what was completed. Output only the paste-ready Fiverr message.';
         break;
       case 'budget-persuade':
         prompt =
-          'Write a natural pricing discussion reply that explains value without sounding salesy. Output only the paste-ready Fiverr message.';
+        'Write a natural pricing discussion reply that explains value without sounding salesy. Output only the paste-ready Fiverr message.';
         break;
       case 'understand-client':
         prompt = `Based on the conversation history with this client and my AI chat messages: ${recentAIChat.map((m) => m?.text || '').join(' ')}, briefly summarize the client's needs, preferences, and communication style.`;
         break;
       case 'thank-you':
         prompt =
-          'Write a short, warm thank-you message for this buyer. Output only the paste-ready Fiverr message.';
+        'Write a short, warm thank-you message for this buyer. Output only the paste-ready Fiverr message.';
         break;
       case 'closing':
         prompt =
-          'Write a short professional closing message for this buyer. Output only the paste-ready Fiverr message.';
+        'Write a short professional closing message for this buyer. Output only the paste-ready Fiverr message.';
         break;
       default:
         prompt = `Write a natural Fiverr reply based on the recent conversation: ${recentMessages.map((m) => m?.text || m?.content || '').join(' ')}. Output only the paste-ready message.`;
@@ -1197,15 +1197,15 @@ Example (return exactly this format, no other text):
       const historyForApi = chatMessages.map((m) => ({
         sender: m.sender === 'ai' ? 'assistant' : 'user',
         text: m.text,
-        time: m.time,
+        time: m.time
       }));
 
       const allFiverrMessages = Array.isArray(messages) ? messages : [];
       const presetKind = OPTIONS_TYPE_TO_PRESET[selectedMessageType];
-      console.log(
-        `[AIChatTab] Options modal AI with ${allFiverrMessages.length} Fiverr messages` +
-          (presetKind ? ` (preset: ${presetKind})` : ''),
-      );
+
+
+
+
 
       const aiText = await getAiChatResponse({
         presetKind: presetKind || undefined,
@@ -1213,12 +1213,12 @@ Example (return exactly this format, no other text):
         client,
         messages: allFiverrMessages,
         chatHistory: historyForApi,
-        userProfile,
+        userProfile
       });
 
       setOptionsModalInputText(aiText);
     } catch (error) {
-      console.error('Options modal AI error:', error);
+
       Alert.alert('Error', error.message || 'Failed to generate response. Please try again.');
     } finally {
       setOptionsModalLoading(false);
@@ -1231,7 +1231,7 @@ Example (return exactly this format, no other text):
       Alert.alert('Error', 'No message to use');
       return;
     }
-    
+
     // Set the input text in main chat and close modal
     setInputText(optionsModalInputText);
     setIsOptionsModalVisible(false);
@@ -1249,63 +1249,63 @@ Example (return exactly this format, no other text):
       'Clear AI Chat Context',
       'Clear all AI chat messages for this client? The Fiverr conversation stays unchanged.',
       [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const clientId = getClientId();
-              console.log('[AIChatTab] Starting to clear chat history for client:', clientId);
-              
-              // Set clearing flag to prevent saves and loads during clearing
-              isClearingRef.current = true;
-              
-              // Clear state IMMEDIATELY - this updates the UI right away
-              setChatMessages([]);
-              setSuggestedPrompts({});
-              setAiSuggestedActions([]);
-              
-              // Update previousClientId to current to prevent reload effect from triggering
-              setPreviousClientId(clientId);
-              
-              // Clear from storage
-              const cleared = await clearAIChatHistory(clientId);
-              console.log('[AIChatTab] Storage clear result:', cleared);
-              
-              // Wait a bit to ensure storage operation completes and any pending saves are cancelled
-              await new Promise(resolve => setTimeout(resolve, 800));
-              
-              // Reset clearing flag after ensuring all operations are complete
-              isClearingRef.current = false;
-              
-              // Verify it was actually cleared by checking storage
-              const verifyHistory = await loadAIChatHistory(clientId);
-              console.log('[AIChatTab] Verification - remaining history length:', verifyHistory?.length || 0);
-              
-              if (cleared && (!verifyHistory || verifyHistory.length === 0)) {
-                console.log('[AIChatTab] Successfully cleared chat history for client:', clientId);
-              } else if (cleared) {
-                // Storage said it cleared but verification shows data still exists
-                console.warn('[AIChatTab] Clear reported success but verification shows data still exists');
-                // Try clearing again
-                await clearAIChatHistory(clientId);
-              } else {
-                console.warn('[AIChatTab] Storage clear returned false for client:', clientId);
-                // Try clearing again
-                await clearAIChatHistory(clientId);
-              }
-            } catch (error) {
-              console.error('[AIChatTab] Error clearing chat history:', error);
-              // State is already cleared, just reset the flag
-              isClearingRef.current = false;
-            }
-          },
-        },
-      ]
+      {
+        text: 'Cancel',
+        style: 'cancel'
+      },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const clientId = getClientId();
+
+
+            // Set clearing flag to prevent saves and loads during clearing
+            isClearingRef.current = true;
+
+            // Clear state IMMEDIATELY - this updates the UI right away
+            setChatMessages([]);
+            setSuggestedPrompts({});
+            setAiSuggestedActions([]);
+
+            // Update previousClientId to current to prevent reload effect from triggering
+            setPreviousClientId(clientId);
+
+            // Clear from storage
+            const cleared = await clearAIChatHistory(clientId);
+
+
+            // Wait a bit to ensure storage operation completes and any pending saves are cancelled
+            await new Promise((resolve) => setTimeout(resolve, 800));
+
+            // Reset clearing flag after ensuring all operations are complete
+            isClearingRef.current = false;
+
+            // Verify it was actually cleared by checking storage
+            const verifyHistory = await loadAIChatHistory(clientId);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          } catch (error) {
+
+            // State is already cleared, just reset the flag
+            isClearingRef.current = false;
+          }
+        }
+      }]
+
     );
   };
 
@@ -1315,132 +1315,132 @@ Example (return exactly this format, no other text):
     return (
       <View key={index} style={styles.aiMessageContainer}>
         <View style={styles.aiMessageBubble}>
-          {isEditing ? (
-            <View style={styles.editContainer}>
+          {isEditing ?
+          <View style={styles.editContainer}>
               <TextInput
-                style={styles.editInput}
-                value={editedText}
-                onChangeText={setEditedText}
-                multiline
-                autoFocus
-                placeholderTextColor={colors.text.secondary}
-              />
+              style={styles.editInput}
+              value={editedText}
+              onChangeText={setEditedText}
+              multiline
+              autoFocus
+              placeholderTextColor={colors.text.secondary} />
+            
               <View style={styles.editActions}>
                 <TouchableOpacity
-                  style={[styles.editButton, styles.saveButton]}
-                  onPress={() => handleSaveEdit(index)}
-                >
+                style={[styles.editButton, styles.saveButton]}
+                onPress={() => handleSaveEdit(index)}>
+                
                   <Ionicons name="checkmark" size={18} color={colors.text.white} />
                   <Text style={styles.editButtonText}>Save</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.editButton, styles.cancelButton]}
-                  onPress={handleCancelEdit}
-                >
+                style={[styles.editButton, styles.cancelButton]}
+                onPress={handleCancelEdit}>
+                
                   <Ionicons name="close" size={18} color={colors.text.white} />
                   <Text style={styles.editButtonText}>Cancel</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          ) : (
-            <>
+            </View> :
+
+          <>
               <Text style={styles.aiMessageText}>{message.text || message.content}</Text>
-              {message.time && (
-                <Text style={styles.aiMessageTime}>{formatTime(message.time)}</Text>
-              )}
+              {message.time &&
+            <Text style={styles.aiMessageTime}>{formatTime(message.time)}</Text>
+            }
               <View style={styles.aiMessageActions}>
                 <TouchableOpacity
-                  style={styles.aiActionButton}
-                  onPress={() => handleCopyMessage(message.text || message.content)}
-                >
+                style={styles.aiActionButton}
+                onPress={() => handleCopyMessage(message.text || message.content)}>
+                
                   <Ionicons name="copy-outline" size={16} color={colors.text.secondary} />
                   <Text style={styles.aiActionButtonText}>Copy</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.aiActionButton}
-                  onPress={() => handleStartEdit(index, message.text || message.content)}
-                >
+                style={styles.aiActionButton}
+                onPress={() => handleStartEdit(index, message.text || message.content)}>
+                
                   <Ionicons name="create-outline" size={16} color={colors.text.secondary} />
                   <Text style={styles.aiActionButtonText}>Edit</Text>
                 </TouchableOpacity>
-                {sendingToClient && sendingMessageText === (message.text || message.content) ? (
-                  <TouchableOpacity
-                    style={[styles.aiActionButton, styles.stopActionButton]}
-                    onPress={handleStopSending}
-                  >
+                {sendingToClient && sendingMessageText === (message.text || message.content) ?
+              <TouchableOpacity
+                style={[styles.aiActionButton, styles.stopActionButton]}
+                onPress={handleStopSending}>
+                
                     <Ionicons name="stop" size={16} color={colors.text.white} />
                     <Text style={[styles.aiActionButtonText, styles.stopActionButtonText]}>Stop</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    style={[styles.aiActionButton, styles.sendActionButton]}
-                    onPress={() => handleSendToClient(message.text || message.content)}
-                    disabled={sendingToClient}
-                  >
+                  </TouchableOpacity> :
+
+              <TouchableOpacity
+                style={[styles.aiActionButton, styles.sendActionButton]}
+                onPress={() => handleSendToClient(message.text || message.content)}
+                disabled={sendingToClient}>
+                
                     <Ionicons name="send-outline" size={16} color={colors.text.white} />
                     <Text style={[styles.aiActionButtonText, styles.sendActionButtonText]}>Send</Text>
                   </TouchableOpacity>
-                )}
+              }
               </View>
               {/* Suggested Prompts */}
-              {suggestedPrompts[index] && suggestedPrompts[index].length > 0 && (
-                <View style={styles.suggestedPromptsContainer}>
+              {suggestedPrompts[index] && suggestedPrompts[index].length > 0 &&
+            <View style={styles.suggestedPromptsContainer}>
                   <Text style={styles.suggestedPromptsTitle}>Suggested:</Text>
                   <View style={styles.suggestedPromptsList}>
-                    {suggestedPrompts[index].map((prompt, promptIndex) => (
-                      <TouchableOpacity
-                        key={promptIndex}
-                        style={styles.suggestedPromptButton}
-                        onPress={() => handleSuggestedPrompt(prompt)}
-                        disabled={isLoading}
-                      >
+                    {suggestedPrompts[index].map((prompt, promptIndex) =>
+                <TouchableOpacity
+                  key={promptIndex}
+                  style={styles.suggestedPromptButton}
+                  onPress={() => handleSuggestedPrompt(prompt)}
+                  disabled={isLoading}>
+                  
                         <Text style={styles.suggestedPromptText}>{prompt}</Text>
                       </TouchableOpacity>
-                    ))}
+                )}
                   </View>
                 </View>
-              )}
+            }
             </>
-          )}
+          }
         </View>
-      </View>
-    );
+      </View>);
+
   };
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 215 : 300}
-    >
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 215 : 300}>
+      
       <View
-        style={[styles.chatHeader, { paddingHorizontal: messageHorizontalPadding }]}
-      >
+        style={[styles.chatHeader, { paddingHorizontal: messageHorizontalPadding }]}>
+        
         <Text style={styles.chatHeaderTitle}>AI Assistant</Text>
         <TouchableOpacity
           style={[
-            styles.clearContextButton,
-            chatMessages.length === 0 && styles.clearContextButtonDisabled,
-          ]}
+          styles.clearContextButton,
+          chatMessages.length === 0 && styles.clearContextButtonDisabled]
+          }
           onPress={handleClearChatHistory}
           disabled={chatMessages.length === 0}
-          accessibilityLabel="Clear AI chat context"
-        >
+          accessibilityLabel="Clear AI chat context">
+          
           <Ionicons
             name="trash-outline"
             size={16}
             color={
-              chatMessages.length === 0
-                ? colors.text.muted
-                : colors.accent.error || '#dc3545'
-            }
-          />
+            chatMessages.length === 0 ?
+            colors.text.muted :
+            colors.accent.error || '#dc3545'
+            } />
+          
           <Text
             style={[
-              styles.clearContextButtonText,
-              chatMessages.length === 0 && styles.clearContextButtonTextDisabled,
-            ]}
-          >
+            styles.clearContextButtonText,
+            chatMessages.length === 0 && styles.clearContextButtonTextDisabled]
+            }>
+            
             Clear context
           </Text>
         </TouchableOpacity>
@@ -1451,115 +1451,115 @@ Example (return exactly this format, no other text):
         style={styles.messagesScroll}
         contentContainerStyle={styles.messagesContent}
         showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {chatMessages.length === 0 ? (
-          <View style={styles.emptyState}>
+        keyboardShouldPersistTaps="handled">
+        
+        {chatMessages.length === 0 ?
+        <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>Start a Conversation</Text>
             <Text style={styles.emptyText}>
               Ask me anything about {client?.name || 'this client'} or get help with your tasks.
             </Text>
 
-            {(aiSuggestedActions.length > 0 || isGeneratingActions) && (
-                  <View style={styles.aiSuggestedActionsContainer}>
+            {(aiSuggestedActions.length > 0 || isGeneratingActions) &&
+          <View style={styles.aiSuggestedActionsContainer}>
                     <Text style={styles.aiSuggestedActionsTitle}>
                       {isGeneratingActions ? 'Analyzing conversation...' : 'Suggested Actions'}
                     </Text>
-                    {isGeneratingActions ? (
-                      <View style={styles.aiSuggestedActionsLoading}>
+                    {isGeneratingActions ?
+            <View style={styles.aiSuggestedActionsLoading}>
                         <ActivityIndicator size="small" color={colors.accent.primary} />
                         <Text style={styles.aiSuggestedActionsLoadingText}>Generating suggestions...</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.aiSuggestedActionsList}>
-                        {aiSuggestedActions.map((action) => (
-                          <TouchableOpacity
-                            key={action.id}
-                            style={[styles.aiSuggestedActionButton, styles[action.style]]}
-                            onPress={action.handler}
-                            disabled={isLoading}
-                          >
+                      </View> :
+
+            <View style={styles.aiSuggestedActionsList}>
+                        {aiSuggestedActions.map((action) =>
+              <TouchableOpacity
+                key={action.id}
+                style={[styles.aiSuggestedActionButton, styles[action.style]]}
+                onPress={action.handler}
+                disabled={isLoading}>
+                
                             <Ionicons name={action.icon} size={20} color={colors.text.white} />
                             <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
                           </TouchableOpacity>
-                        ))}
+              )}
                       </View>
-                    )}
+            }
                   </View>
-                )}
+          }
             {/* Default buttons when no messages */}
             {!isLoading && renderQuickActions()}
-          </View>
-        ) : (
-          <>
+          </View> :
+
+        <>
             {chatMessages.map((message, index) => {
-              // Render AI messages with edit/copy functionality
-              if (message.sender === 'ai') {
-                return renderAIMessage(message, index);
-              }
-              // Render user messages normally
-              return (
-                <MessageBubble
-                  key={index}
-                  message={message}
-                  isFromMe={true}
-                />
-              );
-            })}
-            {hasNoChatHistory && !isLoading && (
-              <>
+            // Render AI messages with edit/copy functionality
+            if (message.sender === 'ai') {
+              return renderAIMessage(message, index);
+            }
+            // Render user messages normally
+            return (
+              <MessageBubble
+                key={index}
+                message={message}
+                isFromMe={true} />);
+
+
+          })}
+            {hasNoChatHistory && !isLoading &&
+          <>
                 {renderQuickActions()}
                 {/* AI Suggested Action Buttons - Based on last messages */}
-                {(aiSuggestedActions.length > 0 || isGeneratingActions) && (
-                  <View style={styles.aiSuggestedActionsContainer}>
+                {(aiSuggestedActions.length > 0 || isGeneratingActions) &&
+            <View style={styles.aiSuggestedActionsContainer}>
                     <Text style={styles.aiSuggestedActionsTitle}>
                       {isGeneratingActions ? 'Analyzing conversation...' : 'Suggested Actions'}
                     </Text>
-                    {isGeneratingActions ? (
-                      <View style={styles.aiSuggestedActionsLoading}>
+                    {isGeneratingActions ?
+              <View style={styles.aiSuggestedActionsLoading}>
                         <ActivityIndicator size="small" color={colors.accent.primary} />
                         <Text style={styles.aiSuggestedActionsLoadingText}>Generating suggestions...</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.aiSuggestedActionsList}>
-                        {aiSuggestedActions.map((action) => (
-                          <TouchableOpacity
-                            key={action.id}
-                            style={[styles.aiSuggestedActionButton, styles[action.style]]}
-                            onPress={action.handler}
-                            disabled={isLoading}
-                          >
+                      </View> :
+
+              <View style={styles.aiSuggestedActionsList}>
+                        {aiSuggestedActions.map((action) =>
+                <TouchableOpacity
+                  key={action.id}
+                  style={[styles.aiSuggestedActionButton, styles[action.style]]}
+                  onPress={action.handler}
+                  disabled={isLoading}>
+                  
                             <Ionicons name={action.icon} size={20} color={colors.text.white} />
                             <Text style={styles.aiSuggestedActionText}>{action.label}</Text>
                           </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
-                  </View>
                 )}
+                      </View>
+              }
+                  </View>
+            }
               </>
-            )}
+          }
           </>
-        )}
-        {isLoading && (
-          <View style={styles.loadingContainer}>
+        }
+        {isLoading &&
+        <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={colors.accent.primary} />
             <Text style={styles.loadingText}>AI is thinking...</Text>
           </View>
-        )}
+        }
       </ScrollView>
 
       {!hasNoChatHistory && !isLoading ? renderCompactGenerators() : null}
 
       <View
-        style={[styles.inputContainer, { paddingHorizontal: messageHorizontalPadding }]}
-      >
+        style={[styles.inputContainer, { paddingHorizontal: messageHorizontalPadding }]}>
+        
         <View
           style={[
-            styles.inputRow,
-            inputHeight > INPUT_MIN_HEIGHT && styles.inputRowExpanded,
-          ]}
-        >
+          styles.inputRow,
+          inputHeight > INPUT_MIN_HEIGHT && styles.inputRowExpanded]
+          }>
+          
           <View style={styles.inputFieldWrap}>
             <TextInput
               style={[styles.messageInput, { height: inputHeight }]}
@@ -1572,31 +1572,31 @@ Example (return exactly this format, no other text):
               onContentSizeChange={handleInputContentSizeChange}
               multiline
               maxLength={1000}
-              scrollEnabled={inputHeight >= INPUT_MAX_HEIGHT}
-            />
+              scrollEnabled={inputHeight >= INPUT_MAX_HEIGHT} />
+            
           </View>
           <View style={styles.inputActions}>
-            {!isInputFocused ? (
-              <TouchableOpacity
-                style={styles.iconButton}
-                onPress={() => setIsOptionsModalVisible(true)}
-              >
+            {!isInputFocused ?
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={() => setIsOptionsModalVisible(true)}>
+              
                 <Ionicons name="options-outline" size={18} color={colors.text.secondary} />
-              </TouchableOpacity>
-            ) : null}
+              </TouchableOpacity> :
+            null}
             <TouchableOpacity
               style={[
-                styles.sendButton,
-                (!inputText.trim() || isLoading) && styles.sendButtonDisabled,
-              ]}
+              styles.sendButton,
+              (!inputText.trim() || isLoading) && styles.sendButtonDisabled]
+              }
               onPress={() => handleSendMessage()}
-              disabled={!inputText.trim() || isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color={colors.text.white} />
-              ) : (
-                <Ionicons name="arrow-up" size={18} color={colors.text.white} />
-              )}
+              disabled={!inputText.trim() || isLoading}>
+              
+              {isLoading ?
+              <ActivityIndicator size="small" color={colors.text.white} /> :
+
+              <Ionicons name="arrow-up" size={18} color={colors.text.white} />
+              }
             </TouchableOpacity>
           </View>
         </View>
@@ -1607,18 +1607,18 @@ Example (return exactly this format, no other text):
         visible={isOptionsModalVisible}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setIsOptionsModalVisible(false)}
-      >
+        onRequestClose={() => setIsOptionsModalVisible(false)}>
+        
         <TouchableOpacity
           style={styles.optionsModalOverlay}
           activeOpacity={1}
-          onPress={() => setIsOptionsModalVisible(false)}
-        >
+          onPress={() => setIsOptionsModalVisible(false)}>
+          
           <TouchableOpacity
             activeOpacity={1}
             onPress={(e) => e.stopPropagation()}
-            style={styles.optionsModalWrapper}
-          >
+            style={styles.optionsModalWrapper}>
+            
             <View style={styles.optionsModalContainer}>
               <View style={styles.optionsModalContent}>
                 {/* Header */}
@@ -1626,8 +1626,8 @@ Example (return exactly this format, no other text):
                   <Text style={styles.optionsModalTitle}>AI Message Options</Text>
                   <TouchableOpacity
                     onPress={() => setIsOptionsModalVisible(false)}
-                    style={styles.optionsModalCloseButton}
-                  >
+                    style={styles.optionsModalCloseButton}>
+                    
                     <Ionicons name="close" size={24} color={colors.text.primary} />
                   </TouchableOpacity>
                 </View>
@@ -1638,36 +1638,36 @@ Example (return exactly this format, no other text):
                   showsVerticalScrollIndicator={true}
                   keyboardShouldPersistTaps="handled"
                   nestedScrollEnabled={true}
-                  bounces={true}
-                >
+                  bounces={true}>
+                  
                   {/* AI Suggested Actions */}
                   <View style={styles.optionsModalSection}>
                     <Text style={styles.optionsModalSectionTitle}>AI Suggested Actions</Text>
                     <View style={styles.optionsModalSuggestionsContainer}>
-                      {generateOptionsModalSuggestions().map((suggestion) => (
-                        <TouchableOpacity
-                          key={suggestion.id}
-                          style={[
-                            styles.optionsModalSuggestionButton,
-                            selectedMessageType === suggestion.type && styles.optionsModalSuggestionButtonActive,
-                          ]}
-                          onPress={() => handleMessageTypeSelect(suggestion.type)}
-                        >
+                      {generateOptionsModalSuggestions().map((suggestion) =>
+                      <TouchableOpacity
+                        key={suggestion.id}
+                        style={[
+                        styles.optionsModalSuggestionButton,
+                        selectedMessageType === suggestion.type && styles.optionsModalSuggestionButtonActive]
+                        }
+                        onPress={() => handleMessageTypeSelect(suggestion.type)}>
+                        
                           <Ionicons
-                            name={suggestion.icon}
-                            size={18}
-                            color={selectedMessageType === suggestion.type ? colors.text.white : colors.text.primary}
-                          />
+                          name={suggestion.icon}
+                          size={18}
+                          color={selectedMessageType === suggestion.type ? colors.text.white : colors.text.primary} />
+                        
                           <Text
-                            style={[
-                              styles.optionsModalSuggestionText,
-                              selectedMessageType === suggestion.type && styles.optionsModalSuggestionTextActive,
-                            ]}
-                          >
+                          style={[
+                          styles.optionsModalSuggestionText,
+                          selectedMessageType === suggestion.type && styles.optionsModalSuggestionTextActive]
+                          }>
+                          
                             {suggestion.label}
                           </Text>
                         </TouchableOpacity>
-                      ))}
+                      )}
                     </View>
                   </View>
 
@@ -1677,66 +1677,66 @@ Example (return exactly this format, no other text):
                     <View style={styles.optionsModalMessageTypesContainer}>
                       <TouchableOpacity
                         style={[
-                          styles.optionsModalMessageTypeButton,
-                          selectedMessageType === 'task-update' && styles.optionsModalMessageTypeButtonActive,
-                        ]}
-                        onPress={() => handleMessageTypeSelect('task-update')}
-                      >
+                        styles.optionsModalMessageTypeButton,
+                        selectedMessageType === 'task-update' && styles.optionsModalMessageTypeButtonActive]
+                        }
+                        onPress={() => handleMessageTypeSelect('task-update')}>
+                        
                         <Ionicons
                           name="checkmark-circle"
                           size={20}
-                          color={selectedMessageType === 'task-update' ? colors.text.white : colors.text.primary}
-                        />
+                          color={selectedMessageType === 'task-update' ? colors.text.white : colors.text.primary} />
+                        
                         <Text
                           style={[
-                            styles.optionsModalMessageTypeText,
-                            selectedMessageType === 'task-update' && styles.optionsModalMessageTypeTextActive,
-                          ]}
-                        >
+                          styles.optionsModalMessageTypeText,
+                          selectedMessageType === 'task-update' && styles.optionsModalMessageTypeTextActive]
+                          }>
+                          
                           Update after task done
                         </Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
                         style={[
-                          styles.optionsModalMessageTypeButton,
-                          selectedMessageType === 'budget-persuade' && styles.optionsModalMessageTypeButtonActive,
-                        ]}
-                        onPress={() => handleMessageTypeSelect('budget-persuade')}
-                      >
+                        styles.optionsModalMessageTypeButton,
+                        selectedMessageType === 'budget-persuade' && styles.optionsModalMessageTypeButtonActive]
+                        }
+                        onPress={() => handleMessageTypeSelect('budget-persuade')}>
+                        
                         <Ionicons
                           name="cash"
                           size={20}
-                          color={selectedMessageType === 'budget-persuade' ? colors.text.white : colors.text.primary}
-                        />
+                          color={selectedMessageType === 'budget-persuade' ? colors.text.white : colors.text.primary} />
+                        
                         <Text
                           style={[
-                            styles.optionsModalMessageTypeText,
-                            selectedMessageType === 'budget-persuade' && styles.optionsModalMessageTypeTextActive,
-                          ]}
-                        >
+                          styles.optionsModalMessageTypeText,
+                          selectedMessageType === 'budget-persuade' && styles.optionsModalMessageTypeTextActive]
+                          }>
+                          
                           Impress client to agree with my budget
                         </Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
                         style={[
-                          styles.optionsModalMessageTypeButton,
-                          selectedMessageType === 'understand-client' && styles.optionsModalMessageTypeButtonActive,
-                        ]}
-                        onPress={() => handleMessageTypeSelect('understand-client')}
-                      >
+                        styles.optionsModalMessageTypeButton,
+                        selectedMessageType === 'understand-client' && styles.optionsModalMessageTypeButtonActive]
+                        }
+                        onPress={() => handleMessageTypeSelect('understand-client')}>
+                        
                         <Ionicons
                           name="person"
                           size={20}
-                          color={selectedMessageType === 'understand-client' ? colors.text.white : colors.text.primary}
-                        />
+                          color={selectedMessageType === 'understand-client' ? colors.text.white : colors.text.primary} />
+                        
                         <Text
                           style={[
-                            styles.optionsModalMessageTypeText,
-                            selectedMessageType === 'understand-client' && styles.optionsModalMessageTypeTextActive,
-                          ]}
-                        >
+                          styles.optionsModalMessageTypeText,
+                          selectedMessageType === 'understand-client' && styles.optionsModalMessageTypeTextActive]
+                          }>
+                          
                           Understand client professionally
                         </Text>
                       </TouchableOpacity>
@@ -1754,43 +1754,43 @@ Example (return exactly this format, no other text):
                       onChangeText={setOptionsModalInputText}
                       multiline
                       numberOfLines={6}
-                      textAlignVertical="top"
-                    />
+                      textAlignVertical="top" />
+                    
                   </View>
 
                   {/* Action Buttons */}
                   <View style={styles.optionsModalActionsContainer}>
                     <TouchableOpacity
                       style={[
-                        styles.optionsModalActionButton,
-                        styles.optionsModalGenerateButton,
-                        (!optionsModalInputText.trim() || optionsModalLoading) && styles.optionsModalActionButtonDisabled,
-                      ]}
+                      styles.optionsModalActionButton,
+                      styles.optionsModalGenerateButton,
+                      (!optionsModalInputText.trim() || optionsModalLoading) && styles.optionsModalActionButtonDisabled]
+                      }
                       onPress={handleOptionsModalSend}
-                      disabled={!optionsModalInputText.trim() || optionsModalLoading}
-                    >
-                      {optionsModalLoading ? (
-                        <>
+                      disabled={!optionsModalInputText.trim() || optionsModalLoading}>
+                      
+                      {optionsModalLoading ?
+                      <>
                           <ActivityIndicator size="small" color={colors.text.white} />
                           <Text style={styles.optionsModalActionButtonText}>Generating...</Text>
-                        </>
-                      ) : (
-                        <>
+                        </> :
+
+                      <>
                           <Ionicons name="sparkles" size={18} color={colors.text.white} />
                           <Text style={styles.optionsModalActionButtonText}>Generate with AI</Text>
                         </>
-                      )}
+                      }
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       style={[
-                        styles.optionsModalActionButton,
-                        styles.optionsModalUseButton,
-                        !optionsModalInputText.trim() && styles.optionsModalActionButtonDisabled,
-                      ]}
+                      styles.optionsModalActionButton,
+                      styles.optionsModalUseButton,
+                      !optionsModalInputText.trim() && styles.optionsModalActionButtonDisabled]
+                      }
                       onPress={handleUseOptionsModalMessage}
-                      disabled={!optionsModalInputText.trim()}
-                    >
+                      disabled={!optionsModalInputText.trim()}>
+                      
                       <Ionicons name="send" size={18} color={colors.text.white} />
                       <Text style={styles.optionsModalActionButtonText}>Use in Chat</Text>
                     </TouchableOpacity>
@@ -1801,13 +1801,13 @@ Example (return exactly this format, no other text):
           </TouchableOpacity>
         </TouchableOpacity>
       </Modal>
-    </KeyboardAvoidingView>
-  );
+    </KeyboardAvoidingView>);
+
 };
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flex: 1
   },
   chatHeader: {
     flexDirection: 'row',
@@ -1816,12 +1816,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
-    backgroundColor: colors.background.primary,
+    backgroundColor: colors.background.primary
   },
   chatHeaderTitle: {
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.semibold,
-    color: colors.text.secondary,
+    color: colors.text.secondary
   },
   clearContextButton: {
     flexDirection: 'row',
@@ -1832,68 +1832,68 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
     borderWidth: 1,
     borderColor: colors.border.light,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.background.card
   },
   clearContextButtonDisabled: {
-    opacity: 0.55,
+    opacity: 0.55
   },
   clearContextButtonText: {
     fontSize: typography.sizes.xs,
     fontWeight: typography.weights.medium,
-    color: colors.accent.error || '#dc3545',
+    color: colors.accent.error || '#dc3545'
   },
   clearContextButtonTextDisabled: {
-    color: colors.text.muted,
+    color: colors.text.muted
   },
   messagesScroll: {
-    flex: 1,
+    flex: 1
   },
   messagesContent: {
     paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.lg
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     // paddingVertical: spacing.xxxl * 2,
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: spacing.xl
   },
   emptyIcon: {
     fontSize: 64,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.lg
   },
   emptyTitle: {
     fontSize: typography.sizes.xl,
     fontWeight: typography.weights.semibold,
     color: colors.text.primary,
-    marginBottom: spacing.md,
+    marginBottom: spacing.md
   },
   emptyText: {
     fontSize: typography.sizes.base,
     color: colors.text.muted,
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 24
   },
   loadingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.md,
-    marginTop: spacing.sm,
+    marginTop: spacing.sm
   },
   loadingText: {
     marginLeft: spacing.sm,
     fontSize: typography.sizes.sm,
     color: colors.text.secondary,
-    fontStyle: 'italic',
+    fontStyle: 'italic'
   },
   inputContainer: {
     paddingVertical: spacing.sm,
     backgroundColor: colors.background.secondary,
     borderTopWidth: 1,
     borderTopColor: colors.border.light,
-    justifyContent: 'center',
+    justifyContent: 'center'
   },
   inputRow: {
     flexDirection: 'row',
@@ -1906,28 +1906,28 @@ const styles = StyleSheet.create({
     paddingLeft: spacing.md,
     paddingRight: spacing.xs,
     paddingVertical: INPUT_ROW_VERTICAL_PADDING,
-    minHeight: INPUT_ROW_MIN_HEIGHT,
+    minHeight: INPUT_ROW_MIN_HEIGHT
   },
   inputRowExpanded: {
-    alignItems: 'flex-end',
+    alignItems: 'flex-end'
   },
   inputFieldWrap: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'center'
   },
   inputActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
     height: 32,
-    justifyContent: 'center',
+    justifyContent: 'center'
   },
   iconButton: {
     width: 32,
     height: 32,
     borderRadius: borderRadius.sm,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'center'
   },
   messageInput: {
     width: '100%',
@@ -1939,17 +1939,17 @@ const styles = StyleSheet.create({
     margin: 0,
     ...(Platform.OS === 'android' ? { includeFontPadding: false, textAlignVertical: 'top' } : {}),
     ...(Platform.OS === 'ios' ? { paddingVertical: 0 } : {}),
-    ...(Platform.OS === 'web'
-      ? {
-          outlineStyle: 'none',
-          borderWidth: 0,
-          resize: 'none',
-          overflow: 'hidden',
-          padding: 0,
-          lineHeight: `${INPUT_LINE_HEIGHT}px`,
-          boxSizing: 'border-box',
-        }
-      : {}),
+    ...(Platform.OS === 'web' ?
+    {
+      outlineStyle: 'none',
+      borderWidth: 0,
+      resize: 'none',
+      overflow: 'hidden',
+      padding: 0,
+      lineHeight: `${INPUT_LINE_HEIGHT}px`,
+      boxSizing: 'border-box'
+    } :
+    {})
   },
   sendButton: {
     width: 32,
@@ -1957,10 +1957,10 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.full,
     backgroundColor: colors.accent.primary,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'center'
   },
   sendButtonDisabled: {
-    opacity: 0.35,
+    opacity: 0.35
   },
   quickActionsContainer: {
     marginTop: spacing.xl,
@@ -1969,20 +1969,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.card,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: colors.border.light,
+    borderColor: colors.border.light
   },
   quickActionsTitle: {
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
     color: colors.text.primary,
     marginBottom: spacing.md,
-    textAlign: 'center',
+    textAlign: 'center'
   },
   quickActionsSubtitle: {
     fontSize: typography.sizes.sm,
     color: colors.text.secondary,
     textAlign: 'center',
-    marginBottom: spacing.md,
+    marginBottom: spacing.md
   },
   quickActionButton: {
     flexDirection: 'row',
@@ -1992,56 +1992,56 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
-    gap: spacing.sm,
+    gap: spacing.sm
   },
   nextMessageButton: {
-    backgroundColor: colors.accent.primary,
+    backgroundColor: colors.accent.primary
   },
   explainTaskButton: {
-    backgroundColor: colors.accent.info || '#3b82f6',
+    backgroundColor: colors.accent.info || '#3b82f6'
   },
   generateOfferButton: {
-    backgroundColor: colors.accent.success,
+    backgroundColor: colors.accent.success
   },
   generateFirstMessageButton: {
-    backgroundColor: colors.accent.warning || '#f59e0b',
+    backgroundColor: colors.accent.warning || '#f59e0b'
   },
   quotationButton: {
-    backgroundColor: '#0d9488',
+    backgroundColor: '#0d9488'
   },
   cursorPromptButton: {
-    backgroundColor: '#7c3aed',
+    backgroundColor: '#7c3aed'
   },
   chatgptPromptButton: {
-    backgroundColor: '#10a37f',
+    backgroundColor: '#10a37f'
   },
   clarifyButton: {
-    backgroundColor: '#64748b',
+    backgroundColor: '#64748b'
   },
   quickActionTextWrap: {
-    flex: 1,
+    flex: 1
   },
   quickActionText: {
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white,
+    color: colors.text.white
   },
   quickActionSubtitle: {
     fontSize: typography.sizes.xs || 12,
     color: 'rgba(255,255,255,0.85)',
-    marginTop: 2,
+    marginTop: 2
   },
   compactGeneratorsScroll: {
     maxHeight: 48,
     borderTopWidth: 1,
     borderTopColor: colors.border.light,
-    backgroundColor: colors.background.card,
+    backgroundColor: colors.background.card
   },
   compactGeneratorsContent: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     gap: spacing.sm,
-    alignItems: 'center',
+    alignItems: 'center'
   },
   compactGeneratorChip: {
     flexDirection: 'row',
@@ -2049,19 +2049,19 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderRadius: borderRadius.full || 999,
+    borderRadius: borderRadius.full || 999
   },
   compactGeneratorText: {
     fontSize: typography.sizes.sm,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white,
+    color: colors.text.white
   },
   customOfferContainer: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     backgroundColor: colors.background.card,
     borderTopWidth: 1,
-    borderTopColor: colors.border.light,
+    borderTopColor: colors.border.light
   },
   customOfferButton: {
     flexDirection: 'row',
@@ -2071,15 +2071,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
-    gap: spacing.sm,
+    gap: spacing.sm
   },
   customOfferButtonDisabled: {
-    opacity: 0.5,
+    opacity: 0.5
   },
   customOfferButtonText: {
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white,
+    color: colors.text.white
   },
   aiSuggestedActionsContainer: {
     marginTop: spacing.xl,
@@ -2088,17 +2088,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.card,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: colors.border.light,
+    borderColor: colors.border.light
   },
   aiSuggestedActionsTitle: {
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
     color: colors.text.primary,
     marginBottom: spacing.md,
-    textAlign: 'center',
+    textAlign: 'center'
   },
   aiSuggestedActionsList: {
-    gap: spacing.sm,
+    gap: spacing.sm
   },
   aiSuggestedActionButton: {
     flexDirection: 'row',
@@ -2108,30 +2108,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
-    gap: spacing.sm,
+    gap: spacing.sm
   },
   aiSuggestedActionText: {
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white,
+    color: colors.text.white
   },
   aiSuggestedActionsLoading: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: spacing.md,
-    gap: spacing.sm,
+    gap: spacing.sm
   },
   aiSuggestedActionsLoadingText: {
     fontSize: typography.sizes.sm,
     color: colors.text.secondary,
-    fontStyle: 'italic',
+    fontStyle: 'italic'
   },
   aiMessageContainer: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
     marginBottom: spacing.md,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.lg
   },
   aiMessageBubble: {
     maxWidth: '85%',
@@ -2141,19 +2141,19 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: borderRadius.sm,
     backgroundColor: colors.background.card,
     borderWidth: 1,
-    borderColor: colors.border.dark,
+    borderColor: colors.border.dark
   },
   aiMessageText: {
     fontSize: typography.sizes.base,
     color: colors.text.primary,
     lineHeight: 20,
-    marginBottom: spacing.xs / 2,
+    marginBottom: spacing.xs / 2
   },
   aiMessageTime: {
     fontSize: typography.sizes.xs,
     color: colors.text.secondary,
     alignSelf: 'flex-end',
-    marginTop: spacing.xs / 2,
+    marginTop: spacing.xs / 2
   },
   aiMessageActions: {
     flexDirection: 'row',
@@ -2162,7 +2162,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingTop: spacing.xs,
     borderTopWidth: 1,
-    borderTopColor: colors.border.light,
+    borderTopColor: colors.border.light
   },
   aiActionButton: {
     flexDirection: 'row',
@@ -2171,33 +2171,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     borderRadius: borderRadius.sm,
     backgroundColor: colors.background.secondary,
-    gap: spacing.xs / 2,
+    gap: spacing.xs / 2
   },
   aiActionButtonText: {
     fontSize: typography.sizes.xs,
     color: colors.text.secondary,
-    fontWeight: typography.weights.medium,
+    fontWeight: typography.weights.medium
   },
   sendActionButton: {
-    backgroundColor: colors.accent.success,
+    backgroundColor: colors.accent.success
   },
   sendActionButtonDisabled: {
-    opacity: 0.6,
+    opacity: 0.6
   },
   sendActionButtonText: {
-    color: colors.text.white,
+    color: colors.text.white
   },
   stopActionButton: {
-    backgroundColor: colors.accent.error || '#dc3545',
+    backgroundColor: colors.accent.error || '#dc3545'
   },
   stopActionButtonText: {
-    color: colors.text.white,
+    color: colors.text.white
   },
   editContainer: {
     width: '100%',
     alignSelf: 'stretch',
     marginHorizontal: -spacing.md, // Extend to bubble edges, accounting for bubble padding
-    minWidth: '80%',
+    minWidth: '80%'
   },
   editInput: {
     width: '100%',
@@ -2212,12 +2212,12 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     marginBottom: spacing.sm,
     minWidth: '70vw',
-    minHeight: 250,
+    minHeight: 250
   },
   editActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    gap: spacing.sm,
+    gap: spacing.sm
   },
   editButton: {
     flexDirection: 'row',
@@ -2225,35 +2225,35 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
     borderRadius: borderRadius.sm,
-    gap: spacing.xs / 2,
+    gap: spacing.xs / 2
   },
   saveButton: {
-    backgroundColor: colors.accent.success,
+    backgroundColor: colors.accent.success
   },
   cancelButton: {
-    backgroundColor: colors.accent.error || '#dc3545',
+    backgroundColor: colors.accent.error || '#dc3545'
   },
   editButtonText: {
     fontSize: typography.sizes.sm,
     color: colors.text.white,
-    fontWeight: typography.weights.semibold,
+    fontWeight: typography.weights.semibold
   },
   suggestedPromptsContainer: {
     marginTop: spacing.sm,
     paddingTop: spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: colors.border.light,
+    borderTopColor: colors.border.light
   },
   suggestedPromptsTitle: {
     fontSize: typography.sizes.xs,
     color: colors.text.secondary,
     marginBottom: spacing.xs,
-    fontWeight: typography.weights.medium,
+    fontWeight: typography.weights.medium
   },
   suggestedPromptsList: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.xs,
+    gap: spacing.xs
   },
   suggestedPromptButton: {
     paddingVertical: spacing.xs,
@@ -2261,29 +2261,29 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     backgroundColor: colors.background.secondary,
     borderWidth: 1,
-    borderColor: colors.border.dark,
+    borderColor: colors.border.dark
   },
   suggestedPromptText: {
     fontSize: typography.sizes.sm,
     color: colors.text.primary,
-    fontWeight: typography.weights.medium,
+    fontWeight: typography.weights.medium
   },
   // Options Modal Styles
   optionsModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'center'
   },
   optionsModalWrapper: {
     width: '90%',
     maxWidth: '95%',
     height: '85%',
-    maxHeight: '90%',
+    maxHeight: '90%'
   },
   optionsModalContainer: {
     width: '100%',
-    height: '100%',
+    height: '100%'
   },
   optionsModalContent: {
     flex: 1,
@@ -2294,7 +2294,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
     shadowRadius: 16,
-    elevation: 16,
+    elevation: 16
   },
   optionsModalHeader: {
     flexDirection: 'row',
@@ -2303,39 +2303,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.dark,
+    borderBottomColor: colors.border.dark
   },
   optionsModalTitle: {
     fontSize: typography.sizes.xl,
     fontWeight: typography.weights.bold,
-    color: colors.text.primary,
+    color: colors.text.primary
   },
   optionsModalCloseButton: {
     padding: spacing.xs,
-    borderRadius: borderRadius.sm,
+    borderRadius: borderRadius.sm
   },
   optionsModalScrollView: {
-    flex: 1,
+    flex: 1
   },
   optionsModalScrollContent: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     paddingBottom: spacing.xl,
-    flexGrow: 1,
+    flexGrow: 1
   },
   optionsModalSection: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.lg
   },
   optionsModalSectionTitle: {
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
     color: colors.text.primary,
-    marginBottom: spacing.md,
+    marginBottom: spacing.md
   },
   optionsModalSuggestionsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    gap: spacing.sm
   },
   optionsModalSuggestionButton: {
     flexDirection: 'row',
@@ -2346,24 +2346,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.secondary,
     borderWidth: 1,
     borderColor: colors.border.dark,
-    gap: spacing.xs,
+    gap: spacing.xs
   },
   optionsModalSuggestionButtonActive: {
     backgroundColor: colors.accent.primary,
-    borderColor: colors.accent.primary,
+    borderColor: colors.accent.primary
   },
   optionsModalSuggestionText: {
     fontSize: typography.sizes.sm,
     color: colors.text.primary,
     fontWeight: typography.weights.medium,
-        maxHeight: 40,
-      
+    maxHeight: 40
+
   },
   optionsModalSuggestionTextActive: {
-    color: colors.text.white,
+    color: colors.text.white
   },
   optionsModalMessageTypesContainer: {
-    gap: spacing.sm,
+    gap: spacing.sm
   },
   optionsModalMessageTypeButton: {
     flexDirection: 'row',
@@ -2374,20 +2374,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.secondary,
     borderWidth: 1,
     borderColor: colors.border.dark,
-    gap: spacing.sm,
+    gap: spacing.sm
   },
   optionsModalMessageTypeButtonActive: {
     backgroundColor: colors.accent.primary,
-    borderColor: colors.accent.primary,
+    borderColor: colors.accent.primary
   },
   optionsModalMessageTypeText: {
     fontSize: typography.sizes.base,
     color: colors.text.primary,
     fontWeight: typography.weights.medium,
-    flex: 1,
+    flex: 1
   },
   optionsModalMessageTypeTextActive: {
-    color: colors.text.white,
+    color: colors.text.white
   },
   optionsModalInput: {
     backgroundColor: colors.background.secondary,
@@ -2398,12 +2398,12 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     fontSize: typography.sizes.base,
     minHeight: 120,
-    textAlignVertical: 'top',
+    textAlignVertical: 'top'
   },
   optionsModalActionsContainer: {
     flexDirection: 'row',
     gap: spacing.md,
-    marginTop: spacing.md,
+    marginTop: spacing.md
   },
   optionsModalActionButton: {
     flex: 1,
@@ -2413,22 +2413,22 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.md,
     borderRadius: borderRadius.md,
-    gap: spacing.xs,
+    gap: spacing.xs
   },
   optionsModalGenerateButton: {
-    backgroundColor: colors.accent.primary,
+    backgroundColor: colors.accent.primary
   },
   optionsModalUseButton: {
-    backgroundColor: colors.accent.success,
+    backgroundColor: colors.accent.success
   },
   optionsModalActionButtonDisabled: {
-    opacity: 0.5,
+    opacity: 0.5
   },
   optionsModalActionButtonText: {
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white,
-  },
+    color: colors.text.white
+  }
 });
 
 export default AIChatTab;

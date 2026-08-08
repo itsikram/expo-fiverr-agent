@@ -35,12 +35,12 @@ export function shouldShowNotification(conversationId, selectedConversationId) {
   if (isAppInBackground()) {
     return true;
   }
-  
+
   // Show notification if conversation is not currently selected
   if (conversationId && selectedConversationId) {
     return conversationId !== selectedConversationId;
   }
-  
+
   // Show notification if no conversation is selected
   return !selectedConversationId;
 }
@@ -60,11 +60,11 @@ export async function showSmartMessageNotification({
   messageText,
   conversationId,
   username,
-  selectedConversationId,
+  selectedConversationId
 }) {
   // Check if notification should be shown
   if (!shouldShowNotification(conversationId || username, selectedConversationId)) {
-    console.log('[NotificationHelpers] Notification not shown - conversation is active');
+
     return null;
   }
 
@@ -74,7 +74,7 @@ export async function showSmartMessageNotification({
       clientName,
       messageText,
       conversationId,
-      username,
+      username
     });
 
     // Increment badge if configured
@@ -84,7 +84,7 @@ export async function showSmartMessageNotification({
 
     return notificationId;
   } catch (error) {
-    console.error('[NotificationHelpers] Error showing notification:', error);
+
     return null;
   }
 }
@@ -96,9 +96,9 @@ export async function showSmartMessageNotification({
  */
 export function handleNotificationResponse(response, onNavigate) {
   const { data } = response.notification.request.content;
-  
+
   if (!data) {
-    console.warn('[NotificationHelpers] No data in notification response');
+
     return;
   }
 
@@ -109,13 +109,13 @@ export function handleNotificationResponse(response, onNavigate) {
         onNavigate({
           conversationId: data.conversationId,
           username: data.username,
-          clientName: data.clientName,
+          clientName: data.clientName
         });
       }
       break;
-    
+
     default:
-      console.log('[NotificationHelpers] Unknown notification type:', data.type);
+
   }
 }
 
@@ -126,9 +126,9 @@ export async function clearAllNotifications() {
   try {
     await notificationService.cancelAllNotifications();
     await notificationService.clearBadge();
-    console.log('[NotificationHelpers] All notifications cleared');
+
   } catch (error) {
-    console.error('[NotificationHelpers] Error clearing notifications:', error);
+
   }
 }
 
@@ -140,7 +140,7 @@ export async function getNotificationPermissionStatus() {
   try {
     return await notificationService.requestPermissions();
   } catch (error) {
-    console.error('[NotificationHelpers] Error getting permission status:', error);
+
     return false;
   }
 }
@@ -154,7 +154,7 @@ export async function areNotificationsEnabled() {
     const { status } = await notificationService.requestPermissions();
     return status === 'granted';
   } catch (error) {
-    console.error('[NotificationHelpers] Error checking notification status:', error);
+
     return false;
   }
 }
@@ -191,6 +191,6 @@ export function createNotificationData({
     clientName,
     messageText,
     timestamp: Date.now(),
-    ...extraData,
+    ...extraData
   };
 }

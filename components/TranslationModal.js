@@ -9,8 +9,8 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
-  Platform,
-} from 'react-native';
+  Platform } from
+'react-native';
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,34 +29,34 @@ const LONG_PAUSE_SILENCE_MS = 2500;
 // Languages list matching pyagent app
 // Source: Bangla and English (and auto-detect between them)
 const SOURCE_LANGUAGES = [
-  { name: 'Auto (Bangla / English)', code: 'auto' },
-  { name: 'Bengali (Bangla)', code: 'bn' },
-  { name: 'English', code: 'en' },
-];
+{ name: 'Auto (Bangla / English)', code: 'auto' },
+{ name: 'Bengali (Bangla)', code: 'bn' },
+{ name: 'English', code: 'en' }];
+
 // Target languages for translation
 const LANGUAGES = [
-  { name: 'English', code: 'en' },
-  { name: 'Bengali (Bangla)', code: 'bn' },
-  { name: 'Spanish', code: 'es' },
-  { name: 'French', code: 'fr' },
-  { name: 'German', code: 'de' },
-  { name: 'Italian', code: 'it' },
-  { name: 'Portuguese', code: 'pt' },
-  { name: 'Russian', code: 'ru' },
-  { name: 'Japanese', code: 'ja' },
-  { name: 'Korean', code: 'ko' },
-  { name: 'Chinese (Simplified)', code: 'zh-CN' },
-  { name: 'Chinese (Traditional)', code: 'zh-TW' },
-  { name: 'Arabic', code: 'ar' },
-  { name: 'Hindi', code: 'hi' },
-  { name: 'Turkish', code: 'tr' },
-  { name: 'Polish', code: 'pl' },
-  { name: 'Dutch', code: 'nl' },
-  { name: 'Greek', code: 'el' },
-  { name: 'Hebrew', code: 'he' },
-  { name: 'Thai', code: 'th' },
-  { name: 'Vietnamese', code: 'vi' },
-];
+{ name: 'English', code: 'en' },
+{ name: 'Bengali (Bangla)', code: 'bn' },
+{ name: 'Spanish', code: 'es' },
+{ name: 'French', code: 'fr' },
+{ name: 'German', code: 'de' },
+{ name: 'Italian', code: 'it' },
+{ name: 'Portuguese', code: 'pt' },
+{ name: 'Russian', code: 'ru' },
+{ name: 'Japanese', code: 'ja' },
+{ name: 'Korean', code: 'ko' },
+{ name: 'Chinese (Simplified)', code: 'zh-CN' },
+{ name: 'Chinese (Traditional)', code: 'zh-TW' },
+{ name: 'Arabic', code: 'ar' },
+{ name: 'Hindi', code: 'hi' },
+{ name: 'Turkish', code: 'tr' },
+{ name: 'Polish', code: 'pl' },
+{ name: 'Dutch', code: 'nl' },
+{ name: 'Greek', code: 'el' },
+{ name: 'Hebrew', code: 'he' },
+{ name: 'Thai', code: 'th' },
+{ name: 'Vietnamese', code: 'vi' }];
+
 
 const TranslationModal = ({
   visible,
@@ -65,7 +65,7 @@ const TranslationModal = ({
   targetLanguage = 'en',
   onTextReady,
   onUseInputText,
-  voiceOnly = false,
+  voiceOnly = false
 }) => {
   const [inputText, setInputText] = useState(initialText);
   const [translatedText, setTranslatedText] = useState('');
@@ -79,7 +79,7 @@ const TranslationModal = ({
   const [lastTranslationText, setLastTranslationText] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
   const [recognitionCount, setRecognitionCount] = useState(0);
-  
+
   const autoTranslateTimerRef = useRef(null);
   const autoTranslateInputDebounceRef = useRef(null);
   const recordingRef = useRef(null);
@@ -143,10 +143,10 @@ const TranslationModal = ({
         return;
       }
       if (
-        currentText !== lastTranslationText &&
-        currentText.length >= 1 &&
-        !translationInProgressRef.current
-      ) {
+      currentText !== lastTranslationText &&
+      currentText.length >= 1 &&
+      !translationInProgressRef.current)
+      {
         setLastTranslationText(currentText);
         translateText(currentText, true);
       }
@@ -164,11 +164,11 @@ const TranslationModal = ({
       autoTranslateTimerRef.current = setInterval(() => {
         const currentText = inputText.trim();
         if (
-          currentText &&
-          currentText !== lastTranslationText &&
-          currentText.length >= 3 &&
-          !translationInProgressRef.current
-        ) {
+        currentText &&
+        currentText !== lastTranslationText &&
+        currentText.length >= 3 &&
+        !translationInProgressRef.current)
+        {
           setLastTranslationText(currentText);
           translateText(currentText, true);
         }
@@ -207,7 +207,7 @@ const TranslationModal = ({
       if (body === undefined) {
         try {
           const base64 = await FileSystem.readAsStringAsync(audioUri, {
-            encoding: FileSystem.EncodingType.Base64,
+            encoding: FileSystem.EncodingType.Base64
           });
           const binary = atob(base64);
           const bytes = new Uint8Array(binary.length);
@@ -218,7 +218,7 @@ const TranslationModal = ({
         }
       }
     }
-    if (!body || (body.byteLength !== undefined && body.byteLength === 0)) {
+    if (!body || body.byteLength !== undefined && body.byteLength === 0) {
       throw new Error('Recording file is empty. Speak closer to the mic and try again.');
     }
     const dgLang = sourceLanguage === 'auto' ? 'multi' : sourceLanguage;
@@ -228,9 +228,9 @@ const TranslationModal = ({
       method: 'POST',
       headers: {
         Authorization: `Token ${key}`,
-        'Content-Type': contentType,
+        'Content-Type': contentType
       },
-      body,
+      body
     });
     if (!response.ok) {
       const errText = await response.text();
@@ -264,15 +264,15 @@ const TranslationModal = ({
         sl: sourceLanguage,
         tl: selectedLanguage,
         dt: 't',
-        q: text,
+        q: text
       };
 
       const queryString = new URLSearchParams(params).toString();
       const response = await fetch(`${url}?${queryString}`, {
         method: 'GET',
         headers: {
-          'Content-Type': 'application/json',
-        },
+          'Content-Type': 'application/json'
+        }
       });
 
       if (!response.ok) {
@@ -281,11 +281,11 @@ const TranslationModal = ({
 
       const result = await response.json();
       if (result && result[0] && result[0].length > 0) {
-        const translated = result[0]
-          .map((item) => item[0])
-          .filter(Boolean)
-          .join('');
-        
+        const translated = result[0].
+        map((item) => item[0]).
+        filter(Boolean).
+        join('');
+
         // Only update if the input text hasn't changed during translation
         const currentInput = inputText.trim();
         if (currentInput === text.trim()) {
@@ -295,7 +295,7 @@ const TranslationModal = ({
         throw new Error('Translation failed: Empty response');
       }
     } catch (error) {
-      console.error('Translation error:', error);
+
       if (!isAuto) {
         Alert.alert('Translation Error', error.message || 'Failed to translate text');
         setTranslatedText(`Error: ${error.message || 'Translation failed'}`);
@@ -396,7 +396,7 @@ const TranslationModal = ({
         }
       };
     } catch (e) {
-      console.error('Deepgram Live error:', e);
+
       Alert.alert('Live transcription error', e?.message || 'Could not start microphone or connect to Deepgram.');
       setIsListening(false);
       setVoiceStatus('');
@@ -410,7 +410,7 @@ const TranslationModal = ({
         socketRef.current = null;
       }
       if (scriptProcessorRef.current) {
-        try { scriptProcessorRef.current.disconnect(); } catch (_) {}
+        try {scriptProcessorRef.current.disconnect();} catch (_) {}
         scriptProcessorRef.current = null;
       }
       if (mediaStreamRef.current) {
@@ -422,7 +422,7 @@ const TranslationModal = ({
         audioContextRef.current = null;
       }
     } catch (e) {
-      console.warn('Stop Deepgram Live:', e);
+
     }
   };
 
@@ -439,7 +439,7 @@ const TranslationModal = ({
       recordingRef.current = null;
       uri = recording.getURI();
     } catch (e) {
-      console.warn('Stop recording error:', e);
+
       processingChunkRef.current = false;
       return;
     }
@@ -455,23 +455,23 @@ const TranslationModal = ({
       recordingStartTimeRef.current = Date.now();
       setVoiceStatus('🎤 Listening... (speak, then pause for next phrase)');
     } catch (e) {
-      console.warn('Restart recording error:', e);
+
       setVoiceStatus('🎤 Tap to start again');
       processingChunkRef.current = false;
       return;
     }
     processingChunkRef.current = false;
     if (uri && durationMs >= MIN_CHUNK_MS) {
-      transcribeWithDeepgram(uri, 'audio/m4a')
-        .then((transcript) => {
-          if (transcript) {
-            appendTranscription(transcript, (newFullText) => {
-              setLastTranslationText(newFullText);
-              translateText(newFullText, true);
-            });
-          }
-        })
-        .catch((e) => console.warn('Chunk transcribe error:', e));
+      transcribeWithDeepgram(uri, 'audio/m4a').
+      then((transcript) => {
+        if (transcript) {
+          appendTranscription(transcript, (newFullText) => {
+            setLastTranslationText(newFullText);
+            translateText(newFullText, true);
+          });
+        }
+      }).
+      catch(() => {});
     }
   };
 
@@ -494,8 +494,8 @@ const TranslationModal = ({
       meteringUndefinedCountRef.current = 0;
       const now = Date.now();
       const isSpeech = typeof metering === 'number' && (
-        (metering >= 0 && metering <= 1 && metering > 0.01) || (metering < 0 && metering > -60)
-      );
+      metering >= 0 && metering <= 1 && metering > 0.01 || metering < 0 && metering > -60);
+
       if (isSpeech) {
         lastSpeechTimeRef.current = now;
         hadSpeechInChunkRef.current = true;
@@ -523,11 +523,11 @@ const TranslationModal = ({
         playsInSilentModeIOS: true,
         staysActiveInBackground: false,
         shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
+        playThroughEarpieceAndroid: false
       });
       const { recording } = await Audio.Recording.createAsync({
         ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        isMeteringEnabled: true,
+        isMeteringEnabled: true
       });
       recordingRef.current = recording;
       recordingStartTimeRef.current = Date.now();
@@ -593,7 +593,7 @@ const TranslationModal = ({
       }, METERING_POLL_MS);
       chunkIntervalRef.current = id;
     } catch (error) {
-      console.error('Voice start error:', error);
+
       Alert.alert('Voice Input Error', error.message || 'Failed to start recording.');
       setIsListening(false);
       setVoiceStatus('');
@@ -637,7 +637,7 @@ const TranslationModal = ({
         }
       }
     } catch (e) {
-      console.warn('Stop/transcribe:', e);
+
       Alert.alert('Transcription error', (e?.message || String(e)) + '\n\nYour recording was not transcribed.');
     }
     recordingRef.current = null;
@@ -660,12 +660,12 @@ const TranslationModal = ({
       Alert.alert('No Input', 'Please enter a message to translate.');
       return;
     }
-    
+
     if (!selectedLanguage) {
       Alert.alert('No Language', 'Please select a target language.');
       return;
     }
-    
+
     // Update last translation text to prevent auto-translate during manual translation
     setLastTranslationText(text);
     translateText(text, false);
@@ -700,13 +700,13 @@ const TranslationModal = ({
       visible={visible}
       animationType="fade"
       transparent={true}
-      onRequestClose={onClose}
-    >
+      onRequestClose={onClose}>
+      
       <TouchableOpacity
         style={styles.modalOverlay}
         activeOpacity={1}
-        onPress={onClose}
-      >
+        onPress={onClose}>
+        
         <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()} style={styles.modalWrapper}>
           <View style={styles.modalContainer}>
             <View style={styles.modalContent}>
@@ -722,59 +722,59 @@ const TranslationModal = ({
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-              >
+                keyboardShouldPersistTaps="handled">
+                
                 {/* Source Language (Bangla / English) */}
                 <View style={styles.section}>
                   <View style={styles.languageContainer}>
                     <Text style={styles.label}>Source (your language):</Text>
                     <TouchableOpacity
                       style={[
-                        styles.languageButton,
-                        showSourcePicker && styles.languageButtonActive,
-                      ]}
+                      styles.languageButton,
+                      showSourcePicker && styles.languageButtonActive]
+                      }
                       onPress={() => {
                         setShowSourcePicker(!showSourcePicker);
                         setShowLanguagePicker(false);
-                      }}
-                    >
+                      }}>
+                      
                       <Text style={styles.languageButtonText}>{SOURCE_LANGUAGES.find((l) => l.code === sourceLanguage)?.name ?? 'Auto'}</Text>
                       <Ionicons
                         name={showSourcePicker ? 'chevron-up' : 'chevron-down'}
                         size={18}
-                        color={colors.text.primary}
-                      />
+                        color={colors.text.primary} />
+                      
                     </TouchableOpacity>
                   </View>
-                  {showSourcePicker && (
-                    <View style={styles.languagePicker}>
-                      {SOURCE_LANGUAGES.map((lang) => (
-                        <TouchableOpacity
-                          key={lang.code}
-                          style={[
-                            styles.languageItem,
-                            sourceLanguage === lang.code && styles.languageItemSelected,
-                          ]}
-                          onPress={() => {
-                            setSourceLanguage(lang.code);
-                            setShowSourcePicker(false);
-                          }}
-                        >
+                  {showSourcePicker &&
+                  <View style={styles.languagePicker}>
+                      {SOURCE_LANGUAGES.map((lang) =>
+                    <TouchableOpacity
+                      key={lang.code}
+                      style={[
+                      styles.languageItem,
+                      sourceLanguage === lang.code && styles.languageItemSelected]
+                      }
+                      onPress={() => {
+                        setSourceLanguage(lang.code);
+                        setShowSourcePicker(false);
+                      }}>
+                      
                           <Text
-                            style={[
-                              styles.languageItemText,
-                              sourceLanguage === lang.code && styles.languageItemTextSelected,
-                            ]}
-                          >
+                        style={[
+                        styles.languageItemText,
+                        sourceLanguage === lang.code && styles.languageItemTextSelected]
+                        }>
+                        
                             {lang.name}
                           </Text>
-                          {sourceLanguage === lang.code && (
-                            <Ionicons name="checkmark" size={18} color={colors.accent.success} />
-                          )}
+                          {sourceLanguage === lang.code &&
+                      <Ionicons name="checkmark" size={18} color={colors.accent.success} />
+                      }
                         </TouchableOpacity>
-                      ))}
+                    )}
                     </View>
-                  )}
+                  }
                 </View>
 
                 {/* Target Language */}
@@ -783,57 +783,57 @@ const TranslationModal = ({
                     <Text style={styles.label}>Target Language:</Text>
                     <TouchableOpacity
                       style={[
-                        styles.languageButton,
-                        showLanguagePicker && styles.languageButtonActive,
-                      ]}
+                      styles.languageButton,
+                      showLanguagePicker && styles.languageButtonActive]
+                      }
                       onPress={() => {
                         setShowLanguagePicker(!showLanguagePicker);
                         setShowSourcePicker(false);
-                      }}
-                    >
+                      }}>
+                      
                       <Text style={styles.languageButtonText}>{selectedLanguageName}</Text>
                       <Ionicons
                         name={showLanguagePicker ? 'chevron-up' : 'chevron-down'}
                         size={18}
-                        color={colors.text.primary}
-                      />
+                        color={colors.text.primary} />
+                      
                     </TouchableOpacity>
                   </View>
-                  {showLanguagePicker && (
-                    <View style={styles.languagePicker}>
+                  {showLanguagePicker &&
+                  <View style={styles.languagePicker}>
                       <ScrollView
-                        style={styles.languageList}
-                        nestedScrollEnabled
-                        showsVerticalScrollIndicator={true}
-                      >
-                        {LANGUAGES.map((lang) => (
-                          <TouchableOpacity
-                            key={lang.code}
-                            style={[
-                              styles.languageItem,
-                              selectedLanguage === lang.code && styles.languageItemSelected,
-                            ]}
-                            onPress={() => {
-                              setSelectedLanguage(lang.code);
-                              setShowLanguagePicker(false);
-                            }}
-                          >
+                      style={styles.languageList}
+                      nestedScrollEnabled
+                      showsVerticalScrollIndicator={true}>
+                      
+                        {LANGUAGES.map((lang) =>
+                      <TouchableOpacity
+                        key={lang.code}
+                        style={[
+                        styles.languageItem,
+                        selectedLanguage === lang.code && styles.languageItemSelected]
+                        }
+                        onPress={() => {
+                          setSelectedLanguage(lang.code);
+                          setShowLanguagePicker(false);
+                        }}>
+                        
                             <Text
-                              style={[
-                                styles.languageItemText,
-                                selectedLanguage === lang.code && styles.languageItemTextSelected,
-                              ]}
-                            >
+                          style={[
+                          styles.languageItemText,
+                          selectedLanguage === lang.code && styles.languageItemTextSelected]
+                          }>
+                          
                               {lang.name}
                             </Text>
-                            {selectedLanguage === lang.code && (
-                              <Ionicons name="checkmark" size={18} color={colors.accent.success} />
-                            )}
+                            {selectedLanguage === lang.code &&
+                        <Ionicons name="checkmark" size={18} color={colors.accent.success} />
+                        }
                           </TouchableOpacity>
-                        ))}
+                      )}
                       </ScrollView>
                     </View>
-                  )}
+                  }
                 </View>
 
                 {/* Voice Input Button */}
@@ -841,42 +841,42 @@ const TranslationModal = ({
                   <View style={styles.voiceContainer}>
                     <TouchableOpacity
                       style={[
-                        styles.voiceButton,
-                        isListening && styles.voiceButtonActive,
-                        isTranslating && styles.buttonDisabled,
-                      ]}
+                      styles.voiceButton,
+                      isListening && styles.voiceButtonActive,
+                      isTranslating && styles.buttonDisabled]
+                      }
                       onPress={handleVoiceInput}
-                      disabled={isTranslating}
-                    >
+                      disabled={isTranslating}>
+                      
                       <Ionicons
                         name={isListening ? 'stop-circle' : 'mic'}
                         size={18}
-                        color={colors.text.white}
-                      />
+                        color={colors.text.white} />
+                      
                       <Text style={styles.voiceButtonText}>
-                        {isListening 
-                          ? '⏹️ Stop Listening' 
-                          : Platform.OS === 'web' 
-                            ? '🎤 Voice Input (Real-time)' 
-                            : '🎤 Voice Input (Deepgram + Expo Go)'}
+                        {isListening ?
+                        '⏹️ Stop Listening' :
+                        Platform.OS === 'web' ?
+                        '🎤 Voice Input (Real-time)' :
+                        '🎤 Voice Input (Deepgram + Expo Go)'}
                       </Text>
                     </TouchableOpacity>
                   </View>
-                  {voiceStatus ? (
-                    <Text style={styles.voiceStatus}>{voiceStatus}</Text>
-                  ) : null}
+                  {voiceStatus ?
+                  <Text style={styles.voiceStatus}>{voiceStatus}</Text> :
+                  null}
                 </View>
 
                 {/* Input Text - hidden in voiceOnly mode */}
-                {!voiceOnly && (
+                {!voiceOnly &&
                 <View style={styles.section}>
                   <Text style={styles.label}>Your Message:</Text>
                   <View
                     style={[
-                      styles.textInputContainer,
-                      inputFocused && styles.textInputContainerFocused,
-                    ]}
-                  >
+                    styles.textInputContainer,
+                    inputFocused && styles.textInputContainerFocused]
+                    }>
+                    
                     <TextInput
                       style={styles.textInput}
                       multiline
@@ -887,32 +887,32 @@ const TranslationModal = ({
                       onChangeText={setInputText}
                       onFocus={() => setInputFocused(true)}
                       onBlur={() => setInputFocused(false)}
-                      editable={!isListening}
-                    />
+                      editable={!isListening} />
+                    
                   </View>
                 </View>
-                )}
+                }
 
                 {/* Translate Button */}
                 <TouchableOpacity
                   style={[
-                    styles.translateButton,
-                    (isTranslating || !inputText.trim()) && styles.buttonDisabled,
-                  ]}
+                  styles.translateButton,
+                  (isTranslating || !inputText.trim()) && styles.buttonDisabled]
+                  }
                   onPress={handleTranslate}
-                  disabled={isTranslating || !inputText.trim()}
-                >
-                  {isTranslating ? (
-                    <>
+                  disabled={isTranslating || !inputText.trim()}>
+                  
+                  {isTranslating ?
+                  <>
                       <ActivityIndicator size="small" color={colors.text.white} />
                       <Text style={styles.translateButtonText}>⏳ Translating...</Text>
-                    </>
-                  ) : (
-                    <>
+                    </> :
+
+                  <>
                       <Text style={styles.translateButtonIcon}>🔄</Text>
                       <Text style={styles.translateButtonText}>Translate</Text>
                     </>
-                  )}
+                  }
                 </TouchableOpacity>
 
                 {/* Translated Message (editable) */}
@@ -927,8 +927,8 @@ const TranslationModal = ({
                       placeholderTextColor={colors.text.secondary}
                       value={translatedText}
                       onChangeText={setTranslatedText}
-                      editable={true}
-                    />
+                      editable={true} />
+                    
                   </View>
                 </View>
 
@@ -936,31 +936,31 @@ const TranslationModal = ({
                 <View style={styles.actionButtons}>
                   <TouchableOpacity
                     style={[
-                      styles.actionButton,
-                      styles.useInputButton,
-                      !inputText.trim() && styles.buttonDisabled,
-                    ]}
+                    styles.actionButton,
+                    styles.useInputButton,
+                    !inputText.trim() && styles.buttonDisabled]
+                    }
                     onPress={() => {
                       if (inputText.trim() && onUseInputText) {
                         onUseInputText(inputText.trim());
                         onClose();
                       }
                     }}
-                    disabled={!inputText.trim()}
-                  >
+                    disabled={!inputText.trim()}>
+                    
                     <Ionicons name="send" size={18} color={colors.text.white} />
                     <Text style={styles.actionButtonText}>Send text</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
                     style={[
-                      styles.actionButton,
-                      styles.useTranslatedButton,
-                      !translatedText.trim() && styles.buttonDisabled,
-                    ]}
+                    styles.actionButton,
+                    styles.useTranslatedButton,
+                    !translatedText.trim() && styles.buttonDisabled]
+                    }
                     onPress={handleUseTranslatedText}
-                    disabled={!translatedText.trim()}
-                  >
+                    disabled={!translatedText.trim()}>
+                    
                     <Ionicons name="send" size={18} color={colors.text.white} />
                     <Text style={styles.actionButtonText}>Send translation</Text>
                   </TouchableOpacity>
@@ -975,8 +975,8 @@ const TranslationModal = ({
           </View>
         </TouchableOpacity>
       </TouchableOpacity>
-    </Modal>
-  );
+    </Modal>);
+
 };
 
 const styles = StyleSheet.create({
@@ -984,18 +984,18 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.75)',
     justifyContent: 'center',
-    alignItems: 'center',
+    alignItems: 'center'
   },
   modalWrapper: {
     alignSelf: 'center',
     width: '90%',
     maxWidth: '95%',
     height: '90%',
-    maxHeight: '90%',
+    maxHeight: '90%'
   },
   modalContainer: {
     width: '100%',
-    height: '100%',
+    height: '100%'
   },
   modalContent: {
     flex: 1,
@@ -1006,7 +1006,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
     shadowRadius: 16,
-    elevation: 16,
+    elevation: 16
   },
   header: {
     flexDirection: 'row',
@@ -1016,32 +1016,32 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.dark,
+    borderBottomColor: colors.border.dark
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: typography.weights.bold,
-    color: colors.text.primary,
+    color: colors.text.primary
   },
   closeButton: {
     padding: 4,
-    borderRadius: borderRadius.sm,
+    borderRadius: borderRadius.sm
   },
   scrollView: {
-    flex: 1,
+    flex: 1
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 24,
+    paddingBottom: 24
   },
   section: {
-    marginBottom: 15,
+    marginBottom: 15
   },
   label: {
     fontSize: 14,
     fontWeight: typography.weights.semibold,
     color: colors.text.primary,
-    marginBottom: 8,
+    marginBottom: 8
   },
   languageContainer: {
     flexDirection: 'row',
@@ -1060,15 +1060,15 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
     paddingHorizontal: 12,
     paddingVertical: 0,
-    minHeight: 30,
+    minHeight: 30
   },
   languageButtonActive: {
     borderColor: colors.accent.success,
-    borderWidth: 2,
+    borderWidth: 2
   },
   languageButtonText: {
     fontSize: 14,
-    color: colors.text.primary,
+    color: colors.text.primary
   },
   languagePicker: {
     marginTop: 8,
@@ -1077,10 +1077,10 @@ const styles = StyleSheet.create({
     borderColor: colors.border.dark,
     borderRadius: borderRadius.sm,
     maxHeight: 200,
-    overflow: 'hidden',
+    overflow: 'hidden'
   },
   languageList: {
-    maxHeight: 200,
+    maxHeight: 200
   },
   languageItem: {
     flexDirection: 'row',
@@ -1089,23 +1089,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.dark,
+    borderBottomColor: colors.border.dark
   },
   languageItemSelected: {
-    backgroundColor: colors.background.cardLight,
+    backgroundColor: colors.background.cardLight
   },
   languageItemText: {
     fontSize: 14,
-    color: colors.text.primary,
+    color: colors.text.primary
   },
   languageItemTextSelected: {
     color: colors.accent.success,
-    fontWeight: typography.weights.semibold,
+    fontWeight: typography.weights.semibold
   },
   voiceContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 12
   },
   voiceButton: {
     flex: 1,
@@ -1117,43 +1117,43 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 20,
     minHeight: 44,
-    gap: 8,
+    gap: 8
   },
   voiceButtonActive: {
-    backgroundColor: '#db2777',
+    backgroundColor: '#db2777'
   },
   voiceButtonText: {
     fontSize: 14,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white,
+    color: colors.text.white
   },
   voiceStatus: {
     fontSize: 13,
     color: colors.text.secondary,
     marginTop: 6,
-    fontStyle: 'italic',
+    fontStyle: 'italic'
   },
   textInputContainer: {
     backgroundColor: colors.background.secondary,
     borderWidth: 1,
     borderColor: colors.border.dark,
     borderRadius: borderRadius.sm,
-    minHeight: 100,
+    minHeight: 100
   },
   textInputContainerFocused: {
     borderColor: colors.accent.success,
-    borderWidth: 2,
+    borderWidth: 2
   },
   textInput: {
     padding: 12,
     fontSize: 14,
     color: colors.text.primary,
     textAlignVertical: 'top',
-    minHeight: 100,
+    minHeight: 100
   },
   translatedInput: {
     backgroundColor: colors.background.secondary,
-    opacity: 0.95,
+    opacity: 0.95
   },
   translateButton: {
     flexDirection: 'row',
@@ -1165,20 +1165,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     minHeight: 44,
     gap: 8,
-    marginBottom: 20,
+    marginBottom: 20
   },
   translateButtonIcon: {
-    fontSize: 16,
+    fontSize: 16
   },
   translateButtonText: {
     fontSize: 14,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white,
+    color: colors.text.white
   },
   actionButtons: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 12
   },
   actionButton: {
     flex: 1,
@@ -1189,24 +1189,24 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     minHeight: 44,
-    gap: 6,
+    gap: 6
   },
   useInputButton: {
-    backgroundColor: colors.accent.primary,
+    backgroundColor: colors.accent.primary
   },
   useTranslatedButton: {
-    backgroundColor: colors.accent.success,
+    backgroundColor: colors.accent.success
   },
   actionButtonIcon: {
-    fontSize: 15,
+    fontSize: 15
   },
   actionButtonText: {
     fontSize: 15,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white,
+    color: colors.text.white
   },
   buttonDisabled: {
-    opacity: 0.5,
+    opacity: 0.5
   },
   sendMessageButton: {
     flexDirection: 'row',
@@ -1218,12 +1218,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     minHeight: 44,
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 12
   },
   sendMessageButtonText: {
     fontSize: 15,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white,
+    color: colors.text.white
   },
   cancelButton: {
     backgroundColor: '#6c757d',
@@ -1232,13 +1232,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     minHeight: 44,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'center'
   },
   cancelButtonText: {
     fontSize: 15,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white,
-  },
+    color: colors.text.white
+  }
 });
 
 export default TranslationModal;

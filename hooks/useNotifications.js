@@ -19,7 +19,7 @@ export function useNotifications({ onNotificationTapped, autoClearBadge = true }
   // Handle notification tap
   const handleNotificationTapped = useCallback((response) => {
     const { conversationId, username } = response.notification.request.content.data || {};
-    
+
     if (onNotificationTapped) {
       onNotificationTapped({ conversationId, username, response });
     }
@@ -34,7 +34,7 @@ export function useNotifications({ onNotificationTapped, autoClearBadge = true }
         // Initialize notification service
         const initialized = await notificationService.initialize();
         if (!initialized) {
-          console.warn('[useNotifications] Initialization failed');
+
           return;
         }
 
@@ -42,7 +42,7 @@ export function useNotifications({ onNotificationTapped, autoClearBadge = true }
         notificationService.setupListeners(
           // Foreground notification handler
           (notification) => {
-            console.log('[useNotifications] Notification received:', notification);
+
           },
           // Notification tap handler
           handleNotificationTapped
@@ -51,10 +51,10 @@ export function useNotifications({ onNotificationTapped, autoClearBadge = true }
         // Listen for app state changes
         const subscription = AppState.addEventListener('change', (nextAppState) => {
           if (
-            appState.current.match(/inactive|background/) &&
-            nextAppState === 'active'
-          ) {
-            console.log('[useNotifications] App came to foreground');
+          appState.current.match(/inactive|background/) &&
+          nextAppState === 'active')
+          {
+
             if (autoClearBadge) {
               notificationService.clearBadge();
             }
@@ -69,7 +69,7 @@ export function useNotifications({ onNotificationTapped, autoClearBadge = true }
           }
         };
       } catch (error) {
-        console.error('[useNotifications] Error:', error);
+
       }
     };
 
@@ -120,7 +120,7 @@ export function useNotifications({ onNotificationTapped, autoClearBadge = true }
   return {
     // State
     selectedConversationId,
-    
+
     // Actions
     showNotification,
     showMessageNotification,
@@ -131,9 +131,9 @@ export function useNotifications({ onNotificationTapped, autoClearBadge = true }
     cancelNotification,
     cancelAllNotifications,
     getExpoPushToken,
-    
+
     // Service instance (for advanced usage)
-    notificationService,
+    notificationService
   };
 }
 

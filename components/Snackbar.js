@@ -1,7 +1,9 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Animated, TouchableOpacity, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/theme';
+
+const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 const Snackbar = ({ visible, message, onDismiss, duration = 3000, type = 'info' }) => {
   const slideAnim = useRef(new Animated.Value(-100)).current;
@@ -14,12 +16,12 @@ const Snackbar = ({ visible, message, onDismiss, duration = 3000, type = 'info' 
         Animated.timing(slideAnim, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: USE_NATIVE_DRIVER,
         }),
         Animated.timing(opacityAnim, {
           toValue: 1,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: USE_NATIVE_DRIVER,
         }),
       ]).start();
 
@@ -37,12 +39,12 @@ const Snackbar = ({ visible, message, onDismiss, duration = 3000, type = 'info' 
         Animated.timing(slideAnim, {
           toValue: -100,
           duration: 250,
-          useNativeDriver: true,
+          useNativeDriver: USE_NATIVE_DRIVER,
         }),
         Animated.timing(opacityAnim, {
           toValue: 0,
           duration: 250,
-          useNativeDriver: true,
+          useNativeDriver: USE_NATIVE_DRIVER,
         }),
       ]).start();
     }

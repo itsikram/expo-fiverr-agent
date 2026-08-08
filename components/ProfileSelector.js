@@ -11,7 +11,7 @@ const ProfileSelector = ({
   sellerProfiles = [],
   selectedSellerProfile,
   onSelectProfile,
-  variant = 'sidebar',
+  variant = 'sidebar'
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const displayProfile = selectedSellerProfile ?? (sellerProfiles.length === 1 ? sellerProfiles[0] : null);
@@ -21,25 +21,25 @@ const ProfileSelector = ({
   const hasOptions = sellerProfiles.length > 0;
   const canSelect = hasOptions && typeof onSelectProfile === 'function';
 
-  console.log('sellerProfiles', sellerProfiles);
-  console.log('displayProfile', displayProfile);
-  console.log('displayProfile avatarUrl', displayProfile?.avatarUrl || displayProfile?.avatar_url);
-  
+
+
+
+
   // Helper function to get profile image URL from various possible field names
   const getProfileImageUrl = (profile) => {
     if (!profile) return null;
-    const url = (
-      profile.avatarUrl ||
-      profile.avatar_url ||
-      profile.imageUrl ||
-      profile.image_url ||
-      profile.profileImage ||
-      profile.profile_image ||
-      profile.avatar ||
-      profile.image ||
-      null
-    );
-    console.log('getProfileImageUrl for profile:', profile?.username || profile?.profileName, '->', url);
+    const url =
+    profile.avatarUrl ||
+    profile.avatar_url ||
+    profile.imageUrl ||
+    profile.image_url ||
+    profile.profileImage ||
+    profile.profile_image ||
+    profile.avatar ||
+    profile.image ||
+    null;
+
+
     return url;
   };
 
@@ -64,99 +64,102 @@ const ProfileSelector = ({
         {/* Select trigger row (like <select> displayed value) */}
         <TouchableOpacity
           style={[
-            styles.triggerRow,
-            !hasProfile && styles.triggerRowEmpty,
-            isCard && styles.triggerRowCard,
-            dropdownOpen && styles.triggerRowOpen,
-          ]}
-          onPress={() => canSelect && setDropdownOpen((o) => !o)}
-          activeOpacity={0.8}
-          disabled={!hasOptions}
-        >
+          styles.triggerRow,
+          !hasProfile && styles.triggerRowEmpty,
+          isCard && styles.triggerRowCard,
+          dropdownOpen && styles.triggerRowOpen,
+          !hasOptions && styles.triggerDisabled]
+          }
+          onPress={() => {
+            if (!canSelect) return;
+            setDropdownOpen((o) => !o);
+          }}
+          activeOpacity={0.8}>
+          
           <View
             style={[
-              styles.profileIconWrap,
-              !hasProfile && styles.profileIconWrapEmpty,
-              isCard && !hasProfile && styles.profileIconWrapEmptyCard,
-            ]}
-          >
-            {hasProfile && getProfileImageUrl(displayProfile) ? (
-              <Image
-                source={{ uri: getProfileImageUrl(displayProfile) }}
-                style={styles.profileImage}
-              />
-            ) : (
-              <Ionicons
-                name="person"
-                size={20}
-                color={hasProfile ? colors.text.white : colors.text.secondary}
-              />
-            )}
+            styles.profileIconWrap,
+            !hasProfile && styles.profileIconWrapEmpty,
+            isCard && !hasProfile && styles.profileIconWrapEmptyCard]
+            }>
+            
+            {hasProfile && getProfileImageUrl(displayProfile) ?
+            <Image
+              source={{ uri: getProfileImageUrl(displayProfile) }}
+              style={styles.profileImage} /> :
+
+
+            <Ionicons
+              name="person"
+              size={20}
+              color={hasProfile ? colors.text.white : colors.text.secondary} />
+
+            }
             {hasProfile && isOnline ? <View style={styles.avatarOnlineDot} /> : null}
           </View>
           <View style={styles.triggerTextWrap}>
-            {hasProfile ? (
-              <>
+            {hasProfile ?
+            <>
                 <Text style={[styles.profileName, isCard && styles.profileNameCard]} numberOfLines={1}>
                   {displayProfile.profileName || displayProfile.username || '—'}
                 </Text>
-                {displayProfile.username ? (
-                  <Text style={[styles.profileUsername, isCard && styles.profileUsernameCard]}>
+                {displayProfile.username ?
+              <Text style={[styles.profileUsername, isCard && styles.profileUsernameCard]}>
                     @{displayProfile.username}
-                  </Text>
-                ) : null}
-              </>
-            ) : (
-              <Text style={[styles.profileEmptyText, isCard && styles.profileEmptyTextCard]}>
+                  </Text> :
+              null}
+              </> :
+
+            <Text style={[styles.profileEmptyText, isCard && styles.profileEmptyTextCard]}>
                 No seller found
               </Text>
-            )}
+            }
           </View>
-          {hasOptions && (
-            <View style={styles.chevronWrap}>
+          {hasOptions &&
+          <View style={styles.chevronWrap}>
               <Ionicons
-                name={dropdownOpen ? 'chevron-up' : 'chevron-down'}
-                size={22}
-                color="rgba(255, 255, 255, 0.6)"
-              />
+              name={dropdownOpen ? 'chevron-up' : 'chevron-down'}
+              size={22}
+              color="rgba(255, 255, 255, 0.6)" />
+            
             </View>
-          )}
+          }
         </TouchableOpacity>
 
         {/* Dropdown options (like <select> options) */}
-        {dropdownOpen && hasOptions && (
-          <View style={[styles.dropdown, isCard && styles.dropdownCard]}>
+        {dropdownOpen && hasOptions &&
+        <View style={[styles.dropdown, isCard && styles.dropdownCard]}>
             <ScrollView
-              style={styles.dropdownScroll}
-              nestedScrollEnabled
-              showsVerticalScrollIndicator={true}
-              keyboardShouldPersistTaps="handled"
-            >
+            style={styles.dropdownScroll}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator={true}
+            keyboardShouldPersistTaps="handled">
+            
               {sellerProfiles.map((p) => {
-                const u = p.username || p.profileName;
-                if (!u) return null;
-                const selected = isSelected(p);
-                const profileImageUrl = getProfileImageUrl(p);
-                return (
-                  <TouchableOpacity
-                    key={u}
-                    style={[styles.optionRow, selected && styles.optionRowSelected]}
-                    onPress={() => handleSelectOption(p)}
-                    activeOpacity={0.7}
-                  >
+              const u = p.username || p.profileName;
+              if (!u) return null;
+              const selected = isSelected(p);
+              const profileImageUrl = getProfileImageUrl(p);
+              return (
+                <TouchableOpacity
+                  key={u}
+                  style={[styles.optionRow, selected && styles.optionRowSelected]}
+                  onPress={() => handleSelectOption(p)}
+                  activeOpacity={0.7}>
+                  
                     <View style={styles.optionIconWrap}>
-                      {profileImageUrl ? (
-                        <Image
-                          source={{ uri: profileImageUrl }}
-                          style={styles.optionImage}
-                        />
-                      ) : (
-                        <Ionicons
-                          name="person"
-                          size={18}
-                          color="rgba(255, 255, 255, 0.7)"
-                        />
-                      )}
+                      {profileImageUrl ?
+                    <Image
+                      source={{ uri: profileImageUrl }}
+                      style={styles.optionImage} /> :
+
+
+                    <Ionicons
+                      name="person"
+                      size={18}
+                      color="rgba(255, 255, 255, 0.7)" />
+
+                    }
                       {Boolean(p.online) ? <View style={styles.avatarOnlineDotSmall} /> : null}
                     </View>
                     <View style={styles.optionLeft}>
@@ -168,31 +171,31 @@ const ProfileSelector = ({
                       </Text>
                     </View>
                     <View style={styles.optionRight}>
-                      {selected && (
-                        <Ionicons name="checkmark" size={20} color={colors.accent.primary} style={styles.optionCheck} />
-                      )}
+                      {selected &&
+                    <Ionicons name="checkmark" size={20} color={colors.accent.primary} style={styles.optionCheck} />
+                    }
                     </View>
-                  </TouchableOpacity>
-                );
-              })}
+                  </TouchableOpacity>);
+
+            })}
             </ScrollView>
           </View>
-        )}
+        }
       </View>
-    </View>
-  );
+    </View>);
+
 };
 
 const styles = StyleSheet.create({
   wrapper: {
-    marginBottom: 5,
+    marginBottom: 5
   },
   wrapperElevated: {
-    zIndex: 100,
+    zIndex: 100
   },
   wrapperCard: {
     marginBottom: 10,
-    alignSelf: 'stretch',
+    alignSelf: 'stretch'
   },
   profileLabel: {
     fontSize: typography.sizes.xs,
@@ -200,16 +203,16 @@ const styles = StyleSheet.create({
     color: colors.text.muted,
     marginBottom: 6,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.5
   },
   profileLabelCard: {
-    color: colors.text.secondary,
+    color: colors.text.secondary
   },
   selectContainer: {
-    position: 'relative',
+    position: 'relative'
   },
   selectContainerElevated: {
-    zIndex: 100,
+    zIndex: 100
   },
   triggerRow: {
     flexDirection: 'row',
@@ -219,19 +222,22 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border.light,
+    borderColor: colors.border.light
   },
   triggerRowEmpty: {
-    backgroundColor: colors.surface.hover,
+    backgroundColor: colors.surface.hover
   },
   triggerRowOpen: {
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
-    borderColor: colors.border.medium,
+    borderColor: colors.border.medium
   },
   triggerRowCard: {
     backgroundColor: colors.background.card || 'rgba(255, 255, 255, 0.08)',
-    borderColor: colors.border?.light || 'rgba(255, 255, 255, 0.1)',
+    borderColor: colors.border?.light || 'rgba(255, 255, 255, 0.1)'
+  },
+  triggerDisabled: {
+    opacity: 0.6
   },
   profileIconWrap: {
     width: 36,
@@ -242,18 +248,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: spacing.md,
     position: 'relative',
-    overflow: 'visible',
+    overflow: 'visible'
   },
   profileIconWrapEmpty: {
-    backgroundColor: colors.surface.active,
+    backgroundColor: colors.surface.active
   },
   profileIconWrapEmptyCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(255, 255, 255, 0.12)'
   },
   profileImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 20,
+    borderRadius: 20
   },
   avatarOnlineDot: {
     position: 'absolute',
@@ -264,7 +270,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: colors.accent.success,
     borderWidth: 2,
-    borderColor: colors.background.input,
+    borderColor: colors.background.input
   },
   avatarOnlineDotSmall: {
     position: 'absolute',
@@ -275,39 +281,39 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: colors.accent.success,
     borderWidth: 1.5,
-    borderColor: 'rgba(30, 30, 35, 0.98)',
+    borderColor: 'rgba(30, 30, 35, 0.98)'
   },
   triggerTextWrap: {
     flex: 1,
-    minWidth: 0,
+    minWidth: 0
   },
   profileName: {
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white,
+    color: colors.text.white
   },
   profileNameCard: {
-    color: colors.text.primary,
+    color: colors.text.primary
   },
   profileUsername: {
     fontSize: typography.sizes.sm,
     color: 'rgba(255, 255, 255, 0.75)',
-    marginTop: 2,
+    marginTop: 2
   },
   profileUsernameCard: {
-    color: colors.text.secondary,
+    color: colors.text.secondary
   },
   profileEmptyText: {
     fontSize: typography.sizes.base,
     color: colors.text.secondary,
-    fontStyle: 'italic',
+    fontStyle: 'italic'
   },
   profileEmptyTextCard: {
-    color: colors.text.secondary,
+    color: colors.text.secondary
   },
   chevronWrap: {
     marginLeft: spacing.sm,
-    paddingLeft: spacing.sm,
+    paddingLeft: spacing.sm
   },
   dropdown: {
     position: 'absolute',
@@ -327,14 +333,14 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowRadius: 8
   },
   dropdownCard: {
     backgroundColor: colors.background.card || 'rgba(40, 40, 48, 0.98)',
-    borderColor: colors.border?.light || 'rgba(255, 255, 255, 0.15)',
+    borderColor: colors.border?.light || 'rgba(255, 255, 255, 0.15)'
   },
   dropdownScroll: {
-    maxHeight: 218,
+    maxHeight: 218
   },
   optionRow: {
     flexDirection: 'row',
@@ -343,7 +349,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)'
   },
   optionIconWrap: {
     width: 32,
@@ -354,42 +360,42 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: spacing.sm,
     position: 'relative',
-    overflow: 'visible',
+    overflow: 'visible'
   },
   optionImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 16,
+    borderRadius: 16
   },
   optionRowSelected: {
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)'
   },
   optionLeft: {
     flex: 1,
-    minWidth: 0,
+    minWidth: 0
   },
   optionName: {
     fontSize: typography.sizes.sm,
     fontWeight: '500',
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: 'rgba(255, 255, 255, 0.9)'
   },
   optionNameSelected: {
     color: colors.text.white,
-    fontWeight: '600',
+    fontWeight: '600'
   },
   optionUsername: {
     fontSize: typography.sizes.xs,
     color: 'rgba(255, 255, 255, 0.6)',
-    marginTop: 2,
+    marginTop: 2
   },
   optionRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 8
   },
   optionCheck: {
-    marginLeft: 4,
-  },
+    marginLeft: 4
+  }
 });
 
 export default ProfileSelector;

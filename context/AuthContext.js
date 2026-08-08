@@ -3,8 +3,8 @@ import {
   authLogin,
   authRegister,
   authMe,
-  authLogout,
-} from "../utils/authService";
+  authLogout } from
+"../utils/authService";
 import { saveAuthData, loadAuthData, clearAuthData } from "../utils/storage";
 
 const AuthContext = createContext(null);
@@ -22,7 +22,7 @@ export const AuthProvider = ({ children }) => {
     token: null,
     username: null,
     email: null,
-    role: "user",
+    role: "user"
   });
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -39,21 +39,21 @@ export const AuthProvider = ({ children }) => {
               token: savedAuth.token,
               username: user.username || savedAuth.username || null,
               email: user.email || savedAuth.email || null,
-              role: user.role || savedAuth.role || "user",
+              role: user.role || savedAuth.role || "user"
             });
             setIsAuthenticated(true);
           } catch (error) {
-            console.warn(
-              "[AuthContext] Stored token validation failed:",
-              error.message,
-            );
+
+
+
+
             await clearAuthData();
             setAuth({ token: null, username: null, email: null, role: "user" });
             setIsAuthenticated(false);
           }
         }
       } catch (error) {
-        console.error("[AuthContext] Error initializing auth:", error);
+
         setAuthError(error.message || "Failed to initialize auth");
         setAuth({ token: null, username: null, email: null, role: "user" });
         setIsAuthenticated(false);
@@ -72,7 +72,7 @@ export const AuthProvider = ({ children }) => {
         token: result.token,
         username: result.username,
         email: result.email,
-        role: result.role || "user",
+        role: result.role || "user"
       };
       await saveAuthData(authData);
       setAuth(authData);
@@ -92,7 +92,7 @@ export const AuthProvider = ({ children }) => {
         token: result.token,
         username: result.username,
         email: result.email,
-        role: result.role || "user",
+        role: result.role || "user"
       };
       await saveAuthData(authData);
       setAuth(authData);
@@ -111,7 +111,7 @@ export const AuthProvider = ({ children }) => {
         await authLogout(auth.token);
       }
     } catch (error) {
-      console.warn("[AuthContext] Logout request failed:", error.message);
+
     }
     await clearAuthData();
     setAuth({ token: null, username: null, email: null, role: "user" });
@@ -130,10 +130,10 @@ export const AuthProvider = ({ children }) => {
         authError,
         login,
         register,
-        logout,
-      }}
-    >
+        logout
+      }}>
+      
       {children}
-    </AuthContext.Provider>
-  );
+    </AuthContext.Provider>);
+
 };

@@ -5,8 +5,8 @@ import {
   NOTIFICATION_CHANNELS,
   NOTIFICATION_TYPES,
   NOTIFICATION_CONFIG,
-  EXPO_PROJECT_ID,
-} from '../constants/notifications';
+  EXPO_PROJECT_ID } from
+'../constants/notifications';
 
 // Note: The notification handler is set in backgroundNotificationHandler.js
 // to ensure it works even when the app is closed
@@ -75,21 +75,21 @@ class NotificationService {
           ios: {
             allowAlert: true,
             allowBadge: true,
-            allowSound: true,
-          },
+            allowSound: true
+          }
         });
         finalStatus = status;
       }
 
       if (finalStatus !== 'granted') {
-        console.warn('[Notifications] Permission not granted:', finalStatus);
+
         return false;
       }
 
-      console.log('[Notifications] Permissions granted');
+
       return true;
     } catch (error) {
-      console.error('[Notifications] Error requesting permissions:', error);
+
       return false;
     }
   }
@@ -106,14 +106,14 @@ class NotificationService {
 
       if (!this.expoPushToken) {
         const tokenData = await Notifications.getExpoPushTokenAsync({
-          projectId: EXPO_PROJECT_ID,
+          projectId: EXPO_PROJECT_ID
         });
         this.expoPushToken = tokenData.data;
-        console.log('[Notifications] Expo Push Token:', this.expoPushToken);
+
       }
       return this.expoPushToken;
     } catch (error) {
-      console.error('[Notifications] Error getting Expo Push Token:', error);
+
       return null;
     }
   }
@@ -130,7 +130,7 @@ class NotificationService {
 
       await Audio.setAudioModeAsync({
         playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
+        shouldDuckAndroid: true
       });
 
       if (!this.notificationSound) {
@@ -154,7 +154,7 @@ class NotificationService {
         await this.notificationSound.playAsync();
       }
     } catch (error) {
-      console.warn('[Notifications] Could not play notification sound:', error);
+
     }
   }
 
@@ -188,7 +188,7 @@ class NotificationService {
       oscillator.start();
       oscillator.stop(ctx.currentTime + 0.18);
     } catch (error) {
-      console.warn('[Notifications] Web audio fallback failed:', error);
+
     }
   }
 
@@ -206,24 +206,24 @@ class NotificationService {
           low: Notifications.AndroidImportance.LOW,
           default: Notifications.AndroidImportance.DEFAULT,
           high: Notifications.AndroidImportance.HIGH,
-          max: Notifications.AndroidImportance.MAX,
+          max: Notifications.AndroidImportance.MAX
         };
 
         await Notifications.setNotificationChannelAsync(channelId, {
           name: config.name,
           description: config.description || config.name,
           importance:
-            importanceMap[config.importance] ||
-            Notifications.AndroidImportance.HIGH,
+          importanceMap[config.importance] ||
+          Notifications.AndroidImportance.HIGH,
           vibrationPattern: config.vibrationPattern,
           lightColor: config.lightColor,
           sound: config.sound,
           enableVibrate: config.enableVibrate,
-          showBadge: config.showBadge,
+          showBadge: config.showBadge
         });
       }
 
-      console.log('[Notifications] Android channels configured');
+
     }
   }
 
@@ -234,7 +234,7 @@ class NotificationService {
     title,
     body,
     data = {},
-    channelId = NOTIFICATION_CHANNELS.MESSAGES,
+    channelId = NOTIFICATION_CHANNELS.MESSAGES
   }) {
     try {
       if (this.isWebPlatform()) {
@@ -252,10 +252,10 @@ class NotificationService {
             tag: data.type || NOTIFICATION_TYPES.NEW_MESSAGE,
             data: {
               ...data,
-              type: data.type || NOTIFICATION_TYPES.NEW_MESSAGE,
-            },
+              type: data.type || NOTIFICATION_TYPES.NEW_MESSAGE
+            }
           });
-          console.log('[Notifications] Browser notification shown:', browserNotification);
+
           return 'browser_notification';
         }
 
@@ -268,19 +268,19 @@ class NotificationService {
           body,
           data: {
             ...data,
-            type: data.type || NOTIFICATION_TYPES.NEW_MESSAGE,
+            type: data.type || NOTIFICATION_TYPES.NEW_MESSAGE
           },
           sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
+          priority: Notifications.AndroidNotificationPriority.HIGH
         },
         trigger: null,
-        identifier: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        identifier: `notif_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       });
 
-      console.log('[Notifications] Notification shown:', notificationId);
+
       return notificationId;
     } catch (error) {
-      console.error('[Notifications] Error showing notification:', error);
+
       throw error;
     }
   }
@@ -289,7 +289,7 @@ class NotificationService {
     clientName,
     messageText,
     conversationId,
-    username,
+    username
   }) {
     const config = NOTIFICATION_CONFIG.MESSAGE_NOTIFICATION;
     const title = `${config.titlePrefix} ${clientName || 'Client'}`;
@@ -297,10 +297,10 @@ class NotificationService {
 
     const maxLength = config.maxBodyLength;
     const truncatedBody =
-      body.length > maxLength
-        ? body.substring(0, maxLength - config.truncateSuffix.length) +
-          config.truncateSuffix
-        : body;
+    body.length > maxLength ?
+    body.substring(0, maxLength - config.truncateSuffix.length) +
+    config.truncateSuffix :
+    body;
 
     return this.showNotification({
       title,
@@ -310,16 +310,16 @@ class NotificationService {
         conversationId,
         username,
         clientName,
-        messageText,
+        messageText
       },
-      channelId: NOTIFICATION_CHANNELS.MESSAGES,
+      channelId: NOTIFICATION_CHANNELS.MESSAGES
     });
   }
 
   async showNewClientNotification({
     clientName,
     clientUsername,
-    conversationId,
+    conversationId
   }) {
     const config = NOTIFICATION_CONFIG.NEW_CLIENT_NOTIFICATION;
     const displayName = clientName || clientUsername || 'Client';
@@ -334,9 +334,9 @@ class NotificationService {
         conversationId: conversationId || clientUsername,
         username: clientUsername,
         clientName: displayName,
-        isNewClient: true,
+        isNewClient: true
       },
-      channelId: NOTIFICATION_CHANNELS.MESSAGES,
+      channelId: NOTIFICATION_CHANNELS.MESSAGES
     });
   }
 
@@ -346,12 +346,12 @@ class NotificationService {
   async handleNewClientAlert({
     clientName,
     clientUsername,
-    conversationId,
+    conversationId
   }) {
     const appIsActive = AppState.currentState === 'active';
     const tabVisible = this.isWebTabVisible();
     const isForegroundVisible =
-      appIsActive && (!this.isWebPlatform() || tabVisible);
+    appIsActive && (!this.isWebPlatform() || tabVisible);
 
     if (isForegroundVisible) {
       await this.playNotificationSound();
@@ -361,7 +361,7 @@ class NotificationService {
     await this.showNewClientNotification({
       clientName,
       clientUsername,
-      conversationId,
+      conversationId
     });
 
     if (!this.isWebPlatform()) {
@@ -377,18 +377,18 @@ class NotificationService {
         return;
       }
       await Notifications.cancelScheduledNotificationAsync(notificationId);
-      console.log('[Notifications] Notification cancelled:', notificationId);
+
     } catch (error) {
-      console.error('[Notifications] Error cancelling notification:', error);
+
     }
   }
 
   async cancelAllNotifications() {
     try {
       await Notifications.cancelAllScheduledNotificationsAsync();
-      console.log('[Notifications] All notifications cancelled');
+
     } catch (error) {
-      console.error('[Notifications] Error cancelling all notifications:', error);
+
     }
   }
 
@@ -396,7 +396,7 @@ class NotificationService {
     try {
       return await Notifications.getAllScheduledNotificationsAsync();
     } catch (error) {
-      console.error('[Notifications] Error getting scheduled notifications:', error);
+
       return [];
     }
   }
@@ -406,23 +406,23 @@ class NotificationService {
 
     this.notificationListener = Notifications.addNotificationReceivedListener(
       (notification) => {
-        console.log('[Notifications] Notification received:', notification);
+
         if (onNotificationReceived) {
           onNotificationReceived(notification);
         }
-      },
+      }
     );
 
     this.responseListener = Notifications.addNotificationResponseReceivedListener(
       (response) => {
-        console.log('[Notifications] Notification tapped:', response);
+
         if (onNotificationTapped) {
           onNotificationTapped(response);
         }
-      },
+      }
     );
 
-    console.log('[Notifications] Listeners set up');
+
   }
 
   removeListeners() {
@@ -434,16 +434,16 @@ class NotificationService {
       Notifications.removeNotificationSubscription(this.responseListener);
       this.responseListener = null;
     }
-    console.log('[Notifications] Listeners removed');
+
   }
 
   async initialize() {
     try {
-      console.log('[Notifications] Initializing notification service...');
+
 
       const hasPermission = await this.requestPermissions();
       if (!hasPermission) {
-        console.warn('[Notifications] Initialization incomplete: permissions not granted');
+
         return false;
       }
 
@@ -452,13 +452,13 @@ class NotificationService {
       if (!this.isWebPlatform()) {
         await this.getExpoPushToken();
       } else {
-        console.log('[Notifications] Web platform: using browser notifications');
+
       }
 
-      console.log('[Notifications] Notification service initialized successfully');
+
       return true;
     } catch (error) {
-      console.error('[Notifications] Error initializing notification service:', error);
+
       return false;
     }
   }
@@ -471,7 +471,7 @@ class NotificationService {
     try {
       return await Notifications.getBadgeCountAsync();
     } catch (error) {
-      console.error('[Notifications] Error getting badge count:', error);
+
       return 0;
     }
   }
@@ -484,7 +484,7 @@ class NotificationService {
     try {
       await Notifications.setBadgeCountAsync(count);
     } catch (error) {
-      console.error('[Notifications] Error setting badge count:', error);
+
     }
   }
 

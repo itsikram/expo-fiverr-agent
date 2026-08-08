@@ -20,16 +20,16 @@ export const normalizeReloadSeconds = (value, fallback) => {
 export const normalizeProfileReloadEntry = (entry = {}) => {
   const minSeconds = normalizeReloadSeconds(
     entry.minSeconds,
-    TAB_RELOAD_DEFAULT_MIN_SECONDS,
+    TAB_RELOAD_DEFAULT_MIN_SECONDS
   );
   const maxSeconds = normalizeReloadSeconds(
     entry.maxSeconds,
-    TAB_RELOAD_DEFAULT_MAX_SECONDS,
+    TAB_RELOAD_DEFAULT_MAX_SECONDS
   );
   return {
     enabled: entry.enabled === true,
     minSeconds,
-    maxSeconds: Math.max(minSeconds, maxSeconds),
+    maxSeconds: Math.max(minSeconds, maxSeconds)
   };
 };
 
@@ -37,9 +37,9 @@ export const defaultProfileReloadSettings = () => ({
   global: normalizeProfileReloadEntry({
     enabled: false,
     minSeconds: TAB_RELOAD_DEFAULT_MIN_SECONDS,
-    maxSeconds: TAB_RELOAD_DEFAULT_MAX_SECONDS,
+    maxSeconds: TAB_RELOAD_DEFAULT_MAX_SECONDS
   }),
-  profiles: {},
+  profiles: {}
 });
 
 export const normalizeProfileReloadSettings = (raw) => {
@@ -50,7 +50,7 @@ export const normalizeProfileReloadSettings = (raw) => {
 
   const profiles = {};
   const sourceProfiles =
-    raw.profiles && typeof raw.profiles === "object" ? raw.profiles : {};
+  raw.profiles && typeof raw.profiles === "object" ? raw.profiles : {};
   Object.entries(sourceProfiles).forEach(([username, entry]) => {
     const key = String(username || "").trim().toLowerCase();
     if (!key) return;
@@ -60,9 +60,9 @@ export const normalizeProfileReloadSettings = (raw) => {
   return {
     global: normalizeProfileReloadEntry({
       ...base.global,
-      ...(raw.global || {}),
+      ...(raw.global || {})
     }),
-    profiles,
+    profiles
   };
 };
 
@@ -86,7 +86,7 @@ export const wakeTabReloadSettingsChanged = () => {
       window.dispatchEvent(new Event(TAB_RELOAD_SETTINGS_EVENT));
     }
   } catch (error) {
-    console.warn("[TabReload] Wake failed:", error);
+
   }
 };
 
@@ -102,9 +102,9 @@ export const getProfileReloadEntry = (settings, username) => {
 export const mergeProfileKeys = (sellerProfiles = [], savedProfiles = {}) => {
   const keys = new Set();
   sellerProfiles.forEach((profile) => {
-    const key = String(profile?.username || profile?.profileName || "")
-      .trim()
-      .toLowerCase();
+    const key = String(profile?.username || profile?.profileName || "").
+    trim().
+    toLowerCase();
     if (key) keys.add(key);
   });
   Object.keys(savedProfiles || {}).forEach((key) => {

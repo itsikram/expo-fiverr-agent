@@ -9,21 +9,24 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
-  useWindowDimensions,
-} from "react-native";
+  useWindowDimensions } from
+"react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import {
   useWebSocket,
   normalizeClientLookupValue,
-  getMessageTimestamp,
-} from "../context/WebSocketContext";
+  getMessageTimestamp } from
+"../context/WebSocketContext";
 import {
   findClientByListRowId,
   findMessagesForClient,
   getClientConversationId,
   getListRowId,
-} from "../utils/clientIdentity";
+  dedupeMessages,
+  getClientMessageLookupKeys } from
+"../utils/clientIdentity";
+import { logMessagesRenderPipeline } from "../utils/messageRenderLog";
 import { useAuth } from "../context/AuthContext";
 import ClientList from "../components/ClientList";
 import ClientListItem from "../components/ClientListItem";
@@ -65,17 +68,17 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     sendMessageToClient,
     deleteClient,
     loadAssignments,
-    isLoadingClients,
+    isLoadingClients
   } = useWebSocket();
   const { username, email, token, role, logout } = useAuth();
 
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Open sidebar by default
   const [isTranslationModalVisible, setIsTranslationModalVisible] =
-    useState(false);
+  useState(false);
   const [translationInitialText, setTranslationInitialText] = useState("");
   const [translationModalVoiceOnly, setTranslationModalVoiceOnly] =
-    useState(false);
+  useState(false);
   const [isRefetching, setIsRefetching] = useState(false);
   const [isNewClientModalVisible, setIsNewClientModalVisible] = useState(false);
   const [hasInitialDataLoaded, setHasInitialDataLoaded] = useState(false);
@@ -100,13 +103,13 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   }, []);
 
   React.useEffect(() => clearPendingClientSelectionTimeouts, [
-    clearPendingClientSelectionTimeouts,
-  ]);
+  clearPendingClientSelectionTimeouts]
+  );
 
   const refreshAssignments = async () => {
     const isAdminRole =
-      typeof role === "string" &&
-      (role === "admin" || role.toLowerCase().includes("admin"));
+    typeof role === "string" && (
+    role === "admin" || role.toLowerCase().includes("admin"));
 
     if (!token || isAdminRole) {
       setAssignedClientIds([]);
@@ -120,16 +123,16 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       const ids = (await loadAssignments()) || [];
       const normalizedIds = (Array.isArray(ids) ? ids : []).filter(Boolean);
       setAssignedClientIds(normalizedIds);
-      console.log(
-        "[ClientsScreen] Assigned client IDs for current user:",
-        normalizedIds,
-      );
+
+
+
+
       return normalizedIds;
     } catch (error) {
-      console.warn(
-        "[ClientsScreen] Unable to load assignments:",
-        error?.message || error,
-      );
+
+
+
+
       setAssignedClientIds([]);
       return [];
     } finally {
@@ -148,27 +151,27 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
     if (typeof value === "object") {
       const nestedCandidates = [
-        value.username,
-        value.clientUsername,
-        value.client,
-        value.conversationId,
-        value.conversation_id,
-        value.id,
-        value._id,
-        value.clientKey,
-        value.name,
-        value.displayName,
-        value.fullName,
-        value.profileName,
-        value.sellerUsername,
-        value.seller_username,
-        value.email,
-        value.clientEmail,
-        value.value,
-        value?.profile?.username,
-        value?.profile?.name,
-        value?.user?.username,
-      ];
+      value.username,
+      value.clientUsername,
+      value.client,
+      value.conversationId,
+      value.conversation_id,
+      value.id,
+      value._id,
+      value.clientKey,
+      value.name,
+      value.displayName,
+      value.fullName,
+      value.profileName,
+      value.sellerUsername,
+      value.seller_username,
+      value.email,
+      value.clientEmail,
+      value.value,
+      value?.profile?.username,
+      value?.profile?.name,
+      value?.user?.username];
+
       for (const nestedValue of nestedCandidates) {
         const normalized = normalizeClientLookupValue(nestedValue);
         if (normalized) {
@@ -181,7 +184,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     const str = String(value).trim().toLowerCase().replace(/^@/, "");
     const stripped = str.replace(
       /^(user|client|conversation|conv|seller|profile|inbox|chat)[_:-]?/i,
-      "",
+      ""
     );
     const target = stripped || str;
 
@@ -196,21 +199,21 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
     const variants = new Set([normalized]);
     const directValues = [
-      value,
-      value?.username,
-      value?.clientUsername,
-      value?.client,
-      value?.conversationId,
-      value?.conversation_id,
-      value?.id,
-      value?._id,
-      value?.clientKey,
-      value?.name,
-      value?.displayName,
-      value?.profileName,
-      value?.sellerUsername,
-      value?.seller_username,
-    ].filter(Boolean);
+    value,
+    value?.username,
+    value?.clientUsername,
+    value?.client,
+    value?.conversationId,
+    value?.conversation_id,
+    value?.id,
+    value?._id,
+    value?.clientKey,
+    value?.name,
+    value?.displayName,
+    value?.profileName,
+    value?.sellerUsername,
+    value?.seller_username].
+    filter(Boolean);
     directValues.forEach((directValue) => {
       const directNormalized = normalizeClientLookupValue(directValue);
       if (directNormalized) {
@@ -220,7 +223,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
     const stripped = normalized.replace(
       /^(user|client|conversation|conv|seller|profile|inbox|chat)([_-]?)/,
-      "",
+      ""
     );
     if (stripped && stripped !== normalized) {
       variants.add(stripped);
@@ -228,7 +231,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
     const withoutTrailingRole = normalized.replace(
       /(?:[_-]?(?:user|client|seller|profile|conversation|conv|inbox|chat))$/,
-      "",
+      ""
     );
     if (withoutTrailingRole && withoutTrailingRole !== normalized) {
       variants.add(withoutTrailingRole);
@@ -243,9 +246,9 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
 
     const normalizedAssignedIds = new Set(
-      assignedIds
-        .flatMap((item) => getClientLookupVariants(item))
-        .filter(Boolean),
+      assignedIds.
+      flatMap((item) => getClientLookupVariants(item)).
+      filter(Boolean)
     );
 
     if (normalizedAssignedIds.size === 0) {
@@ -253,57 +256,57 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
 
     const candidateKeys = [
-      client?._id,
-      client?.id,
-      client?.clientId,
-      client?.client_id,
-      client?.clientKey,
-      client?.username,
-      client?.clientUsername,
-      client?.client,
-      client?.profile?.username,
-      client?.user?.username,
-    ]
-      .flatMap((item) => getClientLookupVariants(item))
-      .filter(Boolean);
+    client?._id,
+    client?.id,
+    client?.clientId,
+    client?.client_id,
+    client?.clientKey,
+    client?.username,
+    client?.clientUsername,
+    client?.client,
+    client?.profile?.username,
+    client?.user?.username].
+
+    flatMap((item) => getClientLookupVariants(item)).
+    filter(Boolean);
 
     return candidateKeys.some((candidateKey) =>
-      normalizedAssignedIds.has(candidateKey),
+    normalizedAssignedIds.has(candidateKey)
     );
   };
 
   const isAdminRole =
-    typeof role === "string" &&
-    (role === "admin" || role.toLowerCase().includes("admin"));
+  typeof role === "string" && (
+  role === "admin" || role.toLowerCase().includes("admin"));
 
   const normalizeClientListId = (client, index) => getListRowId(client, index);
 
   const visibleClients = React.useMemo(() => {
-    const baseList = isAdminRole
-      ? (clients || []).filter(Boolean)
-      : (clients || []).filter((client) =>
-          doesClientMatchAssignedIds(client, assignedClientIds),
-        );
+    const baseList = isAdminRole ?
+    (clients || []).filter(Boolean) :
+    (clients || []).filter((client) =>
+    doesClientMatchAssignedIds(client, assignedClientIds)
+    );
 
     if (!isAdminRole) {
-      console.log(
-        "[ClientsScreen] Assigned-clients filtered list for current user:",
-        baseList,
-      );
-      console.log(
-        "[ClientsScreen] Rendering full client list for current user:",
-        clients,
-      );
-      console.log(
-        "[ClientsScreen] Current user assigned IDs:",
-        assignedClientIds,
-      );
+
+
+
+
+
+
+
+
+
+
+
+
     }
 
     return baseList.map((client, index) => ({
       ...client,
       id: normalizeClientListId(client, index),
-      clientKey: normalizeClientListId(client, index),
+      clientKey: normalizeClientListId(client, index)
     }));
   }, [clients, isAdminRole, assignedClientIds, isAssignmentsLoaded]);
 
@@ -332,32 +335,45 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
       return (clientsList || []).find((client) => {
         const candidateValues = [
-          client.id,
-          client.clientKey,
-          client.conversationId,
-          client.conversation_id,
-          client.username,
-          client.clientUsername,
-          client.client,
-          client._id,
-        ].filter(Boolean);
+        client.id,
+        client.clientKey,
+        client.conversationId,
+        client.conversation_id,
+        client.username,
+        client.clientUsername,
+        client.client,
+        client._id].
+        filter(Boolean);
 
         return candidateValues.some(
           (candidate) =>
-            normalizeClientLookupValue(candidate) === normalizedIdentifier,
+          normalizeClientLookupValue(candidate) === normalizedIdentifier
         );
       });
     },
-    [visibleClients],
+    [visibleClients]
   );
 
-  const selectedClient = findClientByIdentifier(selectedClientId);
+  const selectedClient = React.useMemo(() => {
+    return (
+      findClientByIdentifier(selectedClientId) ||
+      findClientByIdentifier(selectedConversationId) ||
+      null
+    );
+  }, [findClientByIdentifier, selectedClientId, selectedConversationId]);
 
   React.useEffect(() => {
     if (selectedClient) {
       selectedClientRef.current = selectedClient;
     }
   }, [selectedClient]);
+
+  // Keep showing the last known client if the list briefly fails to resolve the row.
+  const displaySelectedClient =
+  selectedClient || (
+  selectedClientId || selectedConversationId ?
+  selectedClientRef.current :
+  null);
 
   const getRefreshTargets = React.useCallback(() => {
     if (isAdminRole) {
@@ -380,7 +396,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     ({
       includeClientList = true,
       includeMessages = true,
-      selectedOnly = false,
+      selectedOnly = false
     } = {}) => {
       if (!isConnected) {
         return;
@@ -400,7 +416,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
               requestClientData(conversationId);
               requestMessages(conversationId, {
                 force: true,
-                triggerExtraction: true,
+                triggerExtraction: true
               });
               triggerMessageExtraction(conversationId, { force: true });
             }
@@ -419,11 +435,11 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         requestClientList();
       }
 
-      const targets = selectedOnly
-        ? selectedClientRef.current
-          ? [selectedClientRef.current]
-          : []
-        : getRefreshTargets();
+      const targets = selectedOnly ?
+      selectedClientRef.current ?
+      [selectedClientRef.current] :
+      [] :
+      getRefreshTargets();
 
       if (targets.length === 0) {
         return;
@@ -437,31 +453,36 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
         requestClientData(conversationId);
         if (includeMessages) {
+          const isSelectedTarget =
+          selectedOnly ||
+          selectedClientRef.current &&
+          getClientConversationId(selectedClientRef.current) === conversationId;
           requestMessages(conversationId, {
-            force: selectedOnly || true,
+            force: Boolean(isSelectedTarget),
             triggerExtraction: true,
+            background: !isSelectedTarget
           });
           triggerMessageExtraction(conversationId, { force: true });
         }
       });
     },
     [
-      getRefreshTargets,
-      isAdminRole,
-      isConnected,
-      requestAllData,
-      requestClientData,
-      requestClientList,
-      requestMessages,
-      triggerClientListExtraction,
-      triggerMessageExtraction,
-    ],
+    getRefreshTargets,
+    isAdminRole,
+    isConnected,
+    requestAllData,
+    requestClientData,
+    requestClientList,
+    requestMessages,
+    triggerClientListExtraction,
+    triggerMessageExtraction]
+
   );
 
   // Request data when connected and auto-fetch client list
   useEffect(() => {
     if (isConnected) {
-      console.log("[ClientsScreen] Connected, requesting data...");
+
       refreshVisibleClients({ includeClientList: true, includeMessages: true });
     }
   }, [isConnected]);
@@ -476,7 +497,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       // Show snackbar when clients are fetched
       if (hasInitialDataLoaded && isFetchingClientsRef.current) {
         setSnackbarMessage(
-          `Fetched ${visibleClients.length} client${visibleClients.length !== 1 ? "s" : ""}`,
+          `Fetched ${visibleClients.length} client${visibleClients.length !== 1 ? "s" : ""}`
         );
         setSnackbarType("success");
         setSnackbarVisible(true);
@@ -518,18 +539,18 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
     const trackingKey = fetchSnackbarConversationRef.current;
     const activeNorm = normalizeClientLookupValue(activeConversationKey);
-    const trackingNorm = trackingKey
-      ? normalizeClientLookupValue(trackingKey)
-      : null;
+    const trackingNorm = trackingKey ?
+    normalizeClientLookupValue(trackingKey) :
+    null;
 
     if (!trackingNorm || trackingNorm !== activeNorm) {
       return;
     }
 
     const stillLoadingThisConversation =
-      isLoadingMessages &&
-      loadingConversationId &&
-      normalizeClientLookupValue(loadingConversationId) === activeNorm;
+    isLoadingMessages &&
+    loadingConversationId &&
+    normalizeClientLookupValue(loadingConversationId) === activeNorm;
 
     if (stillLoadingThisConversation) {
       sawLoadingForFetchRef.current = true;
@@ -543,12 +564,12 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     const clientMessages = findMessagesForClient(
       messages,
       selectedClient,
-      activeConversationKey,
+      activeConversationKey
     );
 
     if (clientMessages.length > 0) {
       setSnackbarMessage(
-        `Fetched ${clientMessages.length} message${clientMessages.length !== 1 ? "s" : ""} from ${selectedClient.name || selectedClient.username}`,
+        `Fetched ${clientMessages.length} message${clientMessages.length !== 1 ? "s" : ""} from ${selectedClient.name || selectedClient.username}`
       );
       setSnackbarType("success");
       setSnackbarVisible(true);
@@ -559,12 +580,12 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     sawLoadingForFetchRef.current = false;
     prevMessagesKeysRef.current = new Set(Object.keys(messages));
   }, [
-    messages,
-    hasInitialDataLoaded,
-    selectedClient,
-    isLoadingMessages,
-    loadingConversationId,
-  ]);
+  messages,
+  hasInitialDataLoaded,
+  selectedClient,
+  isLoadingMessages,
+  loadingConversationId]
+  );
 
   // Show modal when new client data is received (only after initial data is loaded)
   // DISABLED: Modal is disabled for now
@@ -577,11 +598,11 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   const handleAddNewClient = () => {
     if (newClientData) {
       // Add the new client to the clients list
-      const uniqueClientId = newClientData.username
-        ? `user:${newClientData.username}`
-        : newClientData.conversationId
-          ? `conv:${newClientData.conversationId}`
-          : `client:${Date.now()}`;
+      const uniqueClientId = newClientData.username ?
+      `user:${newClientData.username}` :
+      newClientData.conversationId ?
+      `conv:${newClientData.conversationId}` :
+      `client:${Date.now()}`;
 
       const newClient = {
         id: uniqueClientId,
@@ -594,7 +615,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         review_count: newClientData.review_count || 0,
         conversationId: newClientData.conversationId || newClientData.username,
         avatar_url: newClientData.avatar_url || newClientData.avatarUrl || "",
-        ...newClientData,
+        ...newClientData
       };
 
       // The client will be added via the WebSocketContext when we trigger client list extraction
@@ -609,7 +630,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
       Alert.alert(
         "Client Added",
-        `Client ${newClientData.name || newClientData.username} has been added to your list.`,
+        `Client ${newClientData.name || newClientData.username} has been added to your list.`
       );
     }
   };
@@ -621,17 +642,109 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
   // Get messages for selected client only (strict conversation ownership).
   const activeConversationKey =
-    selectedConversationId || getClientConversationId(selectedClient);
+  selectedConversationId || getClientConversationId(displaySelectedClient);
 
   const selectedMessages = React.useMemo(() => {
-    if (!selectedClient || !activeConversationKey) return [];
+    const clientForMessages = displaySelectedClient;
+    const appliedLogics = [];
 
-    return findMessagesForClient(
-      messages,
-      selectedClient,
-      activeConversationKey,
-    );
-  }, [selectedClient, selectedConversationId, activeConversationKey, messages]);
+    if (clientForMessages && activeConversationKey) {
+      const lookupKeys = Array.from(
+        getClientMessageLookupKeys(clientForMessages, activeConversationKey)
+      );
+      appliedLogics.push({
+        fn: "findMessagesForClient",
+        primaryKey: activeConversationKey,
+        lookupKeys,
+        resolvedVia: selectedClient ? "selectedClient" : "displayFallback"
+      });
+
+      const result = findMessagesForClient(
+        messages,
+        clientForMessages,
+        activeConversationKey
+      );
+
+      appliedLogics.push({
+        fn: "dedupeMessages|filterMessagesForClient",
+        inputMapKeys: Object.keys(messages || {}),
+        outputCount: result.length
+      });
+
+      const bucket =
+      messages?.[activeConversationKey] ||
+      messages?.[clientForMessages?.username] ||
+      result;
+
+      logMessagesRenderPipeline({
+        client: clientForMessages,
+        messagesMap: {
+          [String(activeConversationKey)]: Array.isArray(bucket) ? bucket : result
+        },
+        inputMessages: result,
+        appliedLogics,
+        outputMessages: result,
+        uiState: {
+          stage: "ClientsScreen.selectedMessages",
+          allMapKeys: Object.keys(messages || {})
+        }
+      });
+
+      return result;
+    }
+
+    // Last resort: render the bucket keyed by selectedConversationId directly.
+    if (selectedConversationId) {
+      const directKey =
+      messages?.[selectedConversationId] ?
+      selectedConversationId :
+      Object.keys(messages || {}).find(
+        (key) =>
+        normalizeClientLookupValue(key) ===
+        normalizeClientLookupValue(selectedConversationId)
+      ) ||
+      null;
+      const direct = directKey ? messages[directKey] : [];
+
+      if (Array.isArray(direct) && direct.length > 0) {
+        appliedLogics.push({
+          fn: "directBucketFallback",
+          selectedConversationId,
+          bucketKey: directKey,
+          beforeDedupe: direct.length
+        });
+        const result = dedupeMessages(direct);
+        appliedLogics.push({
+          fn: "dedupeMessages",
+          outputCount: result.length
+        });
+
+        logMessagesRenderPipeline({
+          client: clientForMessages,
+          messagesMap: { [directKey]: direct },
+          inputMessages: direct,
+          appliedLogics,
+          outputMessages: result,
+          uiState: {
+            stage: "ClientsScreen.selectedMessages",
+            allMapKeys: Object.keys(messages || {})
+          }
+        });
+
+        return result;
+      }
+    }
+
+    // No selected client — do not spam render logs during background sync.
+    return [];
+  }, [
+  displaySelectedClient,
+  selectedClient,
+  selectedClientId,
+  selectedConversationId,
+  activeConversationKey,
+  messages]
+  );
 
   // Show cached/merged messages immediately while a refresh is in flight.
   const displayMessages = selectedMessages;
@@ -642,23 +755,23 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       delaysMs.forEach((delayMs) => {
         const timeoutId = setTimeout(() => {
           const activeClient = selectedClientRef.current;
-          const activeTarget = activeClient
-            ? getClientConversationId(activeClient)
-            : null;
+          const activeTarget = activeClient ?
+          getClientConversationId(activeClient) :
+          null;
           if (activeTarget !== targetIdentifier) {
             return;
           }
 
           requestMessages(targetIdentifier, {
             force: true,
-            triggerExtraction: true,
+            triggerExtraction: true
           });
           triggerMessageExtraction(targetIdentifier, { force: true });
         }, delayMs);
         pendingClientSelectionTimeoutsRef.current.push(timeoutId);
       });
     },
-    [requestMessages, triggerMessageExtraction],
+    [requestMessages, triggerMessageExtraction]
   );
 
   const activateClientAndLoadMessages = React.useCallback(
@@ -672,10 +785,10 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       const targetIdentifier = conversationId || username;
 
       if (!targetIdentifier) {
-        console.warn(
-          "[ClientsScreen] Cannot activate client without username/conversationId:",
-          client,
-        );
+
+
+
+
         return false;
       }
 
@@ -695,14 +808,14 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
       clearPendingClientSelectionTimeouts();
 
-      console.log(
-        "[ClientsScreen] Activating client in Fiverr inbox:",
-        targetIdentifier,
-      );
+
+
+
+
       clickClientInFiverr({
         identifier: targetIdentifier,
         conversationId,
-        username,
+        username
       });
 
       scheduleClientMessageSync(targetIdentifier);
@@ -710,14 +823,14 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       return true;
     },
     [
-      clearPendingClientSelectionTimeouts,
-      clickClientInFiverr,
-      isConnected,
-      requestClientData,
-      requestMessages,
-      triggerMessageExtraction,
-      scheduleClientMessageSync,
-    ],
+    clearPendingClientSelectionTimeouts,
+    clickClientInFiverr,
+    isConnected,
+    requestClientData,
+    requestMessages,
+    triggerMessageExtraction,
+    scheduleClientMessageSync]
+
   );
 
   const handleFetchMessages = () => {
@@ -727,13 +840,13 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
     const targetIdentifier = getClientConversationId(selectedClient);
     if (!targetIdentifier) {
-      console.warn(
-        "[ClientsScreen] Fetch messages aborted: client has no username/conversationId",
-        selectedClient,
-      );
+
+
+
+
       Alert.alert(
         "Cannot Fetch Messages",
-        "This client has no username or conversation ID. Try refreshing the client list.",
+        "This client has no username or conversation ID. Try refreshing the client list."
       );
       return;
     }
@@ -750,7 +863,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     if (!targetIdentifier) {
       Alert.alert(
         "Cannot Load Messages",
-        "This client has no username or conversation ID. Try refreshing the client list.",
+        "This client has no username or conversation ID. Try refreshing the client list."
       );
       return;
     }
@@ -763,7 +876,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     activateClientAndLoadMessages(selectedClient);
     triggerMessageExtraction(targetIdentifier, {
       force: true,
-      scrollToLoadAll: true,
+      scrollToLoadAll: true
     });
     requestMessages(targetIdentifier, { force: true });
 
@@ -771,9 +884,9 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     [8000, 20000, 40000, 60000].forEach((delayMs) => {
       setTimeout(() => {
         const activeClient = selectedClientRef.current;
-        const activeTarget = activeClient
-          ? getClientConversationId(activeClient)
-          : null;
+        const activeTarget = activeClient ?
+        getClientConversationId(activeClient) :
+        null;
         if (activeTarget !== targetIdentifier) {
           return;
         }
@@ -807,49 +920,49 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     const clientToDelete = findClientByIdentifier(clientId, visibleClients);
 
     const clientName =
-      clientToDelete?.name || clientToDelete?.username || "this client";
+    clientToDelete?.name || clientToDelete?.username || "this client";
 
     const deleteKey =
-      clientToDelete?.username ||
-      clientToDelete?.conversationId ||
-      clientToDelete?.id ||
-      clientId;
+    clientToDelete?.username ||
+    clientToDelete?.conversationId ||
+    clientToDelete?.id ||
+    clientId;
 
     // Handle delete logic
     Alert.alert(
       "Delete Client",
       `Are you sure you want to remove ${clientName}? This action cannot be undone.`,
       [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            console.log("[ClientsScreen] Deleting client:", deleteKey);
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
 
-            const deleted = deleteClient(deleteKey);
 
-            if (deleted) {
-              if (selectedClientId === clientId) {
-                setSelectedClientId(null);
-                setSelectedConversationId(null);
-              }
+          const deleted = deleteClient(deleteKey);
 
-              Alert.alert("Success", "Client has been removed.");
-            } else {
-              Alert.alert(
-                "Error",
-                "Failed to delete client. Please try again.",
-              );
+          if (deleted) {
+            if (selectedClientId === clientId) {
+              setSelectedClientId(null);
+              setSelectedConversationId(null);
             }
-          },
-        },
-      ],
+
+            Alert.alert("Success", "Client has been removed.");
+          } else {
+            Alert.alert(
+              "Error",
+              "Failed to delete client. Please try again."
+            );
+          }
+        }
+      }]
+
     );
   };
 
   const handleRefetch = async () => {
-    console.log("[ClientsScreen] Refetching clients and messages...");
+
 
     if (!isConnected) {
       Alert.alert("Not Connected", "Please wait for connection to server.");
@@ -864,7 +977,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       refreshVisibleClients({
         includeClientList: true,
         includeMessages: true,
-        selectedOnly: true,
+        selectedOnly: true
       });
 
       const currentClient = selectedClientRef.current;
@@ -874,24 +987,24 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
           clickClientInFiverr({
             identifier: targetIdentifier,
             conversationId: currentClient.conversationId,
-            username: currentClient.username,
+            username: currentClient.username
           });
         }
       }
     } catch (error) {
-      console.warn("[ClientsScreen] Refetch failed:", error);
+
     } finally {
       setTimeout(() => {
         setIsRefetching(false);
-        console.log(
-          "[ClientsScreen] Refetch complete. Assigned clients should be refreshed in the UI.",
-        );
+
+
+
       }, 4000);
     }
   };
 
   const handleReloadCurrentClientMessages = async () => {
-    console.log("[ClientsScreen] Reloading current client messages...");
+
 
     if (!isConnected) {
       Alert.alert("Not Connected", "Please wait for connection to server.");
@@ -906,7 +1019,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     if (!targetIdentifier) {
       Alert.alert(
         "No Client Selected",
-        "Please select a client before reloading messages.",
+        "Please select a client before reloading messages."
       );
       return;
     }
@@ -919,17 +1032,17 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       triggerMessageExtraction(targetIdentifier, { force: true });
       requestMessages(targetIdentifier, {
         force: true,
-        triggerExtraction: true,
+        triggerExtraction: true
       });
     } catch (error) {
-      console.warn(
-        "[ClientsScreen] Reload current client messages failed:",
-        error,
-      );
+
+
+
+
     } finally {
       setTimeout(() => {
         setIsRefetching(false);
-        console.log("[ClientsScreen] Reload current client messages complete.");
+
       }, 25000);
     }
   };
@@ -945,7 +1058,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
     Alert.alert(
       "Access denied",
-      "Only admin users can open the admin dashboard.",
+      "Only admin users can open the admin dashboard."
     );
   };
 
@@ -954,10 +1067,10 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       await logout();
       Alert.alert("Signed out", "You have been logged out successfully.");
     } catch (error) {
-      console.warn("[ClientsScreen] Logout failed:", error?.message || error);
+
       Alert.alert(
         "Logout failed",
-        "Unable to sign out right now. Please try again.",
+        "Unable to sign out right now. Please try again."
       );
     }
   };
@@ -975,15 +1088,15 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   };
 
   const handleTranslationTextReady = (translatedText) => {
-    // Handle the translated text - you can use it to send a message, etc.
-    console.log("Translated text ready:", translatedText);
-    // You can integrate this with your message sending logic
+
+
+
   };
 
   const handleUseInputText = (inputText) => {
-    // Handle using the input text (voice detected text)
-    console.log("Input text ready:", inputText);
-    // You can integrate this with your message input logic
+
+
+
   };
 
   // Connection status indicators
@@ -1006,213 +1119,217 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     if (!isConnected) {
       return {
         text: "Extension: Server offline",
-        color: colors.accent.error || "#F44336",
+        color: colors.accent.error || "#F44336"
       };
     }
 
     const anyOnline =
-      sellerProfile?.online ||
-      (Array.isArray(sellerProfiles) &&
-        sellerProfiles.some((profile) => profile?.online));
+    sellerProfile?.online ||
+    Array.isArray(sellerProfiles) &&
+    sellerProfiles.some((profile) => profile?.online);
 
     if (anyOnline) {
       return {
         text: "Extension: Active",
-        color: colors.accent.success || "#4CAF50",
+        color: colors.accent.success || "#4CAF50"
       };
     }
 
     if (
-      sellerProfile ||
-      (Array.isArray(sellerProfiles) && sellerProfiles.length > 0)
-    ) {
+    sellerProfile ||
+    Array.isArray(sellerProfiles) && sellerProfiles.length > 0)
+    {
       return {
         text: "Extension: Not connected",
-        color: colors.accent.warning || "#FF9800",
+        color: colors.accent.warning || "#FF9800"
       };
     }
 
     return {
       text: "Extension: Waiting",
-      color: colors.accent.warning || "#FF9800",
+      color: colors.accent.warning || "#FF9800"
     };
   };
 
   const extensionStatus = getExtensionStatus();
 
-  const sidebarClientList = (
-    <ClientList
-      sellerProfiles={sellerProfiles}
-      selectedSellerProfile={selectedSellerProfile}
-      onSelectProfile={setSelectedSellerProfile}
-      clients={visibleClients}
-      selectedClientId={selectedClientId}
-      onSelectClient={handleSelectClient}
-      onDeleteClient={handleDeleteClient}
-      isLoading={isLoadingClients}
-      showProfileSelector={isAdminRole}
-    />
-  );
+  const sidebarClientList =
+  <ClientList
+    sellerProfiles={sellerProfiles}
+    selectedSellerProfile={selectedSellerProfile}
+    onSelectProfile={setSelectedSellerProfile}
+    clients={visibleClients}
+    selectedClientId={selectedClientId}
+    onSelectClient={handleSelectClient}
+    onDeleteClient={handleDeleteClient}
+    isLoading={isLoadingClients}
+    showProfileSelector={isAdminRole} />;
+
+
 
   return (
     <View
-      style={[styles.container, Platform.OS === "web" && styles.containerWeb]}
-    >
+      style={[styles.container, Platform.OS === "web" && styles.containerWeb]}>
+      
       <View style={[styles.content, isDesktopWeb && styles.contentDesktop]}>
-        {isDesktopWeb ? (
-          isSidebarOpen ? (
-            <View style={styles.desktopSidebar}>
+        {isDesktopWeb ?
+        isSidebarOpen ?
+        <View style={styles.desktopSidebar}>
               {sidebarClientList}
               <View style={styles.desktopSidebarFooter}>
                 <TouchableOpacity
-                  style={[
-                    styles.desktopRefetchButton,
-                    isRefetching && styles.desktopRefetchButtonDisabled,
-                  ]}
-                  onPress={handleRefetch}
-                  activeOpacity={0.7}
-                  disabled={isRefetching}
-                >
+              style={[
+              styles.desktopRefetchButton,
+              isRefetching && styles.desktopRefetchButtonDisabled]
+              }
+              onPress={handleRefetch}
+              activeOpacity={0.7}
+              disabled={isRefetching}>
+              
                   <Ionicons
-                    name="refresh"
-                    size={18}
-                    color={colors.text.secondary}
-                  />
+                name="refresh"
+                size={18}
+                color={colors.text.secondary} />
+              
                   <Text style={styles.desktopRefetchButtonText}>
                     {isRefetching ? "Fetching..." : "Refetch clients"}
                   </Text>
                 </TouchableOpacity>
               </View>
-            </View>
-          ) : null
-        ) : (
-          <OffcanvasSidebar
-            isOpen={isSidebarOpen}
-            onClose={() => setIsSidebarOpen(false)}
-            onOpen={() => setIsSidebarOpen(true)}
-            enableSwipeOpen
-            onRefetch={handleRefetch}
-            isRefetching={isRefetching}
-          >
+            </View> :
+        null :
+
+        <OffcanvasSidebar
+          isOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
+          onOpen={() => setIsSidebarOpen(true)}
+          enableSwipeOpen
+          onRefetch={handleRefetch}
+          isRefetching={isRefetching}>
+          
             {sidebarClientList}
           </OffcanvasSidebar>
-        )}
+        }
 
         {/* Main Content */}
         <View
           style={[
-            styles.details,
-            isDesktopWeb && isSidebarOpen && styles.detailsWithSidebar,
-          ]}
-        >
-          {selectedClient ? (
-            <ClientDetailsScreen
-              key={activeConversationKey || selectedClientId}
-              client={selectedClient}
-              messages={displayMessages}
-              onFetchMessages={handleFetchMessages}
-              onLoadAllMessages={handleLoadAllMessages}
-              onSendMessage={sendMessageToClient}
-              isLoadingMessages={
-                isLoadingMessages &&
-                selectedClient &&
-                loadingConversationId === getClientConversationId(selectedClient)
-              }
-              isMessageInputMinimized={isMessageInputMinimized}
-            />
-          ) : isAdminRole ? (
-            <LinearGradient
-              colors={[colors.background.primary, colors.background.secondary]}
-              style={styles.emptyState}
-            >
+          styles.details,
+          isDesktopWeb && isSidebarOpen && styles.detailsWithSidebar]
+          }>
+          
+          {displaySelectedClient ?
+          <ClientDetailsScreen
+            key={activeConversationKey || selectedClientId}
+            client={displaySelectedClient}
+            messages={displayMessages}
+            onFetchMessages={handleFetchMessages}
+            onLoadAllMessages={handleLoadAllMessages}
+            onSendMessage={sendMessageToClient}
+            isLoadingMessages={
+            isLoadingMessages &&
+            displaySelectedClient &&
+            loadingConversationId &&
+            normalizeClientLookupValue(loadingConversationId) ===
+            normalizeClientLookupValue(
+              getClientConversationId(displaySelectedClient)
+            )
+            }
+            isMessageInputMinimized={isMessageInputMinimized} /> :
+
+          isAdminRole ?
+          <LinearGradient
+            colors={[colors.background.primary, colors.background.secondary]}
+            style={styles.emptyState}>
+            
               <View style={styles.emptyContent}>
                 <ProfileSelector
-                  sellerProfiles={sellerProfiles}
-                  selectedSellerProfile={selectedSellerProfile}
-                  onSelectProfile={setSelectedSellerProfile}
-                  variant="card"
-                />
+                sellerProfiles={sellerProfiles}
+                selectedSellerProfile={selectedSellerProfile}
+                onSelectProfile={setSelectedSellerProfile}
+                variant="card" />
+              
                 <Text style={styles.emptyIcon}>👥</Text>
                 <Text style={styles.emptyTitle}>
                   {clients.length === 0 ? "No Clients" : "Select a Client"}
                 </Text>
                 <Text style={styles.emptyText}>
-                  {clients.length === 0
-                    ? isConnected
-                      ? "No clients found. Make sure the browser extension is connected and fetch clients."
-                      : "Waiting for connection to server..."
-                    : "Choose a client from the list to view their details, messages, and analysis."}
+                  {clients.length === 0 ?
+                isConnected ?
+                "No clients found. Make sure the browser extension is connected and fetch clients." :
+                "Waiting for connection to server..." :
+                "Choose a client from the list to view their details, messages, and analysis."}
                 </Text>
-                {!isConnected && (
-                  <TouchableOpacity
-                    style={styles.retryButton}
-                    onPress={() => {
-                      requestAllData();
-                    }}
-                  >
+                {!isConnected &&
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={() => {
+                  requestAllData();
+                }}>
+                
                     <Text style={styles.retryButtonText}>Retry Connection</Text>
                   </TouchableOpacity>
-                )}
+              }
               </View>
-            </LinearGradient>
-          ) : (
-            <View style={styles.assignedClientsHome}>
+            </LinearGradient> :
+
+          <View style={styles.assignedClientsHome}>
               <View style={styles.assignedClientsHeader}>
                 <Text style={styles.assignedClientsTitle}>Your Clients</Text>
                 <Text style={styles.assignedClientsSubtitle}>
-                  {visibleClients.length > 0
-                    ? "Select a client to view messages and details"
-                    : "Clients assigned to you will appear here"}
+                  {visibleClients.length > 0 ?
+                "Select a client to view messages and details" :
+                "Clients assigned to you will appear here"}
                 </Text>
               </View>
 
-              {!isAssignmentsLoaded || (isLoadingClients && visibleClients.length === 0) ? (
-                <View style={styles.assignedClientsLoading}>
+              {(!isAssignmentsLoaded || isLoadingClients) && visibleClients.length === 0 ?
+            <View style={styles.assignedClientsLoading}>
                   <ActivityIndicator size="large" color={colors.accent.primary} />
                   <Text style={styles.assignedClientsLoadingText}>
                     Loading your clients...
                   </Text>
-                </View>
-              ) : visibleClients.length === 0 ? (
-                <View style={styles.assignedClientsEmpty}>
+                </View> :
+            visibleClients.length === 0 ?
+            <View style={styles.assignedClientsEmpty}>
                   <Text style={styles.emptyIcon}>👥</Text>
                   <Text style={styles.emptyTitle}>No assigned clients</Text>
                   <Text style={styles.emptyText}>
-                    {isConnected
-                      ? "You don't have any clients assigned yet. Contact your admin."
-                      : "Waiting for connection to server..."}
+                    {isConnected ?
+                "You don't have any clients assigned yet. Contact your admin." :
+                "Waiting for connection to server..."}
                   </Text>
-                  {!isConnected && (
-                    <TouchableOpacity
-                      style={styles.retryButton}
-                      onPress={() => requestAllData()}
-                    >
+                  {!isConnected &&
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={() => requestAllData()}>
+                
                       <Text style={styles.retryButtonText}>Retry Connection</Text>
                     </TouchableOpacity>
-                  )}
-                </View>
-              ) : (
-                <ScrollView
-                  style={styles.assignedClientsList}
-                  contentContainerStyle={styles.assignedClientsListContent}
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                >
+              }
+                </View> :
+
+            <ScrollView
+              style={styles.assignedClientsList}
+              contentContainerStyle={styles.assignedClientsListContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled">
+              
                   {visibleClients.map((client, index) => {
-                    const rowId = getListRowId(client, index);
-                    return (
-                      <ClientListItem
-                        key={rowId}
-                        client={client}
-                        isSelected={false}
-                        onPress={() => handleSelectClient(rowId)}
-                      />
-                    );
-                  })}
+                const rowId = getListRowId(client, index);
+                return (
+                  <ClientListItem
+                    key={rowId}
+                    client={client}
+                    isSelected={false}
+                    onPress={() => handleSelectClient(rowId)} />);
+
+
+              })}
                 </ScrollView>
-              )}
+            }
             </View>
-          )}
+          }
         </View>
       </View>
 
@@ -1222,10 +1339,10 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         isMenuOpen={isSidebarOpen}
         onRefetch={handleReloadCurrentClientMessages}
         isRefetching={isRefetching}
-        showRefetch={!!selectedClient}
+        showRefetch={!!displaySelectedClient}
         onNavigateToSettings={onNavigateToSettings}
         onOpenAdminDashboard={
-          role === "admin" ? handleOpenAdminDashboard : null
+        role === "admin" ? handleOpenAdminDashboard : null
         }
         onLogout={handleLogout}
         onOpenVoiceModal={handleOpenVoiceModal}
@@ -1233,10 +1350,10 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         extensionStatusColor={extensionStatus.color}
         isMessageInputMinimized={isMessageInputMinimized}
         onToggleMessageInput={() =>
-          setIsMessageInputMinimized(!isMessageInputMinimized)
+        setIsMessageInputMinimized(!isMessageInputMinimized)
         }
-        showMessageInputToggle={!!selectedClient}
-      />
+        showMessageInputToggle={!!displaySelectedClient} />
+      
 
       {/* Translation Modal */}
       <TranslationModal
@@ -1244,21 +1361,21 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         onClose={() => setIsTranslationModalVisible(false)}
         initialText={translationInitialText}
         targetLanguage={
-          selectedClient?.language === "English"
-            ? "en"
-            : selectedClient?.language?.toLowerCase() || "en"
+        displaySelectedClient?.language === "English" ?
+        "en" :
+        displaySelectedClient?.language?.toLowerCase() || "en"
         }
         onTextReady={handleTranslationTextReady}
         onUseInputText={handleUseInputText}
-        voiceOnly={translationModalVoiceOnly}
-      />
+        voiceOnly={translationModalVoiceOnly} />
+      
 
       <Modal
         visible={showAdminDashboard}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowAdminDashboard(false)}
-      >
+        onRequestClose={() => setShowAdminDashboard(false)}>
+        
         <AdminDashboard onClose={() => setShowAdminDashboard(false)} />
       </Modal>
 
@@ -1268,88 +1385,88 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         message={snackbarMessage}
         type={snackbarType}
         onDismiss={() => setSnackbarVisible(false)}
-        duration={3000}
-      />
+        duration={3000} />
+      
 
       {/* New Client Modal */}
       <Modal
         visible={isNewClientModalVisible}
         transparent={true}
         animationType="fade"
-        onRequestClose={handleDismissNewClient}
-      >
+        onRequestClose={handleDismissNewClient}>
+        
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <LinearGradient
               colors={[colors.background.card, colors.background.cardLight]}
-              style={styles.modalGradient}
-            >
+              style={styles.modalGradient}>
+              
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>🆕 New Client Detected</Text>
                 <TouchableOpacity
                   onPress={handleDismissNewClient}
-                  style={styles.modalCloseButton}
-                >
+                  style={styles.modalCloseButton}>
+                  
                   <Ionicons
                     name="close"
                     size={24}
-                    color={colors.text.primary}
-                  />
+                    color={colors.text.primary} />
+                  
                 </TouchableOpacity>
               </View>
 
-              {newClientData && (
-                <View style={styles.modalBody}>
+              {newClientData &&
+              <View style={styles.modalBody}>
                   <View style={styles.modalClientInfo}>
                     <Text style={styles.modalClientName}>
                       {newClientData.name || "Unknown Client"}
                     </Text>
-                    {newClientData.username && (
-                      <Text style={styles.modalClientUsername}>
+                    {newClientData.username &&
+                  <Text style={styles.modalClientUsername}>
                         @{newClientData.username}
                       </Text>
-                    )}
+                  }
                   </View>
 
-                  {(newClientData.country || newClientData.language) && (
-                    <View style={styles.modalBadges}>
-                      {newClientData.country && (
-                        <View style={styles.modalBadge}>
+                  {(newClientData.country || newClientData.language) &&
+                <View style={styles.modalBadges}>
+                      {newClientData.country &&
+                  <View style={styles.modalBadge}>
                           <Text style={styles.modalBadgeIcon}>🌍</Text>
                           <Text style={styles.modalBadgeText}>
                             {newClientData.country}
                           </Text>
                         </View>
-                      )}
-                      {newClientData.language && (
-                        <View style={styles.modalBadge}>
+                  }
+                      {newClientData.language &&
+                  <View style={styles.modalBadge}>
                           <Text style={styles.modalBadgeIcon}>🗣️</Text>
                           <Text style={styles.modalBadgeText}>
                             {newClientData.language}
                           </Text>
                         </View>
-                      )}
+                  }
                     </View>
-                  )}
+                }
 
                   <Text style={styles.modalMessage}>
                     This client was found but is not in your current client
                     list. Would you like to add them?
                   </Text>
                 </View>
-              )}
+              }
 
               <View style={styles.modalActions}>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.modalButtonSecondary]}
-                  onPress={handleDismissNewClient}
-                >
+                  onPress={handleDismissNewClient}>
+                  
                   <Text style={styles.modalButtonTextSecondary}>Dismiss</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.modalButton, styles.modalButtonPrimary]}
-                  onPress={handleAddNewClient}
-                >
+                  onPress={handleAddNewClient}>
+                  
                   <Text style={styles.modalButtonTextPrimary}>Add Client</Text>
                 </TouchableOpacity>
               </View>
@@ -1357,8 +1474,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
           </View>
         </View>
       </Modal>
-    </View>
-  );
+    </View>);
+
 };
 
 const styles = StyleSheet.create({
@@ -1366,17 +1483,17 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
     backgroundColor: colors.background.primary,
-    paddingTop: Platform.OS === "web" ? 0 : 40,
+    paddingTop: Platform.OS === "web" ? 0 : 40
   },
   containerWeb: {
-    paddingTop: 0,
+    paddingTop: 0
   },
   content: {
     flex: 1,
-    width: "100%",
+    width: "100%"
   },
   contentDesktop: {
-    flexDirection: "row",
+    flexDirection: "row"
   },
   desktopSidebar: {
     width: layout.sidebarWidth,
@@ -1385,12 +1502,12 @@ const styles = StyleSheet.create({
     maxHeight: "100%",
     backgroundColor: colors.background.sidebar,
     borderRightWidth: 1,
-    borderRightColor: colors.border.light,
+    borderRightColor: colors.border.light
   },
   desktopSidebarFooter: {
     padding: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.border.light,
+    borderTopColor: colors.border.light
   },
   desktopRefetchButton: {
     flexDirection: "row",
@@ -1402,30 +1519,30 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.lg,
     borderRadius: borderRadius.md,
-    gap: spacing.sm,
+    gap: spacing.sm
   },
   desktopRefetchButtonText: {
     color: colors.text.secondary,
     fontSize: typography.sizes.sm,
-    fontWeight: typography.weights.medium,
+    fontWeight: typography.weights.medium
   },
   desktopRefetchButtonDisabled: {
-    opacity: 0.6,
+    opacity: 0.6
   },
   details: {
     flex: 1,
-    width: "100%",
+    width: "100%"
   },
   detailsWithSidebar: {
     flex: 1,
-    minWidth: 0,
+    minWidth: 0
   },
   retryButton: {
     marginTop: 20,
     paddingVertical: 12,
     paddingHorizontal: 24,
     backgroundColor: colors.accent.primary,
-    borderRadius: 8,
+    borderRadius: 8
   },
   userBar: {
     width: "100%",
@@ -1433,24 +1550,24 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: colors.background.card,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
+    borderBottomColor: colors.border.light
   },
   userTitle: {
     fontSize: typography.sizes.xs,
     color: colors.text.secondary,
     marginBottom: 4,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1
   },
   userName: {
     fontSize: typography.sizes.lg,
     color: colors.text.primary,
-    fontWeight: typography.weights.semibold,
+    fontWeight: typography.weights.semibold
   },
   userEmail: {
     fontSize: typography.sizes.sm,
     color: colors.text.secondary,
-    marginTop: 2,
+    marginTop: 2
   },
   userBar: {
     width: "100%",
@@ -1458,99 +1575,99 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: colors.background.card,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light,
+    borderBottomColor: colors.border.light
   },
   userTitle: {
     fontSize: typography.sizes.xs,
     color: colors.text.secondary,
     marginBottom: 4,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1
   },
   userName: {
     fontSize: typography.sizes.lg,
     color: colors.text.primary,
-    fontWeight: typography.weights.semibold,
+    fontWeight: typography.weights.semibold
   },
   userEmail: {
     fontSize: typography.sizes.sm,
     color: colors.text.secondary,
-    marginTop: 2,
+    marginTop: 2
   },
   retryButtonText: {
     color: colors.text.white,
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "600"
   },
   emptyState: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 40,
+    padding: 40
   },
   emptyContent: {
-    alignItems: "center",
+    alignItems: "center"
   },
   emptyIcon: {
     fontSize: 64,
-    marginBottom: 20,
+    marginBottom: 20
   },
   emptyTitle: {
     fontSize: typography.sizes.xl,
     fontWeight: typography.weights.semibold,
     color: colors.text.secondary,
     marginBottom: spacing.sm,
-    textAlign: "center",
+    textAlign: "center"
   },
   emptyText: {
     fontSize: typography.sizes.base,
     color: colors.text.muted,
     textAlign: "center",
-    lineHeight: 22,
+    lineHeight: 22
   },
   assignedClientsHome: {
     flex: 1,
     backgroundColor: colors.background.primary,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xl,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.lg
   },
   assignedClientsHeader: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.lg
   },
   assignedClientsTitle: {
     fontSize: typography.sizes.xl,
     fontWeight: typography.weights.semibold,
     color: colors.text.primary,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.xs
   },
   assignedClientsSubtitle: {
     fontSize: typography.sizes.sm,
     color: colors.text.muted,
-    lineHeight: 20,
+    lineHeight: 20
   },
   assignedClientsLoading: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    gap: spacing.sm,
+    gap: spacing.sm
   },
   assignedClientsLoadingText: {
     fontSize: typography.sizes.sm,
-    color: colors.text.secondary,
+    color: colors.text.secondary
   },
   assignedClientsEmpty: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.lg
   },
   assignedClientsList: {
-    flex: 1,
+    flex: 1
   },
   assignedClientsListContent: {
     paddingBottom: spacing.xl,
-    gap: spacing.xs,
+    gap: spacing.xs
   },
   translateFloatingButton: {
     position: "absolute",
@@ -1566,13 +1683,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 8,
+    elevation: 8
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.75)",
     justifyContent: "center",
-    alignItems: "center",
+    alignItems: "center"
   },
   modalContent: {
     width: "85%",
@@ -1583,10 +1700,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
     shadowRadius: 16,
-    elevation: 16,
+    elevation: 16
   },
   modalGradient: {
-    padding: 0,
+    padding: 0
   },
   modalHeader: {
     flexDirection: "row",
@@ -1596,38 +1713,38 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 16,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border?.dark || "rgba(255, 255, 255, 0.1)",
+    borderBottomColor: colors.border?.dark || "rgba(255, 255, 255, 0.1)"
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: typography.weights?.bold || "700",
-    color: colors.text.primary,
+    color: colors.text.primary
   },
   modalCloseButton: {
     padding: 4,
-    borderRadius: borderRadius.sm || 8,
+    borderRadius: borderRadius.sm || 8
   },
   modalBody: {
-    padding: 20,
+    padding: 20
   },
   modalClientInfo: {
-    marginBottom: 16,
+    marginBottom: 16
   },
   modalClientName: {
     fontSize: 20,
     fontWeight: typography.weights?.bold || "700",
     color: colors.text.primary,
-    marginBottom: 4,
+    marginBottom: 4
   },
   modalClientUsername: {
     fontSize: 14,
-    color: colors.text.secondary,
+    color: colors.text.secondary
   },
   modalBadges: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginBottom: 16,
+    marginBottom: 16
   },
   modalBadge: {
     flexDirection: "row",
@@ -1635,22 +1752,22 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.secondary || "rgba(255, 255, 255, 0.1)",
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: borderRadius.md || 12,
+    borderRadius: borderRadius.md || 12
   },
   modalBadgeIcon: {
     fontSize: 14,
-    marginRight: 6,
+    marginRight: 6
   },
   modalBadgeText: {
     fontSize: 12,
     color: colors.text.secondary,
-    fontWeight: typography.weights?.medium || "500",
+    fontWeight: typography.weights?.medium || "500"
   },
   modalMessage: {
     fontSize: 14,
     color: colors.text.secondary,
     lineHeight: 20,
-    marginBottom: 8,
+    marginBottom: 8
   },
   modalActions: {
     flexDirection: "row",
@@ -1660,31 +1777,31 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: colors.border?.dark || "rgba(255, 255, 255, 0.1)",
+    borderTopColor: colors.border?.dark || "rgba(255, 255, 255, 0.1)"
   },
   modalButton: {
     paddingVertical: 10,
     paddingHorizontal: 20,
     borderRadius: borderRadius.md || 12,
     minWidth: 100,
-    alignItems: "center",
+    alignItems: "center"
   },
   modalButtonPrimary: {
-    backgroundColor: colors.accent.primary,
+    backgroundColor: colors.accent.primary
   },
   modalButtonSecondary: {
-    backgroundColor: colors.background.secondary || "rgba(255, 255, 255, 0.1)",
+    backgroundColor: colors.background.secondary || "rgba(255, 255, 255, 0.1)"
   },
   modalButtonTextPrimary: {
     color: colors.text.white || "#fff",
     fontSize: 14,
-    fontWeight: typography.weights?.semibold || "600",
+    fontWeight: typography.weights?.semibold || "600"
   },
   modalButtonTextSecondary: {
     color: colors.text.secondary,
     fontSize: 14,
-    fontWeight: typography.weights?.medium || "500",
-  },
+    fontWeight: typography.weights?.medium || "500"
+  }
 });
 
 export default ClientsScreen;

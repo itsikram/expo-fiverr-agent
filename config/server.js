@@ -12,13 +12,13 @@ import { Platform } from 'react-native';
  * Native apps can override via the Settings screen (stored in local storage).
  */
 export const PRODUCTION_SERVER_URL =
-  'https://fiverr-agent-server.onrender.com';
+'https://fiverr-agent-server.onrender.com';
 
 const getBuildTimeServerUrl = () =>
-  process.env.EXPO_PUBLIC_SERVER_URL || process.env.SERVER_URL || null;
+process.env.EXPO_PUBLIC_SERVER_URL || process.env.SERVER_URL || null;
 
 export const DEFAULT_SERVER_URL =
-  getBuildTimeServerUrl() || PRODUCTION_SERVER_URL;
+getBuildTimeServerUrl() || PRODUCTION_SERVER_URL;
 
 const useEnvServerUrl = () => Platform.OS === 'web';
 
@@ -37,8 +37,8 @@ const isBrowserLocalDev = () => {
   return (
     hostname === 'localhost' ||
     hostname === '127.0.0.1' ||
-    hostname.endsWith('.local')
-  );
+    hostname.endsWith('.local'));
+
 };
 
 // Check if host is a local IP or localhost
@@ -110,7 +110,7 @@ const fetchRuntimeConfigJson = async () => {
 
   try {
     const response = await fetch('/runtime-config.json', {
-      cache: 'no-store',
+      cache: 'no-store'
     });
     if (!response.ok) {
       return null;
@@ -120,17 +120,17 @@ const fetchRuntimeConfigJson = async () => {
     const serverUrl = data?.serverUrl?.trim();
     return serverUrl || null;
   } catch (error) {
-    console.warn('[SERVER_CONFIG] Unable to load runtime-config.json:', error);
+
     return null;
   }
 };
 
 const resolveWebServerUrl = async () => {
   const runtimeCandidates = [
-    getWindowRuntimeServerUrl(),
-    await fetchRuntimeConfigJson(),
-    getBuildTimeServerUrl(),
-  ].filter(Boolean);
+  getWindowRuntimeServerUrl(),
+  await fetchRuntimeConfigJson(),
+  getBuildTimeServerUrl()].
+  filter(Boolean);
 
   for (const candidate of runtimeCandidates) {
     const normalized = normalizeHttpServerUrl(candidate);
@@ -163,11 +163,11 @@ const convertToWebSocketUrl = (httpUrl) => {
     try {
       const urlObj = new URL(url);
       const isLocal = isLocalHost(urlObj.hostname);
-      const protocol = isLocal ? 'ws' : (urlObj.protocol === 'https:' ? 'wss' : 'ws');
+      const protocol = isLocal ? 'ws' : urlObj.protocol === 'https:' ? 'wss' : 'ws';
       const port = urlObj.port ? `:${urlObj.port}` : '';
       return `${protocol}://${urlObj.hostname}${port}`;
     } catch (error) {
-      console.error('[SERVER_CONFIG] Error parsing URL:', error);
+
       return null;
     }
   }
@@ -184,7 +184,7 @@ export const SERVER_CONFIG = {
   async loadSettings() {
     if (useEnvServerUrl()) {
       this.serverUrl = await resolveWebServerUrl();
-      console.log('[SERVER_CONFIG] Web build using server URL:', this.serverUrl);
+
       return;
     }
 
@@ -203,9 +203,9 @@ export const SERVER_CONFIG = {
         this.serverUrl = DEFAULT_SERVER_URL;
       }
 
-      console.log('[SERVER_CONFIG] Loaded server URL:', this.serverUrl);
+
     } catch (error) {
-      console.error('[SERVER_CONFIG] Error loading settings:', error);
+
       this.serverUrl = DEFAULT_SERVER_URL;
     }
   },
@@ -219,8 +219,56 @@ export const SERVER_CONFIG = {
     return convertToWebSocketUrl(PRODUCTION_SERVER_URL);
   },
 
+  getHealthUrl() {
+    const base = normalizeHttpServerUrl(this.serverUrl) || PRODUCTION_SERVER_URL;
+    return `${base.replace(/\/+$/, '')}/health`;
+  },
+
+  /**
+   * Ping HTTP /health before opening the WebSocket.
+   * Render free-tier instances can take 30–60s to wake; a bare WS
+   * attempt during cold start often fails and confuses Firefox.
+   */
+  async wakeServer({ attempts = 6, timeoutMs = 20000 } = {}) {
+    const healthUrl = this.getHealthUrl();
+    if (!healthUrl || typeof fetch === 'undefined') {
+      return false;
+    }
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const controller =
+        typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timer = controller
+        ? setTimeout(() => controller.abort(), timeoutMs)
+        : null;
+
+      try {
+        const response = await fetch(healthUrl, {
+          method: 'GET',
+          cache: 'no-store',
+          ...(controller ? { signal: controller.signal } : {})
+        });
+        if (response.ok) {
+          return true;
+        }
+      } catch (_) {
+        // Cold start / transient network — keep retrying.
+      } finally {
+        if (timer) {
+          clearTimeout(timer);
+        }
+      }
+
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+      }
+    }
+
+    return false;
+  },
+
   RECONNECT_INTERVAL: 3000,
   MAX_RECONNECT_ATTEMPTS: Infinity, // Never permanently give up; backoff still applies
   PING_INTERVAL: 25000,
-  PONG_TIMEOUT: 70000,
+  PONG_TIMEOUT: 70000
 };
