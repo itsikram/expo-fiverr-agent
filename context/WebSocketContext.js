@@ -24,6 +24,7 @@ import {
   TAB_RELOAD_SETTINGS_EVENT } from
 "../utils/tabReloadService";
 import notificationService from "../utils/notificationService";
+import { showSmartMessageNotification } from "../utils/notificationHelpers";
 import { useAuth } from "./AuthContext";
 import {
   getClientConversationId,
@@ -2372,7 +2373,6 @@ export const WebSocketProvider = ({ children }) => {
                 clientKey === conversationId ||
                 c.username === clientUsername ||
                 c.conversationId === conversationId);
-
             });
 
             const clientName = client?.name || clientUsername;
@@ -2380,9 +2380,18 @@ export const WebSocketProvider = ({ children }) => {
             const isTest = data.data?.isTest === true;
 
             // Regular messages do not trigger sounds or push — new clients only.
+            // For web, request permissions when needed and show unread message notifications.
+            if (typeof window !== "undefined" && "Notification" in window) {
+              showSmartMessageNotification({
+                clientName,
+                messageText,
+                conversationId,
+                username: clientUsername,
+                selectedConversationId: selectedConversationIdRef.current
+              }).catch(() => {});
+            }
 
             // Emit event for UI to show popup
-            // We'll use a callback system similar to fetchClientDetails
             if (typeof window !== "undefined" && window.dispatchEvent) {
               window.dispatchEvent(
                 new CustomEvent("newMessageDetected", {
