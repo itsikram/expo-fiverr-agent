@@ -182,12 +182,35 @@ export const SERVER_CONFIG = {
   serverUrl: DEFAULT_SERVER_URL,
 
   async loadSettings() {
+    // On web, prefer any user-saved settings (from AsyncStorage/localStorage)
+    // so users can edit the server address at runtime. Fall back to runtime
+    // config / build-time values if no saved setting exists.
+    try {
+      const { loadSettings: loadStorage } = await import('../utils/storage');
+      const settings = await loadStorage();
+
+      const storedServerUrl = settings?.serverUrl?.trim();
+      const storedServerHost = settings?.serverHost?.trim();
+
+      if (storedServerUrl) {
+        this.serverUrl = normalizeHttpServerUrl(storedServerUrl) || DEFAULT_SERVER_URL;
+        return;
+      }
+
+      if (storedServerHost) {
+        this.serverUrl = normalizeHttpServerUrl(storedServerHost) || DEFAULT_SERVER_URL;
+        return;
+      }
+    } catch (err) {
+      // ignore and fall back to runtime/build-time resolution
+    }
+
     if (useEnvServerUrl()) {
       this.serverUrl = await resolveWebServerUrl();
-
       return;
     }
 
+    // Native fallback: if no stored settings and not web, try stored settings import too
     try {
       const { loadSettings: loadStorage } = await import('../utils/storage');
       const settings = await loadStorage();
@@ -202,10 +225,7 @@ export const SERVER_CONFIG = {
       } else {
         this.serverUrl = DEFAULT_SERVER_URL;
       }
-
-
     } catch (error) {
-
       this.serverUrl = DEFAULT_SERVER_URL;
     }
   },

@@ -34,7 +34,7 @@ import { useAuth } from "../context/AuthContext";
 import AdminDashboard from "../components/AdminDashboard";
 
 const SettingsScreen = ({ onBack }) => {
-  const { navigateToInbox, reloadFiverrTab, isConnected } = useWebSocket();
+  const { navigateToInbox, reloadFiverrTab, isConnected, connect, disconnect } = useWebSocket();
   const { username, email, logout, isAuthenticated, role } = useAuth();
   const [name, setName] = useState("");
   const [skills, setSkills] = useState("");
@@ -145,15 +145,13 @@ const SettingsScreen = ({ onBack }) => {
         name: name.trim(),
         skills: skills.trim(),
         aboutMe: aboutMe.trim(),
-        ...(Platform.OS !== "web" && {
-          // Save as serverUrl (full URL with protocol and port)
-          // Also keep serverHost for backward compatibility if it's just a host
-          serverUrl: serverAddressTrimmed || undefined,
-          serverHost:
-          serverAddressTrimmed && !serverAddressTrimmed.includes("://") ?
-          serverAddressTrimmed :
-          undefined
-        }),
+        // Persist server address on all platforms so web builds can be
+        // overridden at runtime via the Settings screen.
+        serverUrl: serverAddressTrimmed || undefined,
+        serverHost:
+        serverAddressTrimmed && !serverAddressTrimmed.includes('://') ?
+        serverAddressTrimmed :
+        undefined,
         geminiApiKey: isApiKeyMasked ? undefined : apiKeyToSave || undefined,
         aiApiKey: isApiKeyMasked ? undefined : apiKeyToSave || undefined,
         aiModel: aiModel.trim() || undefined,
@@ -175,6 +173,15 @@ const SettingsScreen = ({ onBack }) => {
 
       await saveSettings(settings);
       await loadSettingsData();
+
+      // If the server URL changed, force the WebSocket to reconnect so the
+      // client uses the new runtime override immediately.
+      try {
+        disconnect();
+      } catch (_) {}
+      try {
+        connect();
+      } catch (_) {}
 
       Alert.alert("Success", "Settings saved successfully!", [
       {
@@ -255,12 +262,24 @@ const SettingsScreen = ({ onBack }) => {
               <Text style={styles.sectionTitle}>Server</Text>
               <Text style={styles.sectionDescription}>
                 Web builds read the server URL from runtime-config.js (or
-                runtime-config.json) on the live server. EXPO_PUBLIC_SERVER_URL
-                in .env is only applied when you run the web export build.
+                runtime-config.json) on the live server. Use the field below
+                to override the runtime value for local development or testing.
+                EXPO_PUBLIC_SERVER_URL in .env is only applied when you run
+                the web export build.
               </Text>
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Server address</Text>
-                <Text style={styles.infoText}>{serverAddress || SERVER_CONFIG.serverUrl}</Text>
+                <TextInput
+                style={styles.input}
+                value={serverAddress}
+                onChangeText={setServerAddress}
+                placeholder={SERVER_CONFIG.serverUrl || 'e.g. http://192.168.0.102:8765'}
+                placeholderTextColor={colors.text.secondary}
+                autoCapitalize="none"
+                autoCorrect={false} />
+                <Text style={styles.hint}>
+                  Saved value will override the runtime-config for this browser.
+                </Text>
               </View>
             </View>
           }

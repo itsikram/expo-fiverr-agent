@@ -515,6 +515,7 @@ export const WebSocketProvider = ({ children }) => {
   const [isLoadingClients, setIsLoadingClients] = useState(false);
   const loadingConversationIdRef = useRef(null);
   const selectedConversationIdRef = useRef(null);
+  const selectedSellerProfileRef = useRef(null);
   const handleMessageRef = useRef(null);
   const clientListLoadTimeoutRef = useRef(null);
   const [newClientData, setNewClientData] = useState(null); // New client data that doesn't exist in clients list
@@ -788,6 +789,12 @@ export const WebSocketProvider = ({ children }) => {
 
       const url = SERVER_CONFIG.getWebSocketUrl(Platform.OS);
 
+      // Debug: log attempted connection URL
+      try {
+        // eslint-disable-next-line no-console
+        console.log("[WebSocket] connecting to", url);
+      } catch (_) {}
+
       setConnectionStatus("connecting");
 
       // Quick health ping — don't block the UI for a long cold-start budget.
@@ -810,6 +817,14 @@ export const WebSocketProvider = ({ children }) => {
 
       clearPingWatchdogs();
       clearReconnectTimer();
+
+      // Debug: show which server URL we're connecting to
+      try {
+        // eslint-disable-next-line no-console
+        console.log("[WebSocket] connecting to", url, {
+          serverUrl: SERVER_CONFIG.serverUrl,
+        });
+      } catch (_) {}
 
       const ws = new WebSocket(url);
       wsRef.current = ws;
@@ -863,9 +878,10 @@ export const WebSocketProvider = ({ children }) => {
 
         if (Platform.OS === "web") {
           try {
-            const webSubscription = await notificationService.registerWebPushSubscription(
-              SERVER_CONFIG.serverUrl,
-            );
+            const webSubscription =
+              await notificationService.registerWebPushSubscription(
+                SERVER_CONFIG.serverUrl,
+              );
             if (
               webSubscription &&
               ws.readyState === WebSocket.OPEN &&
@@ -1002,13 +1018,19 @@ export const WebSocketProvider = ({ children }) => {
       // Debug: log outbound messages locally to help diagnose missing server/extension
       try {
         // Avoid heavy objects in logs
+
+        console.log("[WebSocket] sendMessage called", message);
         const short = {
           type: message && message.type,
-          conversationId: message && (message.conversationId || message.username),
+          conversationId:
+            message && (message.conversationId || message.username),
           len: message && message.message ? String(message.message).length : 0,
         };
         // eslint-disable-next-line no-console
-        console.log('[WebSocket] sendMessage called', short, { readyState: wsRef.current?.readyState });
+        console.log("[WebSocket] sendMessage called", short, {
+          readyState: wsRef.current?.readyState,
+          sessionId: sessionIdRef.current,
+        });
       } catch (_) {}
 
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -1017,11 +1039,14 @@ export const WebSocketProvider = ({ children }) => {
       }
       // If not open, log and return false so callers can handle it
       // eslint-disable-next-line no-console
-      console.warn('[WebSocket] sendMessage failed - socket not open', { readyState: wsRef.current?.readyState, messageType: message && message.type });
+      console.warn("[WebSocket] sendMessage failed - socket not open", {
+        readyState: wsRef.current?.readyState,
+        messageType: message && message.type,
+      });
       return false;
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error('[WebSocket] sendMessage error', err);
+      console.error("[WebSocket] sendMessage error", err);
       return false;
     }
   }, []);
@@ -2588,6 +2613,7 @@ export const WebSocketProvider = ({ children }) => {
 
   handleMessageRef.current = handleMessage;
   selectedConversationIdRef.current = selectedConversationId;
+  selectedSellerProfileRef.current = selectedSellerProfile;
 
   // Load stored data on mount (client data only, messages are retrieved in-memory/server)
   useEffect(() => {
@@ -2833,14 +2859,33 @@ export const WebSocketProvider = ({ children }) => {
         selectedSellerProfile?.username ||
         selectedSellerProfile?.profileName ||
         "";
-      sendMessage({
+      const convo = selectedConversationId || (username ? String(username).trim() : null);
+      // Debug: ensure we capture current selectedConversationId and seller profile
+      try {
+        console.log("[WebSocket] sendExpoActivity preparing payload", {
+          selectedConversationId,
+          selectedSellerProfile: selectedSellerProfile && {
+            username: selectedSellerProfile.username,
+            profileName: selectedSellerProfile.profileName,
+          },
+          convo,
+        });
+      } catch (_) {}
+      const activityPayload = {
         type: "expo_app_activity",
         data: {
           active: isAppInForeground(),
           selectedProfileUsername: username,
           at: Date.now(),
         },
-      });
+      };
+      if (convo) {
+        activityPayload.conversationId = convo;
+        activityPayload.username = convo;
+      } else if (username) {
+        activityPayload.username = String(username).trim();
+      }
+      sendMessage(activityPayload);
     };
 
     sendExpoActivity();
@@ -2858,16 +2903,38 @@ export const WebSocketProvider = ({ children }) => {
       if (onVisibilityChange) {
         document.removeEventListener("visibilitychange", onVisibilityChange);
       }
-      sendMessage({
-        type: "expo_app_activity",
-        data: {
-          active: false,
-          selectedProfileUsername: "",
-          at: Date.now(),
-        },
-      });
+      try {
+        const lastConv = selectedConversationIdRef.current || undefined;
+        const lastUsername =
+          lastConv ||
+          selectedSellerProfileRef.current?.username ||
+          selectedSellerProfileRef.current?.profileName ||
+          undefined;
+
+        if (!lastConv && !lastUsername) {
+          return;
+        }
+
+        const cleanupPayload = {
+          type: "expo_app_activity",
+          data: {
+            active: false,
+            selectedProfileUsername:
+              selectedSellerProfileRef.current?.username || "",
+            at: Date.now(),
+          },
+        };
+        if (lastConv) {
+          cleanupPayload.conversationId = lastConv;
+          cleanupPayload.username = lastConv;
+        } else {
+          cleanupPayload.username = String(lastUsername).trim();
+        }
+
+        sendMessage(cleanupPayload);
+      } catch (_) {}
     };
-  }, [isConnected, sendMessage, selectedSellerProfile]);
+  }, [isConnected, sendMessage, selectedSellerProfile, selectedConversationId]);
 
   const value = {
     isConnected,
