@@ -2167,15 +2167,21 @@ export const WebSocketProvider = ({ children }) => {
                 computedAbsolute ||
                 Date.now();
 
+                const inferredFromMe =
+                msg.isFromMe === true ||
+                msg.isFromMe === "true" ||
+                String(msg.sender || "").trim().toLowerCase() === "me" ||
+                String(msg.senderUsername || "").trim().toLowerCase() === "me";
+
                 return {
                   ...msg,
                   text: collapseDuplicateParagraphs(
                     msg.text || msg.content || msg.message || ""
                   ),
-                  sender: msg.isFromMe ?
+                  sender: inferredFromMe ?
                   "me" :
                   msg.senderUsername || msg.sender || "client",
-                  isFromMe: Boolean(msg.isFromMe),
+                  isFromMe: inferredFromMe,
                   time: rawTime,
                   absoluteTimestamp,
                   conversationId: taggedConversationId,
