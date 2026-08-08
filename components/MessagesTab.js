@@ -56,6 +56,10 @@ const MessagesTab = ({
     scrollY: 0,
     preserveOnNextLayout: false
   });
+  // After activating a client, keep forcing scroll-to-end until the thread
+  // has laid out — the snapshot reset alone misses the first message paint.
+  const pendingScrollToLatestRef = useRef(false);
+  const scrollToLatestTimeoutsRef = useRef([]);
   const [sendingMessages, setSendingMessages] = useState([]); // Array of messages being sent
   const [isSending, setIsSending] = useState(false);
   const sendingStartTimeRef = useRef(null); // Track when sending started for minimum display time
@@ -80,12 +84,29 @@ const MessagesTab = ({
     setShowScrollBottom(scrollY < maxScroll - SCROLL_EDGE_THRESHOLD);
   };
 
+  const clearScrollToLatestTimeouts = () => {
+    (scrollToLatestTimeoutsRef.current || []).forEach((id) => clearTimeout(id));
+    scrollToLatestTimeoutsRef.current = [];
+  };
+
+  const scrollToLatestMessages = (animated = false) => {
+    const run = () => {
+      scrollViewRef.current?.scrollToEnd({ animated });
+    };
+    run();
+    // Long threads / images often finish layout after the first paint.
+    clearScrollToLatestTimeouts();
+    scrollToLatestTimeoutsRef.current = [50, 150, 350, 700].map((delay) =>
+      setTimeout(run, delay)
+    );
+  };
+
   const scrollToTop = () => {
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
   };
 
   const scrollToBottom = () => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
+    scrollToLatestMessages(true);
   };
 
   const getMessageStableKey = (message, index) =>
@@ -135,6 +156,8 @@ const MessagesTab = ({
     setSendingMessages([]);
     setIsSending(false);
     sendingStartTimeRef.current = null;
+    pendingScrollToLatestRef.current = Boolean(activeConversationKey);
+    clearScrollToLatestTimeouts();
     messageSnapshotRef.current = {
       conversationKey: activeConversationKey,
       count: 0,
@@ -157,6 +180,12 @@ const MessagesTab = ({
       setInputHeight(INPUT_MIN_HEIGHT);
     }
   }, [messageText]);
+
+  useEffect(() => {
+    return () => {
+      clearScrollToLatestTimeouts();
+    };
+  }, []);
 
   const handleInputContentSizeChange = (event) => {
     const contentHeight = event.nativeEvent.contentSize.height;
@@ -365,6 +394,17 @@ const MessagesTab = ({
   const handleMessagesContentSizeChange = (_width, height) => {
     const metrics = scrollMetricsRef.current;
 
+    if (pendingScrollToLatestRef.current && height > 0) {
+      scrollViewRef.current?.scrollToEnd({ animated: false });
+      metrics.contentHeight = height;
+      updateScrollButtonsVisibility(
+        Math.max(0, height - (metrics.layoutHeight || 0)),
+        height,
+        metrics.layoutHeight
+      );
+      return;
+    }
+
     if (
     metrics.preserveOnNextLayout &&
     metrics.contentHeight > 0 &&
@@ -410,6 +450,10 @@ const MessagesTab = ({
     prev.firstKey != null &&
     firstKey !== prev.firstKey &&
     lastKey === prev.lastKey;
+    // First paint after activate often has prev.lastKey=null because the
+    // conversation-change effect already reset the snapshot.
+    const firstPaintForConversation =
+    prev.count === 0 || prev.lastKey == null;
 
     messageSnapshotRef.current = {
       conversationKey: activeConversationKey,
@@ -428,15 +472,24 @@ const MessagesTab = ({
     }
 
     const shouldScrollToBottom =
+    pendingScrollToLatestRef.current ||
     conversationChanged ||
+    firstPaintForConversation ||
     isSending ||
     sendingMessages.length > 0 ||
     countIncreased && prev.lastKey != null && lastKey !== prev.lastKey;
 
     if (shouldScrollToBottom) {
+      const animated = !(
+        pendingScrollToLatestRef.current ||
+        conversationChanged ||
+        firstPaintForConversation
+      );
+      scrollToLatestMessages(animated);
+      // Keep pending briefly so content-size retries still pin to latest.
       setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: !conversationChanged });
-      }, 150);
+        pendingScrollToLatestRef.current = false;
+      }, 800);
     }
   }, [
   visibleMessages,
