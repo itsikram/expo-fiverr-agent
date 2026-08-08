@@ -40,6 +40,18 @@ export const AI_CONFIG = {
     'gpt-4o-mini',
     'gpt-3.5-turbo',
   ],
+  // Gemini native image models ("Nano Banana"). Prefer flash-image for speed.
+  IMAGE_MODEL:
+    process.env.EXPO_PUBLIC_GEMINI_IMAGE_MODEL ||
+    'gemini-2.5-flash-image',
+  IMAGE_FALLBACK_MODELS: [
+    'gemini-2.5-flash-image',
+    'gemini-3.1-flash-image',
+    'gemini-3.1-flash-image-preview',
+  ],
+  OPENAI_IMAGE_MODEL:
+    process.env.EXPO_PUBLIC_OPENAI_IMAGE_MODEL || 'gpt-image-1',
+  OPENAI_IMAGES_URL: 'https://api.openai.com/v1/images/generations',
   GEMINI_NATIVE_URL:
     'https://generativelanguage.googleapis.com/v1beta/models',
   GEMINI_OPENAI_URL:

@@ -10,7 +10,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
-  Modal } from
+  Modal,
+  Image,
+  Linking } from
 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,10 +21,26 @@ import MessageBubble from './MessageBubble';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 import { useResponsiveLayout } from '../hooks/useResponsiveLayout';
 import { getAiChatResponse } from '../utils/aiChatService';
+import {
+  attachmentsToMessageImages,
+  MAX_AI_ATTACHMENTS,
+  pickAiChatImages,
+  pickAiChatPdfs } from
+'../utils/aiAttachments';
 import { formatTime } from '../utils/formatTime';
 import { loadAIChatHistory, saveAIChatHistory, clearAIChatHistory, loadSettings } from '../utils/storage';
 import { useWebSocket } from '../context/WebSocketContext';
 import { getClientConversationId } from '../utils/clientIdentity';
+
+const normalizeAiResult = (result) => {
+  if (typeof result === 'string') {
+    return { text: result, images: [] };
+  }
+  return {
+    text: result?.text || result?.content || result?.message || '',
+    images: Array.isArray(result?.images) ? result.images : []
+  };
+};
 
 const INPUT_LINE_HEIGHT = 20;
 const INPUT_MIN_HEIGHT = INPUT_LINE_HEIGHT;
@@ -122,6 +140,15 @@ const QUICK_ACTIONS = [
   subtitle: 'Natural pricing discussion for the buyer',
   icon: 'cash',
   styleKey: 'generateOfferButton'
+},
+{
+  id: 'generateImage',
+  presetKind: null,
+  mode: 'image',
+  label: 'Generate Image',
+  subtitle: 'Create visuals from a prompt or reference photos',
+  icon: 'image',
+  styleKey: 'generateImageButton'
 }];
 
 
@@ -130,7 +157,9 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
   const { messageHorizontalPadding } = useResponsiveLayout();
   const [chatMessages, setChatMessages] = useState([]);
   const [inputText, setInputText] = useState('');
+  const [pendingAttachments, setPendingAttachments] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState('AI is thinking...');
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
   const [editingMessageIndex, setEditingMessageIndex] = useState(null);
@@ -149,10 +178,37 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
   const [optionsModalLoading, setOptionsModalLoading] = useState(false); // Loading state for options modal
   const scrollViewRef = useRef(null);
   const isClearingRef = useRef(false); // Track if we're currently clearing history
+  const chatMessagesRef = useRef([]);
+  const requestSeqRef = useRef(0);
+  const isMountedRef = useRef(true);
 
   // Get client ID for storage key
   const getClientId = () => {
     return client?.conversationId || client?.username || client?.id || 'unknown';
+  };
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    chatMessagesRef.current = chatMessages;
+  }, [chatMessages]);
+
+  const persistChatMessages = async (nextMessages, clientId = getClientId()) => {
+    chatMessagesRef.current = nextMessages;
+    if (isMountedRef.current) {
+      setChatMessages(nextMessages);
+    }
+    if (!clientId || clientId === 'unknown') return;
+    try {
+      await saveAIChatHistory(clientId, nextMessages);
+    } catch (error) {
+      // Persistence failures should not block the chat UI.
+    }
   };
 
   const clientStorageKey =
@@ -299,6 +355,48 @@ const AIChatTab = ({ client, messages = [], onSendMessage, isActive = false }) =
     }
   }, [isActive, chatMessages.length]);
 
+  // If a response was persisted while this screen was unmounted, pull it in on focus.
+  useEffect(() => {
+    if (!isActive || isLoading || isClearingRef.current || !client) return;
+
+    let cancelled = false;
+    const syncFromStorage = async () => {
+      try {
+        const clientId = getClientId();
+        const savedHistory = await loadAIChatHistory(clientId);
+        if (cancelled || !Array.isArray(savedHistory)) return;
+
+        const local = chatMessagesRef.current || [];
+        if (savedHistory.length > local.length) {
+          setChatMessages(savedHistory);
+          return;
+        }
+
+        if (savedHistory.length === 0 || savedHistory.length !== local.length) return;
+
+        const savedLast = savedHistory[savedHistory.length - 1];
+        const localLast = local[local.length - 1];
+        const savedStamp = savedLast?.time || '';
+        const localStamp = localLast?.time || '';
+        if (
+          savedStamp &&
+          savedStamp !== localStamp ||
+          (savedLast?.text || '') !== (localLast?.text || '')
+        ) {
+          setChatMessages(savedHistory);
+        }
+      } catch (error) {
+        // Ignore sync failures; local state remains the source of truth.
+      }
+    };
+
+    syncFromStorage();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, client?.id, client?.conversationId, client?.username]);
+
   // Reset options modal state when it closes
   useEffect(() => {
     if (!isOptionsModalVisible) {
@@ -373,14 +471,17 @@ CRITICAL REQUIREMENTS:
 Example (return exactly this format, no other text):
 [{"type": "next-message", "label": "Next Message", "priority": 9}, {"type": "quotation", "label": "Quotation", "priority": 8}, {"type": "explain-task", "label": "Task Explain", "priority": 7}, {"type": "cursor-prompt", "label": "Cursor Prompt", "priority": 6}, {"type": "chatgpt-prompt", "label": "ChatGPT Prompt", "priority": 5}]`;
 
-      const aiResponse = await getAiChatResponse({
-        userMessage: prompt,
-        mode: 'meta',
-        client,
-        messages: recentMessages,
-        chatHistory: historyForApi,
-        userProfile: userProfile
-      });
+      const aiResult = normalizeAiResult(
+        await getAiChatResponse({
+          userMessage: prompt,
+          mode: 'meta',
+          client,
+          messages: recentMessages,
+          chatHistory: historyForApi,
+          userProfile: userProfile
+        })
+      );
+      const aiResponse = aiResult.text;
 
       // Parse AI response - try to extract JSON array
       let suggestedActions = [];
@@ -645,7 +746,49 @@ Example (return exactly this format, no other text):
     }));
   };
 
-  const handleSendMessage = async (customText = null) => {
+  const appendAttachments = (items = []) => {
+    if (!items.length) return;
+    setPendingAttachments((prev) => {
+      const room = MAX_AI_ATTACHMENTS - prev.length;
+      if (room <= 0) return prev;
+      return [...prev, ...items.slice(0, room)];
+    });
+  };
+
+  const handlePickImages = async () => {
+    const picked = await pickAiChatImages(pendingAttachments.length);
+    appendAttachments(picked);
+  };
+
+  const handlePickPdfs = async () => {
+    const picked = await pickAiChatPdfs(pendingAttachments.length);
+    appendAttachments(picked);
+  };
+
+  const handleAttachPress = () => {
+    if (isLoading) return;
+    if (Platform.OS === 'ios') {
+      Alert.alert('Attach to AI chat', 'Choose a file type', [
+      { text: 'Photo', onPress: handlePickImages },
+      { text: 'PDF', onPress: handlePickPdfs },
+      { text: 'Cancel', style: 'cancel' }]
+      );
+      return;
+    }
+    Alert.alert('Attach to AI chat', 'Choose a file type', [
+    { text: 'Photo / Image', onPress: handlePickImages },
+    { text: 'PDF document', onPress: handlePickPdfs },
+    { text: 'Cancel', style: 'cancel' }]
+    );
+  };
+
+  const removePendingAttachment = (id) => {
+    setPendingAttachments((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleSendMessage = async (customText = null, options = {}) => {
+    const { mode = 'reply', force = false } = options || {};
+
     // Handle case where event object might be passed (from onPress)
     let textToSend;
     if (customText === null || customText === undefined) {
@@ -657,67 +800,91 @@ Example (return exactly this format, no other text):
       textToSend = inputText.trim();
     }
 
-    if (!textToSend || isLoading) {
+    const attachmentsToSend = [...pendingAttachments];
+    const isImageMode = mode === 'image';
+
+    const hasNothingToSend = !textToSend && attachmentsToSend.length === 0;
+    if (isLoading || hasNothingToSend && !force) {
+      if (isImageMode && hasNothingToSend) {
+        Alert.alert(
+          'Image prompt needed',
+          'Describe the image you want, or attach a reference photo first.'
+        );
+      }
       return;
     }
 
+    const displayText =
+    textToSend || (
+    isImageMode ?
+    'Generate an image from the attached reference' :
+    `Please review the attached file${attachmentsToSend.length > 1 ? 's' : ''}`);
+
     const userMessage = {
-      text: textToSend,
+      text: displayText,
       sender: 'user',
-      time: new Date().toISOString()
+      time: new Date().toISOString(),
+      images: attachmentsToMessageImages(attachmentsToSend)
     };
 
-    // Add user message immediately
-    setChatMessages((prev) => [...prev, userMessage]);
+    const clientIdAtSend = getClientId();
+    const requestSeq = ++requestSeqRef.current;
+    const historySnapshot = [...chatMessagesRef.current];
+    const nextWithUser = [...historySnapshot, userMessage];
+
+    // Persist immediately so leaving the screen/tab can't drop the outbound turn.
+    await persistChatMessages(nextWithUser, clientIdAtSend);
     setInputText('');
+    setPendingAttachments([]);
     setIsLoading(true);
+    setLoadingLabel(isImageMode ? 'Generating image...' : 'AI is thinking...');
 
     // Clear suggested prompts when user sends a message
     setSuggestedPrompts({});
 
     // Build simple chat history for context (excluding the current user message we just added)
-    const historyForApi = chatMessages.map((m) => ({
+    const historyForApi = historySnapshot.map((m) => ({
       sender: m.sender === 'ai' ? 'assistant' : 'user',
       text: m.text,
-      time: m.time
+      time: m.time,
+      images: m.images
     }));
 
     try {
-      // Ensure userMessage.text is a string
-      const messageText = typeof userMessage?.text === 'string' ? userMessage.text : String(userMessage?.text || textToSend || '');
-
-      if (!messageText || !messageText.trim()) {
-
-        setIsLoading(false);
-        return;
-      }
-
-      // Ensure all messages are passed (including latest)
       const allFiverrMessages = Array.isArray(messages) ? messages : [];
 
-
-      const aiText = await getAiChatResponse({
-        userMessage: messageText,
-        client,
-        messages: allFiverrMessages, // Pass ALL messages from Messages tab
-        chatHistory: historyForApi,
-        userProfile: userProfile
-      });
+      const { text: aiText, images: aiImages } = normalizeAiResult(
+        await getAiChatResponse({
+          userMessage: textToSend || displayText,
+          mode: isImageMode ? 'image' : 'reply',
+          client,
+          messages: allFiverrMessages,
+          chatHistory: historyForApi,
+          userProfile: userProfile,
+          attachments: attachmentsToSend
+        })
+      );
 
       const aiResponse = {
         text: aiText,
+        images: aiImages,
         sender: 'ai',
         time: new Date().toISOString()
       };
-      setChatMessages((prev) => {
-        const updated = [...prev, aiResponse];
-        // Generate suggested prompts for this AI response
+      const updated = [...nextWithUser, aiResponse];
+      // Always persist for the client that started this request.
+      await persistChatMessages(updated, clientIdAtSend);
+
+      if (
+      isMountedRef.current &&
+      requestSeq === requestSeqRef.current &&
+      getClientId() === clientIdAtSend)
+      {
         const responseIndex = updated.length - 1;
         setTimeout(() => {
           generateSuggestedPrompts(aiResponse, responseIndex);
         }, 100);
-        return updated;
-      });
+      }
     } catch (error) {
 
       const errorResponse = {
@@ -727,9 +894,16 @@ Example (return exactly this format, no other text):
         sender: 'ai',
         time: new Date().toISOString()
       };
-      setChatMessages((prev) => [...prev, errorResponse]);
+      await persistChatMessages([...nextWithUser, errorResponse], clientIdAtSend);
     } finally {
-      setIsLoading(false);
+      if (
+      isMountedRef.current &&
+      requestSeq === requestSeqRef.current &&
+      getClientId() === clientIdAtSend)
+      {
+        setIsLoading(false);
+        setLoadingLabel('AI is thinking...');
+      }
     }
   };
 
@@ -742,36 +916,46 @@ Example (return exactly this format, no other text):
       sender: 'user',
       time: new Date().toISOString()
     };
-    setChatMessages((prev) => [...prev, userMessage]);
+    const clientIdAtSend = getClientId();
+    const requestSeq = ++requestSeqRef.current;
+    const nextWithUser = [...chatMessagesRef.current, userMessage];
+
+    await persistChatMessages(nextWithUser, clientIdAtSend);
     setIsLoading(true);
+    setLoadingLabel('AI is thinking...');
 
     try {
       const allFiverrMessages = Array.isArray(messages) ? messages : [];
 
-
-
-
-      const aiText = await getAiChatResponse({
-        presetKind,
-        client,
-        messages: allFiverrMessages,
-        userProfile
-      });
+      const { text: aiText, images: aiImages } = normalizeAiResult(
+        await getAiChatResponse({
+          presetKind,
+          client,
+          messages: allFiverrMessages,
+          userProfile
+        })
+      );
 
       const aiResponse = {
         text: aiText,
+        images: aiImages,
         sender: 'ai',
         time: new Date().toISOString()
       };
 
-      setChatMessages((prev) => {
-        const updated = [...prev, aiResponse];
+      const updated = [...nextWithUser, aiResponse];
+      await persistChatMessages(updated, clientIdAtSend);
+
+      if (
+      isMountedRef.current &&
+      requestSeq === requestSeqRef.current &&
+      getClientId() === clientIdAtSend)
+      {
         const responseIndex = updated.length - 1;
         setTimeout(() => {
           generateSuggestedPrompts(aiResponse, responseIndex);
         }, 100);
-        return updated;
-      });
+      }
     } catch (error) {
 
       const errorResponse = {
@@ -781,10 +965,29 @@ Example (return exactly this format, no other text):
         sender: 'ai',
         time: new Date().toISOString()
       };
-      setChatMessages((prev) => [...prev, errorResponse]);
+      await persistChatMessages([...nextWithUser, errorResponse], clientIdAtSend);
     } finally {
-      setIsLoading(false);
+      if (
+      isMountedRef.current &&
+      requestSeq === requestSeqRef.current &&
+      getClientId() === clientIdAtSend)
+      {
+        setIsLoading(false);
+        setLoadingLabel('AI is thinking...');
+      }
     }
+  };
+
+  const handleGenerateImageAction = () => {
+    if (isLoading) return;
+    if (!inputText.trim() && pendingAttachments.length === 0) {
+      Alert.alert(
+        'Generate Image',
+        'Type a prompt (for example: “modern logo for a coffee brand”) or attach a reference photo, then tap Generate Image again.'
+      );
+      return;
+    }
+    handleSendMessage(inputText.trim() || null, { mode: 'image' });
   };
 
   const handleGenerateNextMessage = () => {
@@ -823,13 +1026,17 @@ Example (return exactly this format, no other text):
   <View style={styles.quickActionsContainer}>
       <Text style={styles.quickActionsTitle}>Professional Generators</Text>
       <Text style={styles.quickActionsSubtitle}>
-        Same reply quality as the Fiverr assistant extension
+        Same reply quality as the Fiverr assistant extension — plus image & file understanding
       </Text>
       {QUICK_ACTIONS.map((action) =>
     <TouchableOpacity
       key={action.id}
       style={[styles.quickActionButton, styles[action.styleKey]]}
-      onPress={() => handlePresetAction(action.presetKind)}
+      onPress={() =>
+      action.mode === 'image' ?
+      handleGenerateImageAction() :
+      handlePresetAction(action.presetKind)
+      }
       disabled={isLoading}>
       
           <Ionicons name={action.icon} size={20} color={colors.text.white} />
@@ -853,7 +1060,11 @@ Example (return exactly this format, no other text):
     <TouchableOpacity
       key={`compact-${action.id}`}
       style={[styles.compactGeneratorChip, styles[action.styleKey]]}
-      onPress={() => handlePresetAction(action.presetKind)}
+      onPress={() =>
+      action.mode === 'image' ?
+      handleGenerateImageAction() :
+      handlePresetAction(action.presetKind)
+      }
       disabled={isLoading}>
       
           <Ionicons name={action.icon} size={14} color={colors.text.white} />
@@ -1207,14 +1418,16 @@ Example (return exactly this format, no other text):
 
 
 
-      const aiText = await getAiChatResponse({
-        presetKind: presetKind || undefined,
-        userMessage: presetKind ? undefined : optionsModalInputText,
-        client,
-        messages: allFiverrMessages,
-        chatHistory: historyForApi,
-        userProfile
-      });
+      const { text: aiText } = normalizeAiResult(
+        await getAiChatResponse({
+          presetKind: presetKind || undefined,
+          userMessage: presetKind ? undefined : optionsModalInputText,
+          client,
+          messages: allFiverrMessages,
+          chatHistory: historyForApi,
+          userProfile
+        })
+      );
 
       setOptionsModalInputText(aiText);
     } catch (error) {
@@ -1344,42 +1557,73 @@ Example (return exactly this format, no other text):
             </View> :
 
           <>
-              <Text style={styles.aiMessageText}>{message.text || message.content}</Text>
+              {message.text || message.content ?
+            <Text style={styles.aiMessageText}>{message.text || message.content}</Text> :
+            null}
+              {Array.isArray(message.images) && message.images.length > 0 ?
+            <View style={styles.aiGeneratedImages}>
+                  {message.images.map((image, imageIndex) => {
+                const uri = image.url || image.href || image.thumbnailUrl;
+                if (!uri) return null;
+                return (
+                  <TouchableOpacity
+                    key={`ai-img-${index}-${imageIndex}`}
+                    style={styles.aiGeneratedImageWrap}
+                    activeOpacity={0.85}
+                    onPress={() => {
+                      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                        window.open(uri, '_blank', 'noopener,noreferrer');
+                        return;
+                      }
+                      Linking.openURL(uri).catch(() => {});
+                    }}>
+                    
+                        <Image source={{ uri }} style={styles.aiGeneratedImage} resizeMode="cover" />
+                      </TouchableOpacity>);
+
+              })}
+                </View> :
+            null}
               {message.time &&
             <Text style={styles.aiMessageTime}>{formatTime(message.time)}</Text>
             }
               <View style={styles.aiMessageActions}>
-                <TouchableOpacity
+                {(message.text || message.content) ?
+              <TouchableOpacity
                 style={styles.aiActionButton}
                 onPress={() => handleCopyMessage(message.text || message.content)}>
                 
-                  <Ionicons name="copy-outline" size={16} color={colors.text.secondary} />
-                  <Text style={styles.aiActionButtonText}>Copy</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
+                    <Ionicons name="copy-outline" size={16} color={colors.text.secondary} />
+                    <Text style={styles.aiActionButtonText}>Copy</Text>
+                  </TouchableOpacity> :
+              null}
+                {(message.text || message.content) ?
+              <TouchableOpacity
                 style={styles.aiActionButton}
                 onPress={() => handleStartEdit(index, message.text || message.content)}>
                 
-                  <Ionicons name="create-outline" size={16} color={colors.text.secondary} />
-                  <Text style={styles.aiActionButtonText}>Edit</Text>
-                </TouchableOpacity>
-                {sendingToClient && sendingMessageText === (message.text || message.content) ?
+                    <Ionicons name="create-outline" size={16} color={colors.text.secondary} />
+                    <Text style={styles.aiActionButtonText}>Edit</Text>
+                  </TouchableOpacity> :
+              null}
+                {(message.text || message.content) && (
+              sendingToClient && sendingMessageText === (message.text || message.content) ?
               <TouchableOpacity
                 style={[styles.aiActionButton, styles.stopActionButton]}
                 onPress={handleStopSending}>
                 
-                    <Ionicons name="stop" size={16} color={colors.text.white} />
-                    <Text style={[styles.aiActionButtonText, styles.stopActionButtonText]}>Stop</Text>
-                  </TouchableOpacity> :
+                      <Ionicons name="stop" size={16} color={colors.text.white} />
+                      <Text style={[styles.aiActionButtonText, styles.stopActionButtonText]}>Stop</Text>
+                    </TouchableOpacity> :
 
               <TouchableOpacity
                 style={[styles.aiActionButton, styles.sendActionButton]}
                 onPress={() => handleSendToClient(message.text || message.content)}
                 disabled={sendingToClient}>
                 
-                    <Ionicons name="send-outline" size={16} color={colors.text.white} />
-                    <Text style={[styles.aiActionButtonText, styles.sendActionButtonText]}>Send</Text>
-                  </TouchableOpacity>
+                      <Ionicons name="send-outline" size={16} color={colors.text.white} />
+                      <Text style={[styles.aiActionButtonText, styles.sendActionButtonText]}>Send</Text>
+                    </TouchableOpacity>)
               }
               </View>
               {/* Suggested Prompts */}
@@ -1457,7 +1701,7 @@ Example (return exactly this format, no other text):
         <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>Start a Conversation</Text>
             <Text style={styles.emptyText}>
-              Ask me anything about {client?.name || 'this client'} or get help with your tasks.
+              Ask about {client?.name || 'this client'}, attach images/PDFs, or generate visuals for your work.
             </Text>
 
             {(aiSuggestedActions.length > 0 || isGeneratingActions) &&
@@ -1544,7 +1788,7 @@ Example (return exactly this format, no other text):
         {isLoading &&
         <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={colors.accent.primary} />
-            <Text style={styles.loadingText}>AI is thinking...</Text>
+            <Text style={styles.loadingText}>{loadingLabel}</Text>
           </View>
         }
       </ScrollView>
@@ -1554,16 +1798,65 @@ Example (return exactly this format, no other text):
       <View
         style={[styles.inputContainer, { paddingHorizontal: messageHorizontalPadding }]}>
         
+        {pendingAttachments.length > 0 ?
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.attachmentPreviewScroll}
+          contentContainerStyle={styles.attachmentPreviewContent}>
+          
+            {pendingAttachments.map((item) =>
+          <View key={item.id} style={styles.attachmentPreviewChip}>
+                {item.kind === 'image' ?
+            <Image source={{ uri: item.uri }} style={styles.attachmentPreviewThumb} /> :
+
+            <View style={styles.attachmentPreviewPdf}>
+                    <Ionicons name="document-text" size={18} color={colors.text.primary} />
+                  </View>
+            }
+                <View style={styles.attachmentPreviewMeta}>
+                  <Text style={styles.attachmentPreviewName} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  {item.sizeLabel ?
+              <Text style={styles.attachmentPreviewSize}>{item.sizeLabel}</Text> :
+              null}
+                </View>
+                <TouchableOpacity
+              style={styles.attachmentPreviewRemove}
+              onPress={() => removePendingAttachment(item.id)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              
+                  <Ionicons name="close-circle" size={18} color={colors.text.secondary} />
+                </TouchableOpacity>
+              </View>
+          )}
+          </ScrollView> :
+        null}
+
         <View
           style={[
           styles.inputRow,
           inputHeight > INPUT_MIN_HEIGHT && styles.inputRowExpanded]
           }>
           
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={handleAttachPress}
+            disabled={isLoading}
+            accessibilityLabel="Attach image or PDF">
+            
+            <Ionicons name="attach" size={20} color={colors.text.secondary} />
+          </TouchableOpacity>
+
           <View style={styles.inputFieldWrap}>
             <TextInput
               style={[styles.messageInput, { height: inputHeight }]}
-              placeholder="Ask AI anything..."
+              placeholder={
+              pendingAttachments.length > 0 ?
+              'Ask about the attachment, or describe an image…' :
+              'Ask AI anything… or attach image/PDF'
+              }
               placeholderTextColor={colors.text.muted}
               value={inputText}
               onChangeText={setInputText}
@@ -1571,11 +1864,19 @@ Example (return exactly this format, no other text):
               onBlur={() => setIsInputFocused(false)}
               onContentSizeChange={handleInputContentSizeChange}
               multiline
-              maxLength={1000}
+              maxLength={2000}
               scrollEnabled={inputHeight >= INPUT_MAX_HEIGHT} />
             
           </View>
           <View style={styles.inputActions}>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handleGenerateImageAction}
+              disabled={isLoading}
+              accessibilityLabel="Generate image">
+              
+              <Ionicons name="color-wand-outline" size={18} color={colors.accent.secondary} />
+            </TouchableOpacity>
             {!isInputFocused ?
             <TouchableOpacity
               style={styles.iconButton}
@@ -1587,10 +1888,13 @@ Example (return exactly this format, no other text):
             <TouchableOpacity
               style={[
               styles.sendButton,
-              (!inputText.trim() || isLoading) && styles.sendButtonDisabled]
+              ((!inputText.trim() && pendingAttachments.length === 0) || isLoading) &&
+              styles.sendButtonDisabled]
               }
               onPress={() => handleSendMessage()}
-              disabled={!inputText.trim() || isLoading}>
+              disabled={
+              (!inputText.trim() && pendingAttachments.length === 0) || isLoading
+              }>
               
               {isLoading ?
               <ActivityIndicator size="small" color={colors.text.white} /> :
@@ -2018,8 +2322,80 @@ const styles = StyleSheet.create({
   clarifyButton: {
     backgroundColor: '#64748b'
   },
+  generateImageButton: {
+    backgroundColor: '#db2777'
+  },
   quickActionTextWrap: {
     flex: 1
+  },
+  attachmentPreviewScroll: {
+    marginBottom: spacing.sm,
+    maxHeight: 72
+  },
+  attachmentPreviewContent: {
+    gap: spacing.sm,
+    paddingVertical: 2
+  },
+  attachmentPreviewChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.background.card,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.xs,
+    paddingLeft: spacing.xs,
+    paddingRight: spacing.sm,
+    maxWidth: 220
+  },
+  attachmentPreviewThumb: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.background.elevated
+  },
+  attachmentPreviewPdf: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.background.elevated,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  attachmentPreviewMeta: {
+    flex: 1,
+    minWidth: 0
+  },
+  attachmentPreviewName: {
+    fontSize: typography.sizes.xs,
+    color: colors.text.primary,
+    fontWeight: typography.weights.medium
+  },
+  attachmentPreviewSize: {
+    fontSize: 10,
+    color: colors.text.muted,
+    marginTop: 1
+  },
+  attachmentPreviewRemove: {
+    marginLeft: 2
+  },
+  aiGeneratedImages: {
+    gap: spacing.sm,
+    marginBottom: spacing.sm
+  },
+  aiGeneratedImageWrap: {
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    backgroundColor: colors.background.elevated
+  },
+  aiGeneratedImage: {
+    width: '100%',
+    minWidth: 220,
+    height: 220,
+    maxWidth: 360
   },
   quickActionText: {
     fontSize: typography.sizes.base,

@@ -1,5 +1,10 @@
 import { AI_CONFIG, RETIRED_GEMINI_MODELS } from '../config/ai';
 import { loadSettings } from './storage';
+import {
+  prepareAttachmentsForApi,
+  shouldGenerateAiImage,
+  toDataUri,
+} from './aiAttachments';
 
 const MAX_TRANSCRIPT_CHARS = 12000;
 const MAX_OUTPUT_TOKENS = 8192;
@@ -891,11 +896,55 @@ const buildChatHistoryMessages = (chatHistory = []) =>
 chatHistory.map((m) => {
   const role =
   m.sender === 'user' || m.role === 'user' ? 'user' : 'assistant';
+  const text = m.text || m.content || '';
+  const imageNote =
+    Array.isArray(m.images) && m.images.length > 0
+      ? `\n[Attached ${m.images.length} file(s): ${m.images
+          .map((img) => img.title || img.name || 'file')
+          .join(', ')}]`
+      : '';
   return {
     role,
-    content: m.text || m.content || ''
+    content: `${text}${imageNote}`.trim()
   };
 });
+
+const buildMultimodalUserContent = (text, preparedAttachments = []) => {
+  const parts = [];
+  const trimmed = String(text || '').trim();
+  if (trimmed) {
+    parts.push({ type: 'text', text: trimmed });
+  }
+
+  preparedAttachments.forEach((file) => {
+    if (!file?.base64) return;
+    if (file.mimeType === 'application/pdf' || file.kind === 'pdf') {
+      parts.push({
+        type: 'file',
+        mimeType: 'application/pdf',
+        data: file.base64,
+        name: file.name || 'document.pdf',
+      });
+      return;
+    }
+    parts.push({
+      type: 'image_url',
+      mimeType: file.mimeType || 'image/jpeg',
+      image_url: {
+        url: toDataUri(file.mimeType || 'image/jpeg', file.base64),
+      },
+      data: file.base64,
+    });
+  });
+
+  if (parts.length === 0) {
+    return trimmed || 'Please review the attached files.';
+  }
+  if (parts.length === 1 && parts[0].type === 'text') {
+    return parts[0].text;
+  }
+  return parts;
+};
 
 const isMaskedKey = (value) =>
 typeof value === 'string' && value.includes('*');
@@ -929,19 +978,111 @@ Boolean(
   )
 );
 
+const contentPartToGeminiParts = (content) => {
+  if (typeof content === 'string') {
+    const text = content.trim();
+    return text ? [{ text }] : [];
+  }
+  if (!Array.isArray(content)) return [];
+
+  const parts = [];
+  content.forEach((part) => {
+    if (!part) return;
+    if (part.type === 'text' || typeof part.text === 'string') {
+      const text = String(part.text || '').trim();
+      if (text) parts.push({ text });
+      return;
+    }
+    if (part.type === 'image_url' || part.mimeType?.startsWith?.('image/')) {
+      const data =
+        part.data ||
+        String(part.image_url?.url || '').replace(/^data:[^;]+;base64,/, '');
+      const mimeType =
+        part.mimeType ||
+        String(part.image_url?.url || '').match(/^data:([^;]+);base64,/)?.[1] ||
+        'image/jpeg';
+      if (data) {
+        parts.push({ inline_data: { mime_type: mimeType, data } });
+      }
+      return;
+    }
+    if (part.type === 'file' || part.mimeType === 'application/pdf') {
+      if (part.data) {
+        parts.push({
+          inline_data: {
+            mime_type: part.mimeType || 'application/pdf',
+            data: part.data,
+          },
+        });
+      }
+    }
+  });
+  return parts;
+};
+
+const toOpenAiCompatibleMessages = (apiMessages = []) =>
+  apiMessages.map((message) => {
+    if (!message) return message;
+    if (typeof message.content === 'string' || message.role === 'system') {
+      return message;
+    }
+    if (!Array.isArray(message.content)) return message;
+
+    const openAiContent = [];
+    message.content.forEach((part) => {
+      if (!part) return;
+      if (part.type === 'text' || part.text) {
+        openAiContent.push({ type: 'text', text: String(part.text || '') });
+        return;
+      }
+      if (part.type === 'image_url' || part.image_url?.url) {
+        openAiContent.push({
+          type: 'image_url',
+          image_url: { url: part.image_url.url },
+        });
+        return;
+      }
+      if (part.type === 'file' || part.mimeType === 'application/pdf') {
+        // OpenAI chat completions path has weak PDF support; describe the file.
+        openAiContent.push({
+          type: 'text',
+          text: `[Attached PDF: ${part.name || 'document.pdf'} — switch to Gemini for full PDF understanding]`,
+        });
+      }
+    });
+
+    return {
+      ...message,
+      content:
+        openAiContent.length > 0
+          ? openAiContent
+          : String(message.content || ''),
+    };
+  });
+
 const buildGeminiContentsFromApiMessages = (apiMessages = []) => {
   const contents = [];
   apiMessages.forEach((message) => {
     if (!message || message.role === 'system') return;
     const role = message.role === 'assistant' ? 'model' : 'user';
-    const text = String(message.content || '').trim();
-    if (!text) return;
+    const parts = contentPartToGeminiParts(message.content);
+    if (!parts.length) return;
+
     const last = contents[contents.length - 1];
     if (last && last.role === role) {
-      last.parts[0].text += `\n\n${text}`;
+      const onlyText =
+        parts.length === 1 &&
+        parts[0].text &&
+        last.parts.length === 1 &&
+        last.parts[0].text;
+      if (onlyText) {
+        last.parts[0].text += `\n\n${parts[0].text}`;
+        return;
+      }
+      last.parts.push(...parts);
       return;
     }
-    contents.push({ role, parts: [{ text }] });
+    contents.push({ role, parts });
   });
 
   if (contents.length > 0 && contents[0].role === 'model') {
@@ -954,33 +1095,67 @@ const buildGeminiContentsFromApiMessages = (apiMessages = []) => {
   return contents;
 };
 
+const extractGeminiNativePayload = (json) => {
+  const parts = json?.candidates?.[0]?.content?.parts || [];
+  const text = parts
+    .map((part) => part.text || '')
+    .join('')
+    .trim();
+  const images = [];
+
+  parts.forEach((part, index) => {
+    const inline = part.inlineData || part.inline_data;
+    if (!inline?.data) return;
+    const mimeType = inline.mimeType || inline.mime_type || 'image/png';
+    images.push({
+      url: toDataUri(mimeType, inline.data),
+      href: toDataUri(mimeType, inline.data),
+      thumbnailUrl: toDataUri(mimeType, inline.data),
+      title: `Generated image ${index + 1}`,
+      name: `generated-${index + 1}.png`,
+      mimeType,
+      kind: 'image',
+      generated: true,
+    });
+  });
+
+  return { text, images };
+};
+
 const extractGeminiNativeText = (json) =>
-json?.candidates?.[0]?.content?.parts?.
-map((part) => part.text || '').
-join('').
-trim() || '';
+  extractGeminiNativePayload(json).text || '';
 
 const requestGeminiNative = async ({
   apiKey,
   model,
   systemMessage,
   apiMessages,
-  temperature
+  temperature,
+  responseModalities,
 }) => {
   const url = `${AI_CONFIG.GEMINI_NATIVE_URL}/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const generationConfig = {
+    temperature,
+    maxOutputTokens: MAX_OUTPUT_TOKENS,
+  };
+  if (Array.isArray(responseModalities) && responseModalities.length > 0) {
+    generationConfig.responseModalities = responseModalities;
+  }
+
+  const body = {
+    contents: buildGeminiContentsFromApiMessages(apiMessages),
+    generationConfig,
+  };
+  if (systemMessage) {
+    body.systemInstruction = {
+      parts: [{ text: systemMessage }],
+    };
+  }
+
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: systemMessage }]
-      },
-      contents: buildGeminiContentsFromApiMessages(apiMessages),
-      generationConfig: {
-        temperature,
-        maxOutputTokens: MAX_OUTPUT_TOKENS
-      }
-    })
+    body: JSON.stringify(body),
   });
 
   const responseText = await response.text();
@@ -1004,8 +1179,8 @@ const requestGeminiNative = async ({
     };
   }
 
-  const content = extractGeminiNativeText(json);
-  if (!content) {
+  const payload = extractGeminiNativePayload(json);
+  if (!payload.text && (!payload.images || payload.images.length === 0)) {
     throw {
       status: 500,
       message: 'Empty response from Gemini native API.',
@@ -1013,7 +1188,7 @@ const requestGeminiNative = async ({
     };
   }
 
-  return content;
+  return payload;
 };
 
 const requestGeminiOpenAiCompat = async ({
@@ -1031,7 +1206,7 @@ const requestGeminiOpenAiCompat = async ({
     },
     body: JSON.stringify({
       model,
-      messages: apiMessages,
+      messages: toOpenAiCompatibleMessages(apiMessages),
       temperature,
       max_tokens: MAX_OUTPUT_TOKENS
     })
@@ -1067,7 +1242,74 @@ const requestGeminiOpenAiCompat = async ({
     };
   }
 
-  return content;
+  return {
+    text: typeof content === 'string' ? content : String(content),
+    images: [],
+  };
+};
+
+const requestOpenAiImageGeneration = async ({ apiKey, prompt }) => {
+  const response = await fetch(AI_CONFIG.OPENAI_IMAGES_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: AI_CONFIG.OPENAI_IMAGE_MODEL,
+      prompt: String(prompt || '').trim(),
+      size: '1024x1024',
+    }),
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    const message = parseApiErrorMessage(responseText);
+    throw {
+      status: response.status,
+      message,
+      isModelError: isRetryableAiError({ status: response.status, message }),
+    };
+  }
+
+  let json;
+  try {
+    json = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    throw {
+      status: 500,
+      message: 'Invalid JSON response from OpenAI image API.',
+      isModelError: false,
+    };
+  }
+
+  const item = json?.data?.[0];
+  const b64 = item?.b64_json;
+  const url = item?.url;
+  if (!b64 && !url) {
+    throw {
+      status: 500,
+      message: 'Empty image response from OpenAI.',
+      isModelError: true,
+    };
+  }
+
+  const imageUrl = b64 ? toDataUri('image/png', b64) : url;
+  return {
+    text: 'Here is the generated image.',
+    images: [
+      {
+        url: imageUrl,
+        href: imageUrl,
+        thumbnailUrl: imageUrl,
+        title: 'Generated image',
+        name: 'generated.png',
+        mimeType: 'image/png',
+        kind: 'image',
+        generated: true,
+      },
+    ],
+  };
 };
 
 const isGeminiModel = (value) =>
@@ -1168,28 +1410,7 @@ const resolveTemperature = (presetKind) => {
   return 0.45;
 };
 
-/**
- * Generate an AI reply the same way as fiverr-assistant inbox AI.
- * @param {object} params
- * @param {string} [params.userMessage] - Free-form chat request
- * @param {string} [params.presetKind] - first|reply|clarify|cost|offer|task|analysis|cursorPrompt
- * @param {'reply'|'meta'} [params.mode] - reply = paste-ready seller message; meta = JSON/analysis helper
- * @param {object} params.client
- * @param {array} params.messages - Fiverr inbox messages
- * @param {array} [params.chatHistory] - Prior AI chat turns (free-form only)
- * @param {object} [params.userProfile]
- * @param {string} [params.costPrice]
- */
-export const getAiChatResponse = async ({
-  userMessage,
-  presetKind,
-  mode = 'reply',
-  client,
-  messages,
-  chatHistory,
-  userProfile,
-  costPrice
-}) => {
+const resolveAiCredentials = async () => {
   let apiKey = AI_CONFIG.AI_API_KEY;
   let apiUrl = AI_CONFIG.AI_API_URL;
   let model = AI_CONFIG.MODEL || AI_CONFIG.DEFAULT_MODEL;
@@ -1199,7 +1420,6 @@ export const getAiChatResponse = async ({
     const settings = await loadSettings();
     ({ apiKey, apiUrl, model, usingGemini } = resolveAiConfig(settings || {}));
   } catch (error) {
-
     ({ apiKey, apiUrl, model, usingGemini } = resolveAiConfig({}));
   }
 
@@ -1215,13 +1435,173 @@ export const getAiChatResponse = async ({
     );
   }
 
+  if (!model || !model.trim()) {
+    model = AI_CONFIG.DEFAULT_MODEL;
+  }
 
+  model = usingGemini
+    ? normalizeGeminiModel(model)
+    : (model || AI_CONFIG.DEFAULT_MODEL).trim();
 
+  return { apiKey, apiUrl, model, usingGemini };
+};
 
+const throwFriendlyAiError = (lastError, usingGemini) => {
+  const status = lastError?.status || 'unknown';
+  const message = lastError?.message || 'Unable to generate a response.';
+  if (status === 429 || /quota|resource_exhausted|rate limit/i.test(message)) {
+    throw new Error(
+      `AI quota reached (${status}). Try again later, or switch the model in Settings to a lighter free option such as ${AI_CONFIG.GEMINI_FALLBACK_MODELS[2] || 'gemini-3.5-flash-lite'}. ${getGeminiKeyHelpMessage()}`
+    );
+  }
+  if (status === 401 || status === 403 || /api key/i.test(message)) {
+    throw new Error(
+      usingGemini
+        ? `Gemini API key was rejected. ${getGeminiKeyHelpMessage()}`
+        : 'OpenAI API key was rejected. Check your key in Settings.'
+    );
+  }
+  throw new Error(`AI API error (${status}): ${message}`);
+};
 
+/**
+ * Generate an image with Gemini image models (or OpenAI images as fallback).
+ */
+export const generateAiImage = async ({
+  prompt,
+  attachments = [],
+  client,
+} = {}) => {
+  const { apiKey, usingGemini } = await resolveAiCredentials();
+  const trimmedPrompt = String(prompt || '').trim();
+  if (!trimmedPrompt && (!attachments || attachments.length === 0)) {
+    throw new Error('Describe the image you want to generate.');
+  }
 
+  const prepared = await prepareAttachmentsForApi(attachments || []);
+  const hasPdf = prepared.some(
+    (file) => file.mimeType === 'application/pdf' || file.kind === 'pdf'
+  );
+  if (hasPdf) {
+    throw new Error(
+      'PDF files cannot be used as reference images. Attach an image instead, or ask in chat to analyze the PDF.'
+    );
+  }
 
-  if (!presetKind && (!userMessage || !String(userMessage).trim())) {
+  const imagePrompt =
+    trimmedPrompt ||
+    'Create a polished, professional image based on the attached reference.';
+
+  const userContent = buildMultimodalUserContent(
+    `${imagePrompt}\n\nCreate one high-quality image. If reference images are attached, use them as visual guidance.`,
+    prepared.filter((file) => file.kind !== 'pdf')
+  );
+
+  if (!usingGemini) {
+    if (prepared.length > 0) {
+      throw new Error(
+        'Reference-image editing requires a Gemini API key. Add a Gemini key in Settings, or generate without attachments.'
+      );
+    }
+    return requestOpenAiImageGeneration({
+      apiKey,
+      prompt: imagePrompt,
+    });
+  }
+
+  const systemMessage =
+    'You are an expert visual designer creating professional images for a Fiverr seller. ' +
+    'Generate a single polished image that matches the user request. ' +
+    'Also return a short one-sentence caption describing the image. ' +
+    (client?.name ? `Client context name: ${client.name}.` : '');
+
+  const apiMessages = [
+    { role: 'system', content: systemMessage },
+    { role: 'user', content: userContent },
+  ];
+
+  const modelCandidates = [
+    AI_CONFIG.IMAGE_MODEL,
+    ...(AI_CONFIG.IMAGE_FALLBACK_MODELS || []),
+  ].filter((value, index, list) => value && list.indexOf(value) === index);
+
+  let payload;
+  let lastError;
+  for (let index = 0; index < modelCandidates.length; index += 1) {
+    const candidate = modelCandidates[index];
+    try {
+      payload = await requestGeminiNative({
+        apiKey,
+        model: candidate,
+        systemMessage,
+        apiMessages,
+        temperature: 0.8,
+        responseModalities: ['TEXT', 'IMAGE'],
+      });
+      if (payload?.images?.length) break;
+      lastError = {
+        status: 500,
+        message: 'Image model returned text only.',
+        isModelError: true,
+      };
+    } catch (error) {
+      lastError = error;
+      const canRetry =
+        isRetryableAiError(error) && index < modelCandidates.length - 1;
+      if (!canRetry) break;
+      if (error?.status === 429) {
+        await sleep(1200 * (index + 1));
+      }
+    }
+  }
+
+  if (!payload?.images?.length) {
+    throwFriendlyAiError(lastError, true);
+  }
+
+  return {
+    text: stripFencesAndPreamble(payload.text || 'Here is the generated image.'),
+    images: payload.images,
+  };
+};
+
+/**
+ * Generate an AI reply the same way as fiverr-assistant inbox AI.
+ * @returns {Promise<{text: string, images: array}>}
+ */
+export const getAiChatResponse = async ({
+  userMessage,
+  presetKind,
+  mode = 'reply',
+  client,
+  messages,
+  chatHistory,
+  userProfile,
+  costPrice,
+  attachments = [],
+}) => {
+  const hasAttachments = Array.isArray(attachments) && attachments.length > 0;
+  const wantsImage =
+    mode === 'image' ||
+    (!presetKind &&
+      mode !== 'meta' &&
+      shouldGenerateAiImage(userMessage) &&
+      (!hasAttachments ||
+        attachments.some((item) => item.kind === 'image')));
+
+  if (wantsImage) {
+    return generateAiImage({
+      prompt: userMessage,
+      attachments: (attachments || []).filter((item) => item.kind === 'image'),
+      client,
+    });
+  }
+
+  const { apiKey, apiUrl, model: resolvedModel, usingGemini } =
+    await resolveAiCredentials();
+  let model = resolvedModel;
+
+  if (!presetKind && !hasAttachments && (!userMessage || !String(userMessage).trim())) {
     throw new Error('Message is empty.');
   }
 
@@ -1229,13 +1609,9 @@ export const getAiChatResponse = async ({
     throw new Error('No client selected.');
   }
 
-  if (!model || !model.trim()) {
-    model = AI_CONFIG.DEFAULT_MODEL;
-  }
-
-  model = usingGemini ?
-  normalizeGeminiModel(model) :
-  (model || AI_CONFIG.DEFAULT_MODEL).trim();
+  const preparedAttachments = hasAttachments
+    ? await prepareAttachmentsForApi(attachments)
+    : [];
 
   const allMessages = Array.isArray(messages) ? messages : [];
   const sellerName = userProfile?.name || 'Seller';
@@ -1249,12 +1625,12 @@ export const getAiChatResponse = async ({
 
   if (mode === 'meta') {
     systemMessage =
-    'You are a helpful assistant for a Fiverr seller. Follow the user instructions exactly. ' +
-    'When asked for JSON, return ONLY valid JSON with no markdown fences or preamble.';
+      'You are a helpful assistant for a Fiverr seller. Follow the user instructions exactly. ' +
+      'When asked for JSON, return ONLY valid JSON with no markdown fences or preamble.';
     apiMessages = [
-    { role: 'system', content: systemMessage },
-    { role: 'user', content: String(userMessage).trim() }];
-
+      { role: 'system', content: systemMessage },
+      { role: 'user', content: String(userMessage).trim() },
+    ];
   } else if (presetKind) {
     systemMessage = buildSystemMessageForPreset(
       presetKind,
@@ -1266,27 +1642,31 @@ export const getAiChatResponse = async ({
     const userText = buildPresetUserText(presetKind, transcript, {
       costPrice,
       latestBuyer,
-      latestSeller
+      latestSeller,
     });
     apiMessages = [
-    { role: 'system', content: systemMessage },
-    { role: 'user', content: userText }];
-
+      { role: 'system', content: systemMessage },
+      { role: 'user', content: userText },
+    ];
   } else {
-    systemMessage = buildSystemMessageForChat(sellerName);
+    const analyzingFiles = preparedAttachments.length > 0;
+    systemMessage = analyzingFiles
+      ? 'You are a helpful assistant for a Fiverr seller. Carefully read any attached images or PDF files and answer clearly. ' +
+        'If the user wants a buyer-facing reply that uses the attachment insights, return a paste-ready Fiverr inbox message. ' +
+        'Otherwise answer the request directly and precisely.'
+      : buildSystemMessageForChat(sellerName);
     if (sellerStyle) systemMessage += `\n\n${sellerStyle}`;
     const clientBlock = buildClientContextBlock(client, userProfile || {});
     if (clientBlock) systemMessage += `\n\n${clientBlock}`;
 
-    // Always ground free-form chat in the live Fiverr thread (buyer + seller).
     systemMessage +=
-    '\n\nCURRENT FIVERR THREAD (buyer + seller, oldest → newest):\n' +
-    transcript +
-    '\n\nLATEST SELLER MESSAGE (yours — stay consistent with this):\n' + (
-    latestSeller || '(none yet)') +
-    '\n\nLATEST BUYER MESSAGE:\n' + (
-    latestBuyer || '(none)') +
-    '\n\nWhen writing a buyer-facing reply, continue from YOUR seller messages above — do not ignore what you already offered, asked, or shared.';
+      '\n\nCURRENT FIVERR THREAD (buyer + seller, oldest → newest):\n' +
+      transcript +
+      '\n\nLATEST SELLER MESSAGE (yours — stay consistent with this):\n' +
+      (latestSeller || '(none yet)') +
+      '\n\nLATEST BUYER MESSAGE:\n' +
+      (latestBuyer || '(none)') +
+      '\n\nWhen writing a buyer-facing reply, continue from YOUR seller messages above — do not ignore what you already offered, asked, or shared.';
 
     const history = buildChatHistoryMessages(chatHistory || []);
     apiMessages = [{ role: 'system', content: systemMessage }];
@@ -1295,63 +1675,62 @@ export const getAiChatResponse = async ({
       apiMessages.push(...history.slice(-CHAT_HISTORY_MAX_TURNS));
     }
 
+    const baseUserText =
+      String(userMessage || '').trim() ||
+      (analyzingFiles
+        ? 'Please review the attached files and summarize the key points that matter for this Fiverr conversation.'
+        : '');
+
+    const userText = analyzingFiles
+      ? `${baseUserText}\n\nUse the attached files as primary evidence. If this request is for a buyer-facing reply, return only a paste-ready Fiverr inbox message.`
+      : `${baseUserText}\n\nIf this request is for a buyer-facing reply, follow Fiverr conversation standards, continue from YOUR prior seller messages in the thread, and return only a paste-ready Fiverr inbox message.`;
+
     apiMessages.push({
       role: 'user',
-      content:
-      String(userMessage).trim() +
-      '\n\nIf this request is for a buyer-facing reply, follow Fiverr conversation standards, continue from YOUR prior seller messages in the thread, and return only a paste-ready Fiverr inbox message.'
+      content: buildMultimodalUserContent(userText, preparedAttachments),
     });
   }
 
-
-
-
-
-
-
-
-
-  const fallbackModels = usingGemini ?
-  AI_CONFIG.GEMINI_FALLBACK_MODELS :
-  AI_CONFIG.OPENAI_FALLBACK_MODELS;
+  const fallbackModels = usingGemini
+    ? AI_CONFIG.GEMINI_FALLBACK_MODELS
+    : AI_CONFIG.OPENAI_FALLBACK_MODELS;
   const modelCandidates = [model, ...fallbackModels.filter((m) => m !== model)];
 
-  let content;
+  let payload;
   let lastError;
+  const hasBinaryParts = preparedAttachments.length > 0;
+
   for (let index = 0; index < modelCandidates.length; index += 1) {
     const candidate = modelCandidates[index];
     try {
-
-
       if (usingGemini) {
         try {
-          content = await requestGeminiNative({
+          payload = await requestGeminiNative({
             apiKey,
             model: candidate,
             systemMessage,
             apiMessages,
-            temperature
+            temperature,
           });
         } catch (nativeError) {
-
-
-
-
-          content = await requestGeminiOpenAiCompat({
+          if (hasBinaryParts) {
+            throw nativeError;
+          }
+          payload = await requestGeminiOpenAiCompat({
             apiKey,
             apiUrl,
             model: candidate,
             apiMessages,
-            temperature
+            temperature,
           });
         }
       } else {
-        content = await requestGeminiOpenAiCompat({
+        payload = await requestGeminiOpenAiCompat({
           apiKey,
           apiUrl,
           model: candidate,
           apiMessages,
-          temperature
+          temperature,
         });
       }
 
@@ -1360,12 +1739,7 @@ export const getAiChatResponse = async ({
     } catch (error) {
       lastError = error;
       const canRetry =
-      isRetryableAiError(error) && index < modelCandidates.length - 1;
-
-
-
-
-
+        isRetryableAiError(error) && index < modelCandidates.length - 1;
       if (!canRetry) break;
       if (error?.status === 429) {
         await sleep(1200 * (index + 1));
@@ -1373,36 +1747,32 @@ export const getAiChatResponse = async ({
     }
   }
 
-  if (!content) {
-    const status = lastError?.status || 'unknown';
-    const message = lastError?.message || 'Unable to generate a response.';
-    if (status === 429 || /quota|resource_exhausted|rate limit/i.test(message)) {
-      throw new Error(
-        `Gemini free-tier quota reached (${status}). Try again later, or switch the model in Settings to a lighter free option such as ${AI_CONFIG.GEMINI_FALLBACK_MODELS[2] || 'gemini-3.5-flash-lite'}. ${getGeminiKeyHelpMessage()}`
-      );
-    }
-    if (status === 401 || status === 403 || /api key/i.test(message)) {
-      throw new Error(
-        `Gemini API key was rejected. ${getGeminiKeyHelpMessage()}`
-      );
-    }
-    throw new Error(`AI API error (${status}): ${message}`);
+  if (!payload?.text && !(payload?.images?.length > 0)) {
+    throwFriendlyAiError(lastError, usingGemini);
   }
 
-  let cleaned = stripFencesAndPreamble(content);
-  if (mode !== 'meta') {
+  let cleaned = stripFencesAndPreamble(payload.text || '');
+  if (mode !== 'meta' && cleaned) {
     cleaned = sanitizeReplyUrls(cleaned, {
       allowedSources: [
-      transcript,
-      userProfile?.aboutMe,
-      userProfile?.experience,
-      userProfile?.portfolio,
-      Array.isArray(userProfile?.skills) ?
-      userProfile.skills.join(' ') :
-      userProfile?.skills]
-
+        transcript,
+        userProfile?.aboutMe,
+        userProfile?.experience,
+        userProfile?.portfolio,
+        Array.isArray(userProfile?.skills)
+          ? userProfile.skills.join(' ')
+          : userProfile?.skills,
+      ],
     });
     cleaned = obfuscateSensitiveTerms(cleaned);
   }
-  return cleaned;
+
+  return {
+    text:
+      cleaned ||
+      (payload.images?.length ? 'Here is the generated image.' : ''),
+    images: Array.isArray(payload.images) ? payload.images : [],
+  };
 };
+
+export { shouldGenerateAiImage };

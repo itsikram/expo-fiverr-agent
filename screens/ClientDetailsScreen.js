@@ -630,25 +630,40 @@ const ClientDetailsScreen = ({
 
   };
 
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case "messages":
-        return renderMessagesTab();
-      case "aichat":
-        return (
-          <AIChatTab
-            client={client}
-            messages={messages}
-            onSendMessage={onSendMessage}
-            isActive={activeTab === "aichat"} />);
+  // Keep all tabs mounted so in-flight AI replies (and other tab state) survive tab switches.
+  const renderTabContent = () =>
+  <>
+      <View
+      style={[
+      styles.tabPaneInner,
+      activeTab !== "messages" && styles.tabPaneHidden]
+      }
+      pointerEvents={activeTab === "messages" ? "auto" : "none"}>
+      
+        {renderMessagesTab()}
+      </View>
+      <View
+      style={[
+      styles.tabPaneInner,
+      activeTab !== "aichat" && styles.tabPaneHidden]
+      }
+      pointerEvents={activeTab === "aichat" ? "auto" : "none"}>
+      
+        <AIChatTab
+        client={client}
+        messages={messages}
+        onSendMessage={onSendMessage}
+        isActive={activeTab === "aichat"} />
+      
+      </View>
+      <View
+      style={[styles.tabPaneInner, activeTab !== "info" && styles.tabPaneHidden]}
+      pointerEvents={activeTab === "info" ? "auto" : "none"}>
+      
+        {renderInfoTab()}
+      </View>
+    </>;
 
-
-      case "info":
-        return renderInfoTab();
-      default:
-        return renderMessagesTab();
-    }
-  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -820,6 +835,13 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
     backgroundColor: colors.background.primary
+  },
+  tabPaneInner: {
+    flex: 1,
+    width: "100%"
+  },
+  tabPaneHidden: {
+    display: "none"
   },
   emptyState: {
     flex: 1,
