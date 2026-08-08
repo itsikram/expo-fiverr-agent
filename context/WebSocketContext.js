@@ -481,9 +481,11 @@ const mergeConversationMessages = (
   existingMessages = [],
   incomingMessages = [],
 ) => {
-  return dedupeMessages([...(existingMessages || []), ...(incomingMessages || [])]).sort(
-    (a, b) => getMessageTimestamp(a) - getMessageTimestamp(b),
-  );
+  // Incoming sync wins ties so the latest extension extract updates old cached rows.
+  return dedupeMessages([
+    ...(incomingMessages || []),
+    ...(existingMessages || []),
+  ]).sort((a, b) => getMessageTimestamp(a) - getMessageTimestamp(b));
 };
 
 export const WebSocketProvider = ({ children }) => {
@@ -1939,7 +1941,41 @@ export const WebSocketProvider = ({ children }) => {
               const storageNorm = normalizeClientLookupValue(storageIdentity);
               const storageKey = String(storageIdentity);
 
-              const existing = Array.isArray(prev[storageKey]) ? prev[storageKey] : [];
+              const existingBuckets = [];
+              const seenExisting = new Set();
+              const addExistingBucket = (bucket) => {
+                if (!Array.isArray(bucket)) {
+                  return;
+                }
+                for (const entry of bucket) {
+                  if (!entry) {
+                    continue;
+                  }
+                  const stableId = entry.id || entry._id;
+                  const textSig = normalizeText(
+                    entry.text || entry.content || entry.message || "",
+                  );
+                  const dedupeSig = stableId
+                    ? `id:${stableId}`
+                    : `text:${textSig}|${entry.isFromMe ? "me" : "client"}|${entry.absoluteTimestamp || entry.time || ""}`;
+                  if (seenExisting.has(dedupeSig)) {
+                    continue;
+                  }
+                  seenExisting.add(dedupeSig);
+                  existingBuckets.push(entry);
+                }
+              };
+
+              addExistingBucket(prev[storageKey]);
+              storageKeys.forEach((aliasKey) => addExistingBucket(prev[aliasKey]));
+              Object.entries(prev).forEach(([key, bucket]) => {
+                const keyNorm = normalizeClientLookupValue(key);
+                if (keyNorm && validStorageNorms.has(keyNorm)) {
+                  addExistingBucket(bucket);
+                }
+              });
+
+              const existing = existingBuckets;
 
               const transformedMessages = data.data.messages
                 .filter((msg) => Boolean(msg))
@@ -1952,6 +1988,9 @@ export const WebSocketProvider = ({ children }) => {
                   const msgText = normalizeText(
                     msg.text || msg.content || msg.message || "",
                   );
+                  const incomingTimeKey = String(rawTime || "")
+                    .trim()
+                    .toLowerCase();
                   const existingMatch = existing.find((prevMsg) => {
                     if (!prevMsg) return false;
                     if (msg.id && prevMsg.id && String(msg.id) === String(prevMsg.id)) {
@@ -1962,7 +2001,22 @@ export const WebSocketProvider = ({ children }) => {
                     );
                     const sameSide =
                       Boolean(prevMsg.isFromMe) === Boolean(msg.isFromMe);
-                    return sameSide && prevText && prevText === msgText;
+                    if (!sameSide || !prevText || prevText !== msgText) {
+                      return false;
+                    }
+                    const prevTimeKey = String(
+                      prevMsg.time || prevMsg.timestamp || prevMsg.date || "",
+                    )
+                      .trim()
+                      .toLowerCase();
+                    if (
+                      incomingTimeKey &&
+                      prevTimeKey &&
+                      incomingTimeKey !== prevTimeKey
+                    ) {
+                      return false;
+                    }
+                    return true;
                   });
                   // Freeze an absolute timestamp once so relative Fiverr times
                   // ("26 minutes") can still age for auto-reply.

@@ -638,7 +638,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
   // Inbox activation + extraction: open conversation in Fiverr, then poll for fresh messages.
   const scheduleClientMessageSync = React.useCallback(
-    (targetIdentifier, delaysMs = [4000, 10000, 20000]) => {
+    (targetIdentifier, delaysMs = [2000, 5000, 12000, 25000]) => {
       delaysMs.forEach((delayMs) => {
         const timeoutId = setTimeout(() => {
           const activeClient = selectedClientRef.current;

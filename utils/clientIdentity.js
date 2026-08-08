@@ -352,8 +352,19 @@ export const getMessageContentKey = (message) => {
     message.time || message.timestamp || message.date,
   );
 
-  return timeKey
-    ? `content:${text}|${sender}|${timeKey}`
+  if (timeKey) {
+    return `content:${text}|${sender}|${timeKey}`;
+  }
+
+  const absTs =
+    typeof message.absoluteTimestamp === "number" && message.absoluteTimestamp > 0
+      ? String(message.absoluteTimestamp)
+      : "";
+  const domIndex =
+    typeof message.index === "number" ? String(message.index) : "";
+  const suffix = absTs || domIndex;
+  return suffix
+    ? `content:${text}|${sender}|${suffix}`
     : `content:${text}|${sender}`;
 };
 
@@ -390,11 +401,34 @@ export const pickRicherMessage = (left, right) => {
     if (message?.conversationId || message?.conversation_id) {
       value += 1;
     }
+    const abs =
+      typeof message?.absoluteTimestamp === "number"
+        ? message.absoluteTimestamp
+        : 0;
+    if (abs > 0) {
+      value += 1;
+    }
     return value;
   };
 
-  const primary = score(left) >= score(right) ? left : right;
-  const secondary = primary === left ? right : left;
+  const leftScore = score(left);
+  const rightScore = score(right);
+  let primary = left;
+  let secondary = right;
+
+  if (rightScore > leftScore) {
+    primary = right;
+    secondary = left;
+  } else if (rightScore === leftScore) {
+    const leftAbs =
+      typeof left?.absoluteTimestamp === "number" ? left.absoluteTimestamp : 0;
+    const rightAbs =
+      typeof right?.absoluteTimestamp === "number" ? right.absoluteTimestamp : 0;
+    if (rightAbs > leftAbs) {
+      primary = right;
+      secondary = left;
+    }
+  }
 
   const leftAbs =
     typeof left?.absoluteTimestamp === "number" ? left.absoluteTimestamp : 0;
@@ -402,7 +436,7 @@ export const pickRicherMessage = (left, right) => {
     typeof right?.absoluteTimestamp === "number" ? right.absoluteTimestamp : 0;
   const preservedAbsolute =
     leftAbs > 0 && rightAbs > 0
-      ? Math.min(leftAbs, rightAbs)
+      ? Math.max(leftAbs, rightAbs)
       : leftAbs || rightAbs || undefined;
 
   return {
