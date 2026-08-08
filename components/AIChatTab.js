@@ -1241,13 +1241,13 @@ Example (return exactly this format, no other text):
 
   const handleClearChatHistory = () => {
     if (chatMessages.length === 0) {
-      Alert.alert('Info', 'Chat history is already empty');
+      Alert.alert('Info', 'AI chat context is already empty');
       return;
     }
 
     Alert.alert(
-      'Clear Chat History',
-      'Are you sure you want to clear all chat history for this client? This action cannot be undone.',
+      'Clear AI Chat Context',
+      'Clear all AI chat messages for this client? The Fiverr conversation stays unchanged.',
       [
         {
           text: 'Cancel',
@@ -1267,6 +1267,7 @@ Example (return exactly this format, no other text):
               // Clear state IMMEDIATELY - this updates the UI right away
               setChatMessages([]);
               setSuggestedPrompts({});
+              setAiSuggestedActions([]);
               
               // Update previousClientId to current to prevent reload effect from triggering
               setPreviousClientId(clientId);
@@ -1412,6 +1413,39 @@ Example (return exactly this format, no other text):
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 215 : 300}
     >
+      <View
+        style={[styles.chatHeader, { paddingHorizontal: messageHorizontalPadding }]}
+      >
+        <Text style={styles.chatHeaderTitle}>AI Assistant</Text>
+        <TouchableOpacity
+          style={[
+            styles.clearContextButton,
+            chatMessages.length === 0 && styles.clearContextButtonDisabled,
+          ]}
+          onPress={handleClearChatHistory}
+          disabled={chatMessages.length === 0}
+          accessibilityLabel="Clear AI chat context"
+        >
+          <Ionicons
+            name="trash-outline"
+            size={16}
+            color={
+              chatMessages.length === 0
+                ? colors.text.muted
+                : colors.accent.error || '#dc3545'
+            }
+          />
+          <Text
+            style={[
+              styles.clearContextButtonText,
+              chatMessages.length === 0 && styles.clearContextButtonTextDisabled,
+            ]}
+          >
+            Clear context
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         ref={scrollViewRef}
         style={styles.messagesScroll}
@@ -1774,6 +1808,42 @@ Example (return exactly this format, no other text):
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+    backgroundColor: colors.background.primary,
+  },
+  chatHeaderTitle: {
+    fontSize: typography.sizes.sm,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.secondary,
+  },
+  clearContextButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs / 2,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    backgroundColor: colors.background.card,
+  },
+  clearContextButtonDisabled: {
+    opacity: 0.55,
+  },
+  clearContextButtonText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+    color: colors.accent.error || '#dc3545',
+  },
+  clearContextButtonTextDisabled: {
+    color: colors.text.muted,
   },
   messagesScroll: {
     flex: 1,

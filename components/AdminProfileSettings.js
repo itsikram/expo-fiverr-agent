@@ -102,9 +102,10 @@ const ProfileReloadCard = ({
       />
 
       <Text style={styles.cardHint}>
-        Each reload waits a random time between min and max (minimum{" "}
-        {TAB_RELOAD_MIN_FLOOR_SECONDS}s), then refreshes the activated Fiverr
-        tab in the extension.
+        Each rotation waits a random time between min and max (minimum{" "}
+        {TAB_RELOAD_MIN_FLOOR_SECONDS}s), then navigates the activated Fiverr
+        tab to the next seller header page. Pauses while you use the Expo app
+        with this profile selected.
       </Text>
 
       {showUseGlobal ? (
@@ -283,7 +284,7 @@ const AdminProfileSettings = ({ onBack }) => {
         <View style={styles.topBarTextWrap}>
           <Text style={styles.topBarTitle}>Profile Settings</Text>
           <Text style={styles.topBarSubtitle}>
-            Auto-reload Fiverr tabs per seller profile
+            Rotate Fiverr seller pages per profile
           </Text>
         </View>
         <TouchableOpacity
@@ -334,8 +335,10 @@ const AdminProfileSettings = ({ onBack }) => {
           <Text style={styles.sectionTitle}>Global defaults</Text>
           <Text style={styles.sectionHint}>
             Used for any profile without its own override. Turn on the switch
-            and set min/max, then tap Save. The extension uses the logged-in
-            Fiverr account on the activated tab to pick profile overrides.
+            and set min/max, then tap Save. The extension rotates between seller
+            header pages (Dashboard, My Business, Growth & Marketing,
+            Analytics) on the activated Fiverr tab. Rotation pauses while the Expo
+            app is open with that same profile selected.
           </Text>
           <ProfileReloadCard
             title="All profiles (default)"

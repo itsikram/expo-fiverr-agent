@@ -1791,6 +1791,10 @@ export const WebSocketProvider = ({ children }) => {
               !doesClientMatchAssignedIds(
                 clientPayload,
                 assignedClientIdsRef.current,
+              ) &&
+              !doesClientMatchAssignedIds(
+                data.data,
+                assignedClientIdsRef.current,
               );
 
             if (shouldIgnoreMessageData) {
@@ -1823,20 +1827,50 @@ export const WebSocketProvider = ({ children }) => {
 
             clearThrottle("messages", conversationId);
 
+            const looksLikeFiverrSlug = (val) => {
+              const s = String(val || "")
+                .trim()
+                .replace(/^@/, "");
+              if (!s || s.includes(" ")) {
+                return false;
+              }
+              return /^[a-zA-Z0-9_-]+$/.test(s);
+            };
+
+            const slugKey =
+              data.data.conversationId ||
+              data.data.conversation_id ||
+              clientPayload?.conversationId ||
+              clientPayload?.conversation_id ||
+              null;
+
             const usernameKey =
-              clientPayload?.username ||
-              data.data.username ||
-              data.data.clientUsername ||
+              (looksLikeFiverrSlug(slugKey) ? slugKey : null) ||
+              (looksLikeFiverrSlug(clientPayload?.username)
+                ? clientPayload.username
+                : null) ||
+              (looksLikeFiverrSlug(data.data.username)
+                ? data.data.username
+                : null) ||
+              (looksLikeFiverrSlug(data.data.clientUsername)
+                ? data.data.clientUsername
+                : null) ||
               data.data.messages.find(
-                (m) => !m.isFromMe && (m.senderUsername || m.sender),
+                (m) =>
+                  !m.isFromMe &&
+                  looksLikeFiverrSlug(m.senderUsername || m.sender),
               )?.senderUsername ||
               data.data.messages.find(
-                (m) => !m.isFromMe && (m.senderUsername || m.sender),
-              )?.sender;
+                (m) =>
+                  !m.isFromMe &&
+                  looksLikeFiverrSlug(m.senderUsername || m.sender),
+              )?.sender ||
+              null;
+
             const canonicalKey =
               getCanonicalMessageStorageKey(clientPayload) ||
               getCanonicalMessageStorageKey(data.data) ||
-              conversationId ||
+              (looksLikeFiverrSlug(conversationId) ? conversationId : null) ||
               usernameKey;
             if (!canonicalKey) {
               break;
@@ -1863,14 +1897,27 @@ export const WebSocketProvider = ({ children }) => {
               );
             };
 
-            const storageIdentity =
-              usernameKey && !isGenericKey(String(usernameKey))
-                ? String(usernameKey)
-                : String(canonicalKey);
+            const storageIdentity = String(
+              (looksLikeFiverrSlug(slugKey) ? slugKey : null) ||
+                (usernameKey && !isGenericKey(String(usernameKey))
+                  ? String(usernameKey)
+                  : null) ||
+                String(canonicalKey),
+            );
 
             const storageKeys = Array.from(
               new Set(
-                [storageIdentity, String(canonicalKey)]
+                [
+                  storageIdentity,
+                  String(canonicalKey),
+                  looksLikeFiverrSlug(slugKey) ? String(slugKey) : null,
+                  looksLikeFiverrSlug(conversationId)
+                    ? String(conversationId)
+                    : null,
+                  usernameKey && !isGenericKey(String(usernameKey))
+                    ? String(usernameKey)
+                    : null,
+                ]
                   .filter(Boolean)
                   .filter((key) => !isGenericKey(key)),
               ),
@@ -1895,26 +1942,7 @@ export const WebSocketProvider = ({ children }) => {
               const existing = Array.isArray(prev[storageKey]) ? prev[storageKey] : [];
 
               const transformedMessages = data.data.messages
-                .filter((msg) => {
-                  if (!msg) return false;
-
-                  if (msg.isFromMe || msg.sender === "me") {
-                    return true;
-                  }
-
-                  const msgConv =
-                    msg.conversationId ||
-                    msg.conversation_id ||
-                    msg.clientUsername ||
-                    msg.clientId ||
-                    msg.client_id;
-                  const msgConvNorm = normalizeClientLookupValue(msgConv);
-                  if (msgConvNorm && !validStorageNorms.has(msgConvNorm)) {
-                    return false;
-                  }
-
-                  return true;
-                })
+                .filter((msg) => Boolean(msg))
                 .map((msg) => {
                   const taggedConversationId = storageIdentity;
                   const taggedClientUsername = usernameKey
@@ -2007,6 +2035,13 @@ export const WebSocketProvider = ({ children }) => {
                 transformedMessages,
               );
 
+              // Mirror under every alias so findMessagesForClient can resolve slug/display-name keys.
+              storageKeys.forEach((aliasKey) => {
+                if (aliasKey && aliasKey !== storageKey) {
+                  updatedMessages[aliasKey] = updatedMessages[storageKey];
+                }
+              });
+
               // Drop duplicate buckets for the same client to prevent repeated rendering.
               Object.keys(updatedMessages).forEach((key) => {
                 if (key === storageKey) {
@@ -2059,14 +2094,34 @@ export const WebSocketProvider = ({ children }) => {
             "[WebSocket] New message detected:",
             data.data?.conversationId,
           );
+          if (data.data?.historical === true) {
+            break;
+          }
           // Request updated messages for this conversation
-          if (data.data?.conversationId || data.data?.username) {
+          if (
+            data.data?.conversationId ||
+            data.data?.username ||
+            data.data?.clientUsername
+          ) {
             const targetIdentifier =
               data.data?.conversationId ||
               data.data?.username ||
               data.data?.clientUsername;
+            const targetNorm = normalizeClientLookupValue(targetIdentifier);
+            const selectedNorm = selectedConversationId
+              ? normalizeClientLookupValue(selectedConversationId)
+              : null;
+            const isSelectedConversation = Boolean(
+              targetNorm && selectedNorm && targetNorm === selectedNorm,
+            );
+
             requestClientData(targetIdentifier);
-            requestMessages(targetIdentifier);
+            requestMessages(targetIdentifier, {
+              force: true,
+              background: !isSelectedConversation,
+              triggerExtraction: true,
+            });
+            triggerMessageExtraction(targetIdentifier, { force: true });
 
             // Show popup/alert for new message
             const clientUsername =
@@ -2431,6 +2486,7 @@ export const WebSocketProvider = ({ children }) => {
     [
       requestClientData,
       requestMessages,
+      triggerMessageExtraction,
       requestClientList,
       endClientListLoad,
       clients,
@@ -2698,6 +2754,57 @@ export const WebSocketProvider = ({ children }) => {
       }
     };
   }, [isConnected, sendMessage]);
+
+  useEffect(() => {
+    if (!isConnected) return undefined;
+
+    const isAppInForeground = () => {
+      if (Platform.OS === "web" && typeof document !== "undefined") {
+        return document.visibilityState === "visible";
+      }
+      return AppState.currentState === "active";
+    };
+
+    const sendExpoActivity = () => {
+      const username =
+        selectedSellerProfile?.username ||
+        selectedSellerProfile?.profileName ||
+        "";
+      sendMessage({
+        type: "expo_app_activity",
+        data: {
+          active: isAppInForeground(),
+          selectedProfileUsername: username,
+          at: Date.now(),
+        },
+      });
+    };
+
+    sendExpoActivity();
+    const intervalId = setInterval(sendExpoActivity, 30000);
+    const appStateSub = AppState.addEventListener("change", sendExpoActivity);
+    let onVisibilityChange = null;
+    if (Platform.OS === "web" && typeof document !== "undefined") {
+      onVisibilityChange = () => sendExpoActivity();
+      document.addEventListener("visibilitychange", onVisibilityChange);
+    }
+
+    return () => {
+      clearInterval(intervalId);
+      appStateSub?.remove?.();
+      if (onVisibilityChange) {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+      }
+      sendMessage({
+        type: "expo_app_activity",
+        data: {
+          active: false,
+          selectedProfileUsername: "",
+          at: Date.now(),
+        },
+      });
+    };
+  }, [isConnected, sendMessage, selectedSellerProfile]);
 
   const value = {
     isConnected,

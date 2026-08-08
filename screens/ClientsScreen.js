@@ -398,7 +398,11 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
             const conversationId = getClientConversationId(client);
             if (conversationId) {
               requestClientData(conversationId);
-              requestMessages(conversationId, { force: true });
+              requestMessages(conversationId, {
+                force: true,
+                triggerExtraction: true,
+              });
+              triggerMessageExtraction(conversationId, { force: true });
             }
           } else if (!selectedOnly) {
             requestAllData();
@@ -433,7 +437,11 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
         requestClientData(conversationId);
         if (includeMessages) {
-          requestMessages(conversationId, { force: selectedOnly });
+          requestMessages(conversationId, {
+            force: selectedOnly || true,
+            triggerExtraction: true,
+          });
+          triggerMessageExtraction(conversationId, { force: true });
         }
       });
     },
@@ -625,36 +633,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     );
   }, [selectedClient, selectedConversationId, activeConversationKey, messages]);
 
-  // While switching clients, hide messages tagged for a different conversation.
-  const displayMessages = React.useMemo(() => {
-    if (!selectedClient || !activeConversationKey) {
-      return [];
-    }
-
-    const activeNorm = normalizeClientLookupValue(activeConversationKey);
-    const isLoadingThisConversation =
-      isLoadingMessages &&
-      loadingConversationId &&
-      normalizeClientLookupValue(loadingConversationId) === activeNorm;
-
-    if (!isLoadingThisConversation) {
-      return selectedMessages;
-    }
-
-    return selectedMessages.filter((message) => {
-      const conv = message?.conversationId || message?.conversation_id;
-      if (!conv) {
-        return Boolean(message?.optimistic);
-      }
-      return normalizeClientLookupValue(conv) === activeNorm;
-    });
-  }, [
-    selectedClient,
-    activeConversationKey,
-    selectedMessages,
-    isLoadingMessages,
-    loadingConversationId,
-  ]);
+  // Show cached/merged messages immediately while a refresh is in flight.
+  const displayMessages = selectedMessages;
 
   // Inbox activation + extraction: open conversation in Fiverr, then poll for fresh messages.
   const scheduleClientMessageSync = React.useCallback(
@@ -669,12 +649,16 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
             return;
           }
 
-          requestMessages(targetIdentifier, { force: true });
+          requestMessages(targetIdentifier, {
+            force: true,
+            triggerExtraction: true,
+          });
+          triggerMessageExtraction(targetIdentifier, { force: true });
         }, delayMs);
         pendingClientSelectionTimeoutsRef.current.push(timeoutId);
       });
     },
-    [requestMessages],
+    [requestMessages, triggerMessageExtraction],
   );
 
   const activateClientAndLoadMessages = React.useCallback(
@@ -702,7 +686,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       requestClientData(targetIdentifier);
 
       // Show cached/server messages immediately while the extension loads the inbox.
-      requestMessages(targetIdentifier, { force: true });
+      requestMessages(targetIdentifier, { force: true, triggerExtraction: true });
+      triggerMessageExtraction(targetIdentifier, { force: true });
 
       if (!isConnected) {
         return true;
@@ -730,6 +715,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       isConnected,
       requestClientData,
       requestMessages,
+      triggerMessageExtraction,
       scheduleClientMessageSync,
     ],
   );

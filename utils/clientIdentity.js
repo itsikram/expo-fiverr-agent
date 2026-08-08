@@ -364,7 +364,10 @@ export const getMessageDedupKey = (message) => {
   }
 
   const msgId = message?.id || message?._id || message?.messageId;
-  return msgId ? `id:${msgId}` : null;
+  if (msgId && !/^message-\d+$/i.test(String(msgId))) {
+    return `id:${msgId}`;
+  }
+  return null;
 };
 
 export const pickRicherMessage = (left, right) => {
@@ -436,9 +439,7 @@ export const dedupeMessages = (messageList = []) => {
 
     const text = getMessageTextKey(message);
     const sender = getMessageSenderKey(message);
-    const key = text
-      ? `content:${text}|${sender}`
-      : getMessageDedupKey(message);
+    const key = getMessageDedupKey(message) || (text ? `content:${text}|${sender}` : null);
 
     if (!key) {
       continue;
@@ -537,10 +538,17 @@ export const findMessagesForClient = (
       continue;
     }
     const keyNorm = normalizeClientKey(key);
-    if (!keyNorm || !lookupKeys.has(keyNorm)) {
+    if (keyNorm && lookupKeys.has(keyNorm)) {
+      merged.push(...bucket);
       continue;
     }
-    merged.push(...bucket);
+    // Bucket key may be a display name while the client list uses the Fiverr slug.
+    const ownedInBucket = bucket.filter((message) =>
+      messageBelongsToClient(message, client, primaryKey),
+    );
+    if (ownedInBucket.length > 0) {
+      merged.push(...ownedInBucket);
+    }
   }
 
   if (merged.length === 0 && primaryKey && messagesByKey[primaryKey]) {
