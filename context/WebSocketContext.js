@@ -4,8 +4,8 @@ import React, {
   useState,
   useEffect,
   useRef,
-  useCallback } from
-"react";
+  useCallback,
+} from "react";
 import { Platform, AppState } from "react-native";
 import { SERVER_CONFIG } from "../config/server";
 import { getMyAssignments } from "../utils/adminService";
@@ -16,13 +16,13 @@ import {
   loadClientData,
   saveLastSync,
   clearAIChatHistory,
-  loadSettings } from
-"../utils/storage";
+  loadSettings,
+} from "../utils/storage";
 import { startAutoReplyWatcher } from "../utils/autoReplyService";
 import {
   loadProfileReloadSettings,
-  TAB_RELOAD_SETTINGS_EVENT } from
-"../utils/tabReloadService";
+  TAB_RELOAD_SETTINGS_EVENT,
+} from "../utils/tabReloadService";
 import notificationService from "../utils/notificationService";
 import { showSmartMessageNotification } from "../utils/notificationHelpers";
 import { useAuth } from "./AuthContext";
@@ -31,8 +31,8 @@ import {
   isGenericClientKey,
   dedupeMessages,
   collapseDuplicateParagraphs,
-  getCanonicalMessageId } from
-"../utils/clientIdentity";
+  getCanonicalMessageId,
+} from "../utils/clientIdentity";
 
 const WebSocketContext = createContext(null);
 
@@ -62,9 +62,9 @@ const getTimeUnitPriority = (timeString) => {
 
   // If it's already an ISO date string, parse it directly
   if (
-  timeString.includes("T") ||
-  timeString.includes("-") && timeString.length > 10)
-  {
+    timeString.includes("T") ||
+    (timeString.includes("-") && timeString.length > 10)
+  ) {
     const date = new Date(timeString);
     if (!isNaN(date.getTime())) {
       return { priority: 7, timestamp: date.getTime() };
@@ -74,7 +74,7 @@ const getTimeUnitPriority = (timeString) => {
   // Avoid Date() for "Aug 06, 4:12 AM" — engines disagree (year 2001 vs invalid).
   // Those labels are handled by the month/day parser below.
   const looksLikeMonthDayLabel = /^[A-Za-z]{3}\s+\d{1,2}\b/.test(
-    String(timeString).trim()
+    String(timeString).trim(),
   );
   if (!looksLikeMonthDayLabel) {
     const dateAttempt = new Date(timeString);
@@ -88,9 +88,9 @@ const getTimeUnitPriority = (timeString) => {
 
   // Handle "just now" or "now" - treat as minutes (most recent)
   if (
-  lowerTime.includes("just now") ||
-  lowerTime.includes("now") && !lowerTime.includes("ago"))
-  {
+    lowerTime.includes("just now") ||
+    (lowerTime.includes("now") && !lowerTime.includes("ago"))
+  ) {
     return { priority: 1, timestamp: now };
   }
 
@@ -99,7 +99,7 @@ const getTimeUnitPriority = (timeString) => {
   if (minutesMatch) {
     return {
       priority: 1,
-      timestamp: now - parseInt(minutesMatch[1]) * 60 * 1000
+      timestamp: now - parseInt(minutesMatch[1]) * 60 * 1000,
     };
   }
 
@@ -108,7 +108,7 @@ const getTimeUnitPriority = (timeString) => {
   if (hoursMatch) {
     return {
       priority: 2,
-      timestamp: now - parseInt(hoursMatch[1]) * 60 * 60 * 1000
+      timestamp: now - parseInt(hoursMatch[1]) * 60 * 60 * 1000,
     };
   }
 
@@ -117,7 +117,7 @@ const getTimeUnitPriority = (timeString) => {
   if (daysMatch) {
     return {
       priority: 3,
-      timestamp: now - parseInt(daysMatch[1]) * 24 * 60 * 60 * 1000
+      timestamp: now - parseInt(daysMatch[1]) * 24 * 60 * 60 * 1000,
     };
   }
 
@@ -126,7 +126,7 @@ const getTimeUnitPriority = (timeString) => {
   if (weeksMatch) {
     return {
       priority: 4,
-      timestamp: now - parseInt(weeksMatch[1]) * 7 * 24 * 60 * 60 * 1000
+      timestamp: now - parseInt(weeksMatch[1]) * 7 * 24 * 60 * 60 * 1000,
     };
   }
 
@@ -135,7 +135,7 @@ const getTimeUnitPriority = (timeString) => {
   if (monthsMatch) {
     return {
       priority: 5,
-      timestamp: now - parseInt(monthsMatch[1]) * 30 * 24 * 60 * 60 * 1000
+      timestamp: now - parseInt(monthsMatch[1]) * 30 * 24 * 60 * 60 * 1000,
     };
   }
 
@@ -144,7 +144,7 @@ const getTimeUnitPriority = (timeString) => {
   if (yearsMatch) {
     return {
       priority: 6,
-      timestamp: now - parseInt(yearsMatch[1]) * 365 * 24 * 60 * 60 * 1000
+      timestamp: now - parseInt(yearsMatch[1]) * 365 * 24 * 60 * 60 * 1000,
     };
   }
 
@@ -160,31 +160,32 @@ const getTimeUnitPriority = (timeString) => {
 
   // Fiverr inbox labels: "Mar 08", "Mar 08, 2024", "Aug 06, 4:12 AM"
   const dateStringMatch = timeString.match(
-    /([A-Za-z]{3})\s+(\d{1,2})(?:,\s*(\d{4}))?(?:,\s*(\d{1,2}):(\d{2})\s*(AM|PM))?/i
+    /([A-Za-z]{3})\s+(\d{1,2})(?:,\s*(\d{4}))?(?:,\s*(\d{1,2}):(\d{2})\s*(AM|PM))?/i,
   );
   if (dateStringMatch) {
     const monthNames = [
-    "Jan",
-    "Feb",
-    "Mar",
-    "Apr",
-    "May",
-    "Jun",
-    "Jul",
-    "Aug",
-    "Sep",
-    "Oct",
-    "Nov",
-    "Dec"];
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
 
     const monthIndex = monthNames.findIndex(
-      (m) => m.toLowerCase() === dateStringMatch[1].toLowerCase()
+      (m) => m.toLowerCase() === dateStringMatch[1].toLowerCase(),
     );
     if (monthIndex !== -1) {
       const day = parseInt(dateStringMatch[2], 10);
-      const year = dateStringMatch[3] ?
-      parseInt(dateStringMatch[3], 10) :
-      new Date().getFullYear();
+      const year = dateStringMatch[3]
+        ? parseInt(dateStringMatch[3], 10)
+        : new Date().getFullYear();
       let hours = 0;
       let minutes = 0;
       if (dateStringMatch[4] && dateStringMatch[6]) {
@@ -207,11 +208,11 @@ const getTimeUnitPriority = (timeString) => {
 
 const getClientListId = (client, index) => {
   const base =
-  client?._id ||
-  client?.id ||
-  client?.username ||
-  client?.conversationId ||
-  client?.conversation_id;
+    client?._id ||
+    client?.id ||
+    client?.username ||
+    client?.conversationId ||
+    client?.conversation_id;
   if (base) {
     return `${String(base)}`;
   }
@@ -233,15 +234,15 @@ const getCanonicalMessageStorageKey = (source) => {
   }
 
   const candidates = [
-  source.username,
-  source.clientUsername,
-  source.conversationId,
-  source.conversation_id,
-  source.client].
-
-  filter(Boolean).
-  map((value) => String(value).trim()).
-  filter((value) => !isGenericClientKey(value));
+    source.username,
+    source.clientUsername,
+    source.conversationId,
+    source.conversation_id,
+    source.client,
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).trim())
+    .filter((value) => !isGenericClientKey(value));
 
   return candidates[0] || null;
 };
@@ -253,19 +254,20 @@ export const normalizeClientLookupValue = (value) => {
 
   if (typeof value === "object") {
     const nestedCandidates = [
-    value.username,
-    value.clientUsername,
-    value.client,
-    value.conversationId,
-    value.conversation_id,
-    value.id,
-    value._id,
-    value.clientKey,
-    value.name,
-    value.displayName,
-    value.value,
-    value?.profile?.username,
-    value?.user?.username];
+      value.username,
+      value.clientUsername,
+      value.client,
+      value.conversationId,
+      value.conversation_id,
+      value.id,
+      value._id,
+      value.clientKey,
+      value.name,
+      value.displayName,
+      value.value,
+      value?.profile?.username,
+      value?.user?.username,
+    ];
 
     for (const nestedValue of nestedCandidates) {
       const normalized = normalizeClientLookupValue(nestedValue);
@@ -279,7 +281,7 @@ export const normalizeClientLookupValue = (value) => {
   const str = String(value).trim().toLowerCase().replace(/^@/, "");
   const stripped = str.replace(
     /^(user|client|conversation|conv|seller|profile|inbox|chat)[_:-]?/i,
-    ""
+    "",
   );
   const target = stripped || str;
 
@@ -295,21 +297,21 @@ const getClientLookupVariants = (value) => {
   const variants = new Set([normalized]);
 
   const directValues = [
-  value,
-  value?.username,
-  value?.clientUsername,
-  value?.client,
-  value?.conversationId,
-  value?.conversation_id,
-  value?.id,
-  value?._id,
-  value?.clientKey,
-  value?.name,
-  value?.displayName,
-  value?.profileName,
-  value?.sellerUsername,
-  value?.seller_username].
-  filter(Boolean);
+    value,
+    value?.username,
+    value?.clientUsername,
+    value?.client,
+    value?.conversationId,
+    value?.conversation_id,
+    value?.id,
+    value?._id,
+    value?.clientKey,
+    value?.name,
+    value?.displayName,
+    value?.profileName,
+    value?.sellerUsername,
+    value?.seller_username,
+  ].filter(Boolean);
   directValues.forEach((directValue) => {
     const directNormalized = normalizeClientLookupValue(directValue);
     if (directNormalized) {
@@ -319,7 +321,7 @@ const getClientLookupVariants = (value) => {
 
   const stripped = normalized.replace(
     /^(user|client|conversation|conv|seller|profile|inbox|chat)([_-]?)/,
-    ""
+    "",
   );
   if (stripped && stripped !== normalized) {
     variants.add(stripped);
@@ -327,7 +329,7 @@ const getClientLookupVariants = (value) => {
 
   const withoutTrailingRole = normalized.replace(
     /(?:[_-]?(?:user|client|seller|profile|conversation|conv|inbox|chat))$/,
-    ""
+    "",
   );
   if (withoutTrailingRole && withoutTrailingRole !== normalized) {
     variants.add(withoutTrailingRole);
@@ -342,9 +344,9 @@ const doesClientMatchAssignedIds = (client, assignedIds) => {
   }
 
   const normalizedAssignedIds = new Set(
-    assignedIds.
-    flatMap((item) => getClientLookupVariants(item)).
-    filter(Boolean)
+    assignedIds
+      .flatMap((item) => getClientLookupVariants(item))
+      .filter(Boolean),
   );
 
   if (normalizedAssignedIds.size === 0) {
@@ -352,40 +354,40 @@ const doesClientMatchAssignedIds = (client, assignedIds) => {
   }
 
   const candidateKeys = [
-  client?._id,
-  client?.id,
-  client?.clientKey,
-  client?.conversationId,
-  client?.conversation_id,
-  client?.username,
-  client?.clientUsername,
-  client?.client,
-  client?.name,
-  client?.displayName,
-  client?.profileName,
-  client?.sellerUsername,
-  client?.seller_username,
-  client?.profile?.username,
-  client?.user?.username].
-
-  flatMap((item) => getClientLookupVariants(item)).
-  filter(Boolean);
+    client?._id,
+    client?.id,
+    client?.clientKey,
+    client?.conversationId,
+    client?.conversation_id,
+    client?.username,
+    client?.clientUsername,
+    client?.client,
+    client?.name,
+    client?.displayName,
+    client?.profileName,
+    client?.sellerUsername,
+    client?.seller_username,
+    client?.profile?.username,
+    client?.user?.username,
+  ]
+    .flatMap((item) => getClientLookupVariants(item))
+    .filter(Boolean);
 
   if (candidateKeys.length === 0) {
     return false;
   }
 
   return candidateKeys.some((candidateKey) =>
-  normalizedAssignedIds.has(candidateKey)
+    normalizedAssignedIds.has(candidateKey),
   );
 };
 
 const filterClientsForCurrentUser = (
-clients,
-assignedIds,
-isAdminRole,
-isAssignmentsLoaded) =>
-{
+  clients,
+  assignedIds,
+  isAdminRole,
+  isAssignmentsLoaded,
+) => {
   if (isAdminRole) {
     return Array.isArray(clients) ? clients : [];
   }
@@ -403,26 +405,8 @@ isAssignmentsLoaded) =>
   }
 
   const filteredClients = clients.filter((client) =>
-  doesClientMatchAssignedIds(client, assignedIds)
+    doesClientMatchAssignedIds(client, assignedIds),
   );
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
   return filteredClients;
 };
@@ -431,11 +415,11 @@ export const getMessageTimestamp = (message) => {
   if (!message) return 0;
 
   const raw =
-  message.time ||
-  message.timestamp ||
-  message.date ||
-  message.created_at ||
-  message.createdAt;
+    message.time ||
+    message.timestamp ||
+    message.date ||
+    message.created_at ||
+    message.createdAt;
 
   // Calendar labels with an explicit clock ("Aug 06, 4:12 AM") must win over
   // older day-bucket absoluteTimestamps that collapsed every message to midnight.
@@ -449,9 +433,9 @@ export const getMessageTimestamp = (message) => {
   // Prefer frozen absolute timestamps so relative Fiverr labels ("26 minutes")
   // and ISO optimistic/AI sends sort in true chronological order.
   if (
-  typeof message.absoluteTimestamp === "number" &&
-  message.absoluteTimestamp > 0)
-  {
+    typeof message.absoluteTimestamp === "number" &&
+    message.absoluteTimestamp > 0
+  ) {
     return message.absoluteTimestamp;
   }
 
@@ -465,11 +449,11 @@ export const getMessageTimestamp = (message) => {
     if (!isNaN(parsed.getTime()) && rawStr.length > 8) {
       // Avoid treating relative labels like "2 hours" as Date.parse successes.
       if (
-      rawStr.includes("T") ||
-      rawStr.includes("-") ||
-      rawStr.includes("/") ||
-      /,/.test(rawStr))
-      {
+        rawStr.includes("T") ||
+        rawStr.includes("-") ||
+        rawStr.includes("/") ||
+        /,/.test(rawStr)
+      ) {
         return parsed.getTime();
       }
     }
@@ -489,34 +473,34 @@ const getMessageStorageKeys = (source) => {
   }
 
   const candidates = [
-  source.conversationId,
-  source.conversation_id,
-  source.username,
-  source.clientUsername,
-  source.client,
-  source.clientId,
-  source.clientKey];
-
+    source.conversationId,
+    source.conversation_id,
+    source.username,
+    source.clientUsername,
+    source.client,
+    source.clientId,
+    source.clientKey,
+  ];
 
   return Array.from(
     new Set(
-      candidates.
-      filter(Boolean).
-      map((value) => String(value)).
-      filter(Boolean)
-    )
+      candidates
+        .filter(Boolean)
+        .map((value) => String(value))
+        .filter(Boolean),
+    ),
   );
 };
 
 const mergeConversationMessages = (
-existingMessages = [],
-incomingMessages = []) =>
-{
+  existingMessages = [],
+  incomingMessages = [],
+) => {
   // Incoming sync wins ties so the latest extension extract updates old cached rows.
   return dedupeMessages([
-  ...(incomingMessages || []),
-  ...(existingMessages || [])]
-  ).sort((a, b) => getMessageTimestamp(a) - getMessageTimestamp(b));
+    ...(incomingMessages || []),
+    ...(existingMessages || []),
+  ]).sort((a, b) => getMessageTimestamp(a) - getMessageTimestamp(b));
 };
 
 export const WebSocketProvider = ({ children }) => {
@@ -547,8 +531,8 @@ export const WebSocketProvider = ({ children }) => {
   const sendConfirmationsRef = useRef({});
 
   const isAdminRole =
-  typeof role === "string" && (
-  role === "admin" || role.toLowerCase().includes("admin"));
+    typeof role === "string" &&
+    (role === "admin" || role.toLowerCase().includes("admin"));
 
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
@@ -567,13 +551,15 @@ export const WebSocketProvider = ({ children }) => {
     clientList: null,
     messages: new Map(),
     clientData: new Map(),
-    triggers: new Map()
+    triggers: new Map(),
   });
   const notifiedNewClientsRef = useRef(new Map());
   const NEW_CLIENT_NOTIFY_COOLDOWN_MS = 60 * 60 * 1000;
 
   const shouldNotifyNewClient = useCallback((username) => {
-    const key = String(username || "").trim().toLowerCase();
+    const key = String(username || "")
+      .trim()
+      .toLowerCase();
     if (!key) {
       return false;
     }
@@ -715,7 +701,6 @@ export const WebSocketProvider = ({ children }) => {
 
       return ids;
     } catch (error) {
-
       assignedClientIdsRef.current = [];
       setAssignedClientIds([]);
       return [];
@@ -779,8 +764,6 @@ export const WebSocketProvider = ({ children }) => {
     reconnectAttemptsRef.current += 1;
     const delay = getReconnectDelay(reconnectAttemptsRef.current);
 
-
-
     reconnectTimeoutRef.current = setTimeout(() => {
       connectRef.current?.();
     }, delay);
@@ -792,12 +775,10 @@ export const WebSocketProvider = ({ children }) => {
     }
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-
       return;
     }
 
     if (wsRef.current?.readyState === WebSocket.CONNECTING) {
-
       return;
     }
 
@@ -813,7 +794,7 @@ export const WebSocketProvider = ({ children }) => {
       // If wake fails, still attempt the WebSocket (reconnect handles cold hosts).
       await SERVER_CONFIG.wakeServer({
         attempts: 2,
-        timeoutMs: 4000
+        timeoutMs: 4000,
       });
 
       // Invalidate any stale socket callbacks from a previous attempt
@@ -835,15 +816,14 @@ export const WebSocketProvider = ({ children }) => {
 
       ws.onopen = async () => {
         if (
-        connectGenerationRef.current !== thisGeneration ||
-        wsRef.current !== ws)
-        {
+          connectGenerationRef.current !== thisGeneration ||
+          wsRef.current !== ws
+        ) {
           try {
             ws.close();
           } catch (_) {}
           return;
         }
-
 
         setConnectionStatus("connected");
         setIsConnected(true);
@@ -859,29 +839,48 @@ export const WebSocketProvider = ({ children }) => {
             type: "connect",
             client_type: "expo",
             session_id: sessionIdRef.current,
-            ...(token ? { token } : {})
-          })
+            ...(token ? { token } : {}),
+          }),
         );
 
         try {
           const pushToken = await notificationService.getExpoPushToken();
           if (
-          pushToken &&
-          ws.readyState === WebSocket.OPEN &&
-          connectGenerationRef.current === thisGeneration &&
-          wsRef.current === ws)
-          {
+            pushToken &&
+            ws.readyState === WebSocket.OPEN &&
+            connectGenerationRef.current === thisGeneration &&
+            wsRef.current === ws
+          ) {
             ws.send(
               JSON.stringify({
                 type: "register_push_token",
                 pushToken,
-                session_id: sessionIdRef.current
-              })
+                session_id: sessionIdRef.current,
+              }),
             );
-
           }
-        } catch (pushError) {
+        } catch (pushError) {}
 
+        if (Platform.OS === "web") {
+          try {
+            const webSubscription = await notificationService.registerWebPushSubscription(
+              SERVER_CONFIG.serverUrl,
+            );
+            if (
+              webSubscription &&
+              ws.readyState === WebSocket.OPEN &&
+              connectGenerationRef.current === thisGeneration &&
+              wsRef.current === ws
+            ) {
+              ws.send(
+                JSON.stringify({
+                  type: "register_web_push",
+                  subscription: webSubscription,
+                  session_id: sessionIdRef.current,
+                }),
+              );
+            }
+          } catch (webPushError) {}
         }
 
         // Start ping interval
@@ -894,21 +893,18 @@ export const WebSocketProvider = ({ children }) => {
         // Force reconnect if the socket goes silent (common after long idle tabs)
         pongWatchdogRef.current = setInterval(() => {
           if (
-          connectGenerationRef.current !== thisGeneration ||
-          wsRef.current !== ws)
-          {
+            connectGenerationRef.current !== thisGeneration ||
+            wsRef.current !== ws
+          ) {
             return;
           }
           if (ws.readyState !== WebSocket.OPEN) {
             return;
           }
           if (
-          Date.now() - lastPongAtRef.current > (
-          SERVER_CONFIG.PONG_TIMEOUT || 70000))
-          {
-
-
-
+            Date.now() - lastPongAtRef.current >
+            (SERVER_CONFIG.PONG_TIMEOUT || 70000)
+          ) {
             try {
               ws.close();
             } catch (_) {}
@@ -918,9 +914,9 @@ export const WebSocketProvider = ({ children }) => {
 
       ws.onmessage = (event) => {
         if (
-        connectGenerationRef.current !== thisGeneration ||
-        wsRef.current !== ws)
-        {
+          connectGenerationRef.current !== thisGeneration ||
+          wsRef.current !== ws
+        ) {
           return;
         }
         lastPongAtRef.current = Date.now();
@@ -929,30 +925,20 @@ export const WebSocketProvider = ({ children }) => {
           if (typeof handleMessageRef.current === "function") {
             handleMessageRef.current(data);
           }
-        } catch (error) {
-
-        }
+        } catch (error) {}
       };
 
-      ws.onerror = (error) => {
-
-
-      };
+      ws.onerror = (error) => {};
 
       ws.onclose = (event) => {
         if (
-        connectGenerationRef.current !== thisGeneration ||
-        wsRef.current !== ws)
-        {
+          connectGenerationRef.current !== thisGeneration ||
+          wsRef.current !== ws
+        ) {
           return;
         }
 
         const { code, reason } = event;
-
-
-
-
-
 
         setConnectionStatus("disconnected");
         setIsConnected(false);
@@ -961,12 +947,6 @@ export const WebSocketProvider = ({ children }) => {
 
         // Provide helpful error messages
         if (code === 1006) {
-
-
-
-
-
-
         }
 
         if (!intentionalDisconnectRef.current) {
@@ -974,7 +954,6 @@ export const WebSocketProvider = ({ children }) => {
         }
       };
     } catch (error) {
-
       setConnectionStatus("error");
       setIsConnected(false);
       if (!intentionalDisconnectRef.current) {
@@ -1023,14 +1002,12 @@ export const WebSocketProvider = ({ children }) => {
       wsRef.current.send(JSON.stringify(message));
       return true;
     } else {
-
       return false;
     }
   }, []);
 
   const requestAllData = useCallback(() => {
     if (shouldThrottleRequest("allData")) {
-
       return false;
     }
 
@@ -1040,7 +1017,6 @@ export const WebSocketProvider = ({ children }) => {
 
   const requestClientList = useCallback(() => {
     if (shouldThrottleRequest("clientList")) {
-
       return false;
     }
 
@@ -1054,19 +1030,12 @@ export const WebSocketProvider = ({ children }) => {
       const {
         force = false,
         triggerExtraction = false,
-        background = false
+        background = false,
       } = options;
       const payload = { type: "request_messages" };
       const clientKey = getClientKey(conversationIdOrUsername);
 
-      if (
-      !force &&
-      shouldThrottleRequest("messages", clientKey || "default"))
-      {
-
-
-
-
+      if (!force && shouldThrottleRequest("messages", clientKey || "default")) {
         return false;
       }
 
@@ -1096,7 +1065,7 @@ export const WebSocketProvider = ({ children }) => {
       sendMessage(payload);
       return true;
     },
-    [clearThrottle, sendMessage, shouldThrottleRequest]
+    [clearThrottle, sendMessage, shouldThrottleRequest],
   );
 
   const requestClientData = useCallback(
@@ -1109,21 +1078,17 @@ export const WebSocketProvider = ({ children }) => {
       }
 
       if (shouldThrottleRequest("clientData", clientKey || "default")) {
-
-
-
-
         return false;
       }
 
       sendMessage({
         type: "request_client_data",
         username: clientKey,
-        conversationId: clientKey
+        conversationId: clientKey,
       });
       return true;
     },
-    [clientData, sendMessage, shouldThrottleRequest]
+    [clientData, sendMessage, shouldThrottleRequest],
   );
 
   const triggerClientListExtraction = useCallback(() => {
@@ -1135,7 +1100,7 @@ export const WebSocketProvider = ({ children }) => {
     // Send command to trigger browser extension to fetch client list
     sendMessage({
       type: "trigger",
-      action: "extract_client_list"
+      action: "extract_client_list",
     });
     return true;
   }, [beginClientListLoad, sendMessage, shouldThrottleRequest]);
@@ -1145,9 +1110,9 @@ export const WebSocketProvider = ({ children }) => {
       const { force = false, scrollToLoadAll = false } = options;
       const requestKey = targetIdentifier || "default";
       if (
-      !force &&
-      shouldThrottleRequest("trigger", `extract_messages:${requestKey}`))
-      {
+        !force &&
+        shouldThrottleRequest("trigger", `extract_messages:${requestKey}`)
+      ) {
         return false;
       }
 
@@ -1158,7 +1123,7 @@ export const WebSocketProvider = ({ children }) => {
       // Explicit extraction only — request_messages returns cached data without extracting.
       const payload = {
         type: "trigger",
-        action: "extract_messages"
+        action: "extract_messages",
       };
       if (targetIdentifier) {
         payload.conversationId = targetIdentifier;
@@ -1170,14 +1135,14 @@ export const WebSocketProvider = ({ children }) => {
       sendMessage(payload);
       return true;
     },
-    [clearThrottle, sendMessage, shouldThrottleRequest]
+    [clearThrottle, sendMessage, shouldThrottleRequest],
   );
 
   const triggerClientDataExtraction = useCallback(() => {
     // Send command to trigger browser extension to fetch client data
     sendMessage({
       type: "trigger",
-      action: "extract_client_data"
+      action: "extract_client_data",
     });
   }, [sendMessage]);
 
@@ -1187,12 +1152,8 @@ export const WebSocketProvider = ({ children }) => {
 
     const success = sendMessage({
       type: "navigate",
-      url: inboxUrl
+      url: inboxUrl,
     });
-
-
-
-
 
     return success;
   }, [sendMessage]);
@@ -1201,12 +1162,8 @@ export const WebSocketProvider = ({ children }) => {
     // Send command to browser extension to reload the activated Fiverr tab
 
     const success = sendMessage({
-      type: "reload"
+      type: "reload",
     });
-
-
-
-
 
     return success;
   }, [sendMessage]);
@@ -1215,13 +1172,8 @@ export const WebSocketProvider = ({ children }) => {
     (username, onError) => {
       // Send command to server to fetch client details by username
       if (!username) {
-
         return false;
       }
-
-
-
-
 
       // Store callback for error handling
       if (onError) {
@@ -1230,53 +1182,46 @@ export const WebSocketProvider = ({ children }) => {
 
       return sendMessage({
         type: "fetch_client_details",
-        username: username
+        username: username,
       });
     },
-    [sendMessage]
+    [sendMessage],
   );
 
   const clickClientInFiverr = useCallback(
     (identifierOrPayload) => {
       const payload =
-      typeof identifierOrPayload === "string" ?
-      {
-        identifier: identifierOrPayload,
-        username: identifierOrPayload,
-        conversationId: identifierOrPayload
-      } :
-      identifierOrPayload || {};
+        typeof identifierOrPayload === "string"
+          ? {
+              identifier: identifierOrPayload,
+              username: identifierOrPayload,
+              conversationId: identifierOrPayload,
+            }
+          : identifierOrPayload || {};
 
       const rawId =
-      payload.username ||
-      payload.conversationId ||
-      payload.identifier ||
-      "";
+        payload.username || payload.conversationId || payload.identifier || "";
 
-      const cleanId = String(rawId).
-      trim().
-      replace(/^@/, "").
-      replace(
-        /^(user|client|conversation|conv|seller|profile|inbox|chat)[_:-]?/i,
-        ""
-      );
+      const cleanId = String(rawId)
+        .trim()
+        .replace(/^@/, "")
+        .replace(
+          /^(user|client|conversation|conv|seller|profile|inbox|chat)[_:-]?/i,
+          "",
+        );
 
       if (!cleanId) {
-
-
-
         return false;
       }
-
 
       return sendMessage({
         type: "click_client",
         username: cleanId,
         conversationId: cleanId,
-        useFirstClient: false
+        useFirstClient: false,
       });
     },
-    [sendMessage]
+    [sendMessage],
   );
 
   const addOptimisticMessage = useCallback((messageText, conversationId) => {
@@ -1294,7 +1239,7 @@ export const WebSocketProvider = ({ children }) => {
       timestamp: now,
       absoluteTimestamp: Date.now(),
       conversationId: conversationId,
-      optimistic: true // Flag to identify optimistic messages
+      optimistic: true, // Flag to identify optimistic messages
     };
 
     setMessages((prev) => {
@@ -1302,15 +1247,10 @@ export const WebSocketProvider = ({ children }) => {
       return {
         ...prev,
         [conversationId]: [...existingMessages, optimisticMessage].sort(
-          (a, b) => getMessageTimestamp(a) - getMessageTimestamp(b)
-        )
+          (a, b) => getMessageTimestamp(a) - getMessageTimestamp(b),
+        ),
       };
     });
-
-
-
-
-
   }, []);
 
   const cancelOptimisticMessage = useCallback((messageText, conversationId) => {
@@ -1329,10 +1269,10 @@ export const WebSocketProvider = ({ children }) => {
       const filteredMessages = existingMessages.filter((msg) => {
         // Remove if it's optimistic and matches the text
         if (
-        msg.optimistic && (
-        msg.text === messageText.trim() ||
-        msg.content === messageText.trim()))
-        {
+          msg.optimistic &&
+          (msg.text === messageText.trim() ||
+            msg.content === messageText.trim())
+        ) {
           return false;
         }
         return true;
@@ -1340,13 +1280,9 @@ export const WebSocketProvider = ({ children }) => {
 
       return {
         ...prev,
-        [conversationId]: filteredMessages
+        [conversationId]: filteredMessages,
       };
     });
-
-
-
-
 
     return true;
   }, []);
@@ -1355,19 +1291,11 @@ export const WebSocketProvider = ({ children }) => {
     (messageText, conversationId, options = {}) => {
       // Send message to client via browser extension
       if (!messageText || !messageText.trim()) {
-
-
-
         return false;
       }
 
       // Add message optimistically to show it immediately
       addOptimisticMessage(messageText, conversationId);
-
-
-
-
-
 
       const queued = sendMessage({
         type: "send_message",
@@ -1375,7 +1303,7 @@ export const WebSocketProvider = ({ children }) => {
         conversationId: conversationId,
         // Lets the extension apply its own auto-reply kill-switch without
         // blocking messages the user sent by hand.
-        autoReply: options.autoReply === true
+        autoReply: options.autoReply === true,
       });
 
       if (!options.awaitConfirmation) {
@@ -1387,7 +1315,7 @@ export const WebSocketProvider = ({ children }) => {
       if (!queued) {
         return Promise.resolve({
           success: false,
-          error: "Not connected to the message server"
+          error: "Not connected to the message server",
         });
       }
 
@@ -1400,7 +1328,7 @@ export const WebSocketProvider = ({ children }) => {
           resolve({
             success: false,
             error:
-            "Timed out waiting for the browser extension to confirm the send. Check the extension's service worker console for the reason."
+              "Timed out waiting for the browser extension to confirm the send. Check the extension's service worker console for the reason.",
           });
         }, SEND_CONFIRMATION_TIMEOUT_MS);
 
@@ -1408,7 +1336,7 @@ export const WebSocketProvider = ({ children }) => {
         sendConfirmationsRef.current[key] = entry;
       });
     },
-    [sendMessage, addOptimisticMessage]
+    [sendMessage, addOptimisticMessage],
   );
 
   const deleteClient = useCallback(
@@ -1418,27 +1346,19 @@ export const WebSocketProvider = ({ children }) => {
         return (
           c.id === clientId ||
           c.conversationId === clientId ||
-          c.username === clientId);
-
+          c.username === clientId
+        );
       });
 
       if (!clientToDelete) {
-
         return false;
       }
 
       const conversationId =
-      clientToDelete.conversationId ||
-      clientToDelete.username ||
-      clientToDelete.id;
+        clientToDelete.conversationId ||
+        clientToDelete.username ||
+        clientToDelete.id;
       const username = clientToDelete.username;
-
-
-
-
-
-
-
 
       // Remove client from clients array
       setClients((prevClients) => {
@@ -1446,8 +1366,8 @@ export const WebSocketProvider = ({ children }) => {
           return (
             c.id !== clientId &&
             c.conversationId !== clientId &&
-            c.username !== clientId);
-
+            c.username !== clientId
+          );
         });
       });
 
@@ -1467,30 +1387,27 @@ export const WebSocketProvider = ({ children }) => {
         const updatedClientData = { ...prevClientData };
         if (conversationId) delete updatedClientData[conversationId];
         if (username && username !== conversationId)
-        delete updatedClientData[username];
+          delete updatedClientData[username];
         return updatedClientData;
       });
 
       // Clear selected conversation if it's the deleted one
       if (
-      selectedConversationId === conversationId ||
-      selectedConversationId === username)
-      {
+        selectedConversationId === conversationId ||
+        selectedConversationId === username
+      ) {
         setSelectedConversationId(null);
       }
 
       // Clear AI chat history for this client
       const clientKey = conversationId || username || clientId;
       if (clientKey) {
-        clearAIChatHistory(clientKey).catch((error) => {
-
-        });
+        clearAIChatHistory(clientKey).catch((error) => {});
       }
-
 
       return true;
     },
-    [clients, selectedConversationId]
+    [clients, selectedConversationId],
   );
 
   const handleMessage = useCallback(
@@ -1499,195 +1416,156 @@ export const WebSocketProvider = ({ children }) => {
 
       switch (type) {
         case "connected":
-
           sessionIdRef.current = data.session_id;
           // Server will automatically send all stored data
           break;
 
         case "sync_complete":
-
           break;
 
-        case "client_list_data":{
-            const incomingClientsRaw = data.data?.clients;
-            const incomingClients = Array.isArray(incomingClientsRaw) ?
-            incomingClientsRaw :
-            null;
+        case "client_list_data": {
+          const incomingClientsRaw = data.data?.clients;
+          const incomingClients = Array.isArray(incomingClientsRaw)
+            ? incomingClientsRaw
+            : null;
 
-            if (incomingClients === null) {
-
-
-
-
-              endClientListLoad();
-              break;
-            }
-
-            clearThrottle("clientList");
-
-
-
-
-
-            // Transform client list to match app format
-            const transformedClients = incomingClients.map((client, index) => {
-              // Build the transformed client object, ensuring each row has a unique stable id
-              const uniqueId = getClientListId(client, index);
-              const isOnline =
-              client.online === true ||
-              String(client.presence || "").toLowerCase() === "online";
-              const lastSeen =
-              client.lastSeen ||
-              client.last_seen || (
-              isOnline ? "Active now" : "Away");
-              const transformed = {
-                id: uniqueId,
-                clientKey: uniqueId,
-                name: client.name || client.username || "Unknown",
-                username: client.username,
-                company: client.company,
-                country: client.country,
-                language: client.language,
-                review_avg_rating: client.review_avg_rating,
-                review_count: client.review_count,
-                conversationId: client.conversationId,
-                avatarUrl: client.avatarUrl || client.avatar_url || null,
-                // Explicitly preserve last_message_timestamp from original client data
-                last_message_timestamp:
-                client.last_message_timestamp !== undefined ?
-                client.last_message_timestamp :
-                null,
-                online: isOnline,
-                presence: client.presence || (isOnline ? "online" : "away"),
-                lastSeen,
-                last_seen: lastSeen,
-                ...client // Include all other properties (this should preserve last_message_timestamp)
-              };
-              transformed.id = uniqueId;
-              transformed.clientKey = uniqueId;
-              transformed.online = isOnline;
-              transformed.presence =
-              client.presence || (isOnline ? "online" : "away");
-              transformed.lastSeen = lastSeen;
-              transformed.last_seen = lastSeen;
-              // Ensure last_message_timestamp is set (spread might override with undefined)
-              if (client.last_message_timestamp !== undefined) {
-                transformed.last_message_timestamp =
-                client.last_message_timestamp;
-              }
-              return transformed;
-            });
-
-            // Log transformed clients to verify timestamp is included
-            if (transformedClients.length > 0) {
-
-
-
-
-
-
-
-
-
-
-            } else {
-
-
-
-            }
-
-            const effectiveAssignmentsLoaded = isAssignmentsLoadedRef.current;
-            const effectiveAssignedIds = assignedClientIdsRef.current;
-            const visibleClients =
-            isAdminRole ||
-            !effectiveAssignmentsLoaded ||
-            effectiveAssignedIds.length === 0 ?
-            transformedClients :
-            filterClientsForCurrentUser(
-              transformedClients,
-              effectiveAssignedIds,
-              isAdminRole,
-              effectiveAssignmentsLoaded
-            );
-
-            // Sort extracted clients by time unit priority (minutes > hours > days > weeks > months)
-            const sortedClients = visibleClients.sort((a, b) => {
-              // Sort by time unit priority (minutes > hours > days > weeks > months)
-              const timeA = getTimeUnitPriority(a.last_message_timestamp);
-              const timeB = getTimeUnitPriority(b.last_message_timestamp);
-
-              // Sort by priority (lower number = higher priority)
-              if (timeA.priority !== timeB.priority) {
-                return timeA.priority - timeB.priority;
-              }
-
-              // If same priority, sort by timestamp (most recent first)
-              if (timeA.timestamp > 0 && timeB.timestamp > 0) {
-                return timeB.timestamp - timeA.timestamp; // Descending order (newest first)
-              }
-
-              // If only one has a valid timestamp, prioritize it
-              if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
-              if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
-
-              // If neither has a timestamp, maintain original order
-              return 0;
-            });
-
-            setClients(sortedClients);
+          if (incomingClients === null) {
             endClientListLoad();
-            // Save sync timestamp
-            saveLastSync();
             break;
           }
+
+          clearThrottle("clientList");
+
+          // Transform client list to match app format
+          const transformedClients = incomingClients.map((client, index) => {
+            // Build the transformed client object, ensuring each row has a unique stable id
+            const uniqueId = getClientListId(client, index);
+            const isOnline =
+              client.online === true ||
+              String(client.presence || "").toLowerCase() === "online";
+            const lastSeen =
+              client.lastSeen ||
+              client.last_seen ||
+              (isOnline ? "Active now" : "Away");
+            const transformed = {
+              id: uniqueId,
+              clientKey: uniqueId,
+              name: client.name || client.username || "Unknown",
+              username: client.username,
+              company: client.company,
+              country: client.country,
+              language: client.language,
+              review_avg_rating: client.review_avg_rating,
+              review_count: client.review_count,
+              conversationId: client.conversationId,
+              avatarUrl: client.avatarUrl || client.avatar_url || null,
+              // Explicitly preserve last_message_timestamp from original client data
+              last_message_timestamp:
+                client.last_message_timestamp !== undefined
+                  ? client.last_message_timestamp
+                  : null,
+              online: isOnline,
+              presence: client.presence || (isOnline ? "online" : "away"),
+              lastSeen,
+              last_seen: lastSeen,
+              ...client, // Include all other properties (this should preserve last_message_timestamp)
+            };
+            transformed.id = uniqueId;
+            transformed.clientKey = uniqueId;
+            transformed.online = isOnline;
+            transformed.presence =
+              client.presence || (isOnline ? "online" : "away");
+            transformed.lastSeen = lastSeen;
+            transformed.last_seen = lastSeen;
+            // Ensure last_message_timestamp is set (spread might override with undefined)
+            if (client.last_message_timestamp !== undefined) {
+              transformed.last_message_timestamp =
+                client.last_message_timestamp;
+            }
+            return transformed;
+          });
+
+          // Log transformed clients to verify timestamp is included
+          if (transformedClients.length > 0) {
+          } else {
+          }
+
+          const effectiveAssignmentsLoaded = isAssignmentsLoadedRef.current;
+          const effectiveAssignedIds = assignedClientIdsRef.current;
+          const visibleClients =
+            isAdminRole ||
+            !effectiveAssignmentsLoaded ||
+            effectiveAssignedIds.length === 0
+              ? transformedClients
+              : filterClientsForCurrentUser(
+                  transformedClients,
+                  effectiveAssignedIds,
+                  isAdminRole,
+                  effectiveAssignmentsLoaded,
+                );
+
+          // Sort extracted clients by time unit priority (minutes > hours > days > weeks > months)
+          const sortedClients = visibleClients.sort((a, b) => {
+            // Sort by time unit priority (minutes > hours > days > weeks > months)
+            const timeA = getTimeUnitPriority(a.last_message_timestamp);
+            const timeB = getTimeUnitPriority(b.last_message_timestamp);
+
+            // Sort by priority (lower number = higher priority)
+            if (timeA.priority !== timeB.priority) {
+              return timeA.priority - timeB.priority;
+            }
+
+            // If same priority, sort by timestamp (most recent first)
+            if (timeA.timestamp > 0 && timeB.timestamp > 0) {
+              return timeB.timestamp - timeA.timestamp; // Descending order (newest first)
+            }
+
+            // If only one has a valid timestamp, prioritize it
+            if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
+            if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
+
+            // If neither has a timestamp, maintain original order
+            return 0;
+          });
+
+          setClients(sortedClients);
+          endClientListLoad();
+          // Save sync timestamp
+          saveLastSync();
+          break;
+        }
 
         case "client_data":
           clearThrottle(
             "clientData",
             data.data?.username ||
-            data.data?.conversationId ||
-            data.data?.id ||
-            "default"
+              data.data?.conversationId ||
+              data.data?.id ||
+              "default",
           );
-
-
-
-
-
-
-
 
           if (data.data) {
             const shouldIgnoreClientData =
-            !isAdminRole &&
-            isAssignmentsLoadedRef.current &&
-            assignedClientIdsRef.current.length > 0 &&
-            !doesClientMatchAssignedIds(
-              data.data,
-              assignedClientIdsRef.current
-            );
+              !isAdminRole &&
+              isAssignmentsLoadedRef.current &&
+              assignedClientIdsRef.current.length > 0 &&
+              !doesClientMatchAssignedIds(
+                data.data,
+                assignedClientIdsRef.current,
+              );
 
             if (shouldIgnoreClientData) {
-
-
-
-
-
-
               break;
             }
 
             const key =
-            data.data.username || data.data.conversationId || "default";
+              data.data.username || data.data.conversationId || "default";
 
             setClientData((prev) => {
               const updated = {
                 ...prev,
-                [key]: data.data
+                [key]: data.data,
               };
-
-
-
 
               return updated;
             });
@@ -1696,17 +1574,14 @@ export const WebSocketProvider = ({ children }) => {
             setClients((prevClients) => {
               const clientExists = prevClients.some((client) => {
                 const clientKey =
-                client.username || client.conversationId || client.id;
+                  client.username || client.conversationId || client.id;
                 return (
-                  clientKey === key || client.username === data.data.username);
-
+                  clientKey === key || client.username === data.data.username
+                );
               });
 
               if (!clientExists && data.data.username) {
                 // New client detected - set it for modal display
-
-
-
 
                 setNewClientData({
                   name: data.data.name || data.data.username || "Unknown",
@@ -1715,45 +1590,45 @@ export const WebSocketProvider = ({ children }) => {
                   language: data.data.language,
                   review_avg_rating: data.data.review_avg_rating,
                   review_count: data.data.review_count,
-                  ...data.data
+                  ...data.data,
                 });
 
                 const clientId = String(
-                  data.data.conversationId || data.data.username
+                  data.data.conversationId || data.data.username,
                 ).trim();
                 return [
-                {
-                  id: clientId,
-                  clientKey: clientId,
-                  _id: clientId,
-                  username: data.data.username,
-                  conversationId:
-                  data.data.conversationId || data.data.username,
-                  name: data.data.name || data.data.username || "Unknown",
-                  country: data.data.country || "",
-                  language: data.data.language || "",
-                  review_avg_rating: data.data.review_avg_rating || 0,
-                  review_count: data.data.review_count || 0,
-                  avatar_url:
-                  data.data.avatar_url || data.data.avatarUrl || "",
-                  avatarUrl:
-                  data.data.avatarUrl || data.data.avatar_url || "",
-                  last_message_timestamp:
-                  data.data.last_message_timestamp || "now",
-                  ...data.data
-                },
-                ...prevClients];
-
+                  {
+                    id: clientId,
+                    clientKey: clientId,
+                    _id: clientId,
+                    username: data.data.username,
+                    conversationId:
+                      data.data.conversationId || data.data.username,
+                    name: data.data.name || data.data.username || "Unknown",
+                    country: data.data.country || "",
+                    language: data.data.language || "",
+                    review_avg_rating: data.data.review_avg_rating || 0,
+                    review_count: data.data.review_count || 0,
+                    avatar_url:
+                      data.data.avatar_url || data.data.avatarUrl || "",
+                    avatarUrl:
+                      data.data.avatarUrl || data.data.avatar_url || "",
+                    last_message_timestamp:
+                      data.data.last_message_timestamp || "now",
+                    ...data.data,
+                  },
+                  ...prevClients,
+                ];
               }
 
               // Update the client in the clients list with the fetched data
               const updatedClients = prevClients.map((client) => {
                 const clientKey =
-                client.username || client.conversationId || client.id;
+                  client.username || client.conversationId || client.id;
                 if (
-                clientKey === key ||
-                client.username === data.data.username)
-                {
+                  clientKey === key ||
+                  client.username === data.data.username
+                ) {
                   // Merge fetched data with existing client data
                   return {
                     ...client,
@@ -1761,28 +1636,28 @@ export const WebSocketProvider = ({ children }) => {
                     // Preserve important fields
                     id: client.id,
                     conversationId:
-                    client.conversationId || data.data.conversationId,
+                      client.conversationId || data.data.conversationId,
                     name: data.data.name || client.name,
                     username: data.data.username || client.username,
                     country: data.data.country || client.country,
                     language: data.data.language || client.language,
                     review_avg_rating:
-                    data.data.review_avg_rating !== undefined ?
-                    data.data.review_avg_rating :
-                    client.review_avg_rating,
+                      data.data.review_avg_rating !== undefined
+                        ? data.data.review_avg_rating
+                        : client.review_avg_rating,
                     review_count:
-                    data.data.review_count !== undefined ?
-                    data.data.review_count :
-                    client.review_count,
+                      data.data.review_count !== undefined
+                        ? data.data.review_count
+                        : client.review_count,
                     avatar_url:
-                    data.data.avatar_url ||
-                    data.data.avatarUrl ||
-                    client.avatar_url,
+                      data.data.avatar_url ||
+                      data.data.avatarUrl ||
+                      client.avatar_url,
                     // Preserve last_message_timestamp if not provided in new data
                     last_message_timestamp:
-                    data.data.last_message_timestamp !== undefined ?
-                    data.data.last_message_timestamp :
-                    client.last_message_timestamp
+                      data.data.last_message_timestamp !== undefined
+                        ? data.data.last_message_timestamp
+                        : client.last_message_timestamp,
                   };
                 }
                 return client;
@@ -1816,9 +1691,9 @@ export const WebSocketProvider = ({ children }) => {
 
             // Clear any pending fetch callback for this username
             if (
-            data.data.username &&
-            fetchDetailsCallbacksRef.current[data.data.username])
-            {
+              data.data.username &&
+              fetchDetailsCallbacksRef.current[data.data.username]
+            ) {
               delete fetchDetailsCallbacksRef.current[data.data.username];
             }
           }
@@ -1828,36 +1703,36 @@ export const WebSocketProvider = ({ children }) => {
           if (data.data && Array.isArray(data.data.messages)) {
             const clientPayload = data.data.clients?.[0] || data.data;
             const shouldIgnoreMessageData =
-            !isAdminRole &&
-            isAssignmentsLoadedRef.current &&
-            assignedClientIdsRef.current.length > 0 &&
-            !doesClientMatchAssignedIds(
-              clientPayload,
-              assignedClientIdsRef.current
-            ) &&
-            !doesClientMatchAssignedIds(
-              data.data,
-              assignedClientIdsRef.current
-            );
+              !isAdminRole &&
+              isAssignmentsLoadedRef.current &&
+              assignedClientIdsRef.current.length > 0 &&
+              !doesClientMatchAssignedIds(
+                clientPayload,
+                assignedClientIdsRef.current,
+              ) &&
+              !doesClientMatchAssignedIds(
+                data.data,
+                assignedClientIdsRef.current,
+              );
 
             if (shouldIgnoreMessageData) {
               break;
             }
 
             const conversationId =
-            data.data.conversationId ||
-            data.data.conversation_id ||
-            data.data.username ||
-            data.data.clientUsername ||
-            data.data.client ||
-            clientPayload?.conversationId ||
-            clientPayload?.conversation_id ||
-            clientPayload?.username ||
-            clientPayload?.clientUsername ||
-            clientPayload?.client ||
-            clientPayload?.id ||
-            clientPayload?.clientId ||
-            null;
+              data.data.conversationId ||
+              data.data.conversation_id ||
+              data.data.username ||
+              data.data.clientUsername ||
+              data.data.client ||
+              clientPayload?.conversationId ||
+              clientPayload?.conversation_id ||
+              clientPayload?.username ||
+              clientPayload?.clientUsername ||
+              clientPayload?.client ||
+              clientPayload?.id ||
+              clientPayload?.clientId ||
+              null;
             if (!conversationId) {
               break;
             }
@@ -1865,9 +1740,9 @@ export const WebSocketProvider = ({ children }) => {
             clearThrottle("messages", conversationId);
 
             const looksLikeFiverrSlug = (val) => {
-              const s = String(val || "").
-              trim().
-              replace(/^@/, "");
+              const s = String(val || "")
+                .trim()
+                .replace(/^@/, "");
               if (!s || s.includes(" ")) {
                 return false;
               }
@@ -1876,54 +1751,52 @@ export const WebSocketProvider = ({ children }) => {
                 return false;
               }
               if (
-              /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-                s
-              ))
-              {
+                /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+                  s,
+                )
+              ) {
                 return false;
               }
               return /^[a-zA-Z0-9_-]+$/.test(s);
             };
 
             const slugKey =
-            data.data.conversationId ||
-            data.data.conversation_id ||
-            clientPayload?.conversationId ||
-            clientPayload?.conversation_id ||
-            null;
+              data.data.conversationId ||
+              data.data.conversation_id ||
+              clientPayload?.conversationId ||
+              clientPayload?.conversation_id ||
+              null;
 
             const clientUsernameField =
-            (
-            looksLikeFiverrSlug(data.data.clientUsername) ?
-            data.data.clientUsername :
-            null) || (
-            looksLikeFiverrSlug(clientPayload?.clientUsername) ?
-            clientPayload.clientUsername :
-            null) ||
-            null;
+              (looksLikeFiverrSlug(data.data.clientUsername)
+                ? data.data.clientUsername
+                : null) ||
+              (looksLikeFiverrSlug(clientPayload?.clientUsername)
+                ? clientPayload.clientUsername
+                : null) ||
+              null;
 
             const rawUsernameField =
-            (
-            looksLikeFiverrSlug(clientPayload?.username) ?
-            clientPayload.username :
-            null) || (
-            looksLikeFiverrSlug(data.data.username) ?
-            data.data.username :
-            null) ||
-            null;
+              (looksLikeFiverrSlug(clientPayload?.username)
+                ? clientPayload.username
+                : null) ||
+              (looksLikeFiverrSlug(data.data.username)
+                ? data.data.username
+                : null) ||
+              null;
 
             const peerFromMessages =
-            data.data.messages.find(
-              (m) =>
-              !m.isFromMe &&
-              looksLikeFiverrSlug(m.senderUsername || m.sender)
-            )?.senderUsername ||
-            data.data.messages.find(
-              (m) =>
-              !m.isFromMe &&
-              looksLikeFiverrSlug(m.senderUsername || m.sender)
-            )?.sender ||
-            null;
+              data.data.messages.find(
+                (m) =>
+                  !m.isFromMe &&
+                  looksLikeFiverrSlug(m.senderUsername || m.sender),
+              )?.senderUsername ||
+              data.data.messages.find(
+                (m) =>
+                  !m.isFromMe &&
+                  looksLikeFiverrSlug(m.senderUsername || m.sender),
+              )?.sender ||
+              null;
 
             // Inbox peer identity: prefer clientUsername / conversation slug.
             // `username` is sometimes the seller/session account (see logs where
@@ -1931,91 +1804,95 @@ export const WebSocketProvider = ({ children }) => {
             const slugNorm = normalizeClientLookupValue(slugKey);
             const usernameNorm = normalizeClientLookupValue(rawUsernameField);
             const usernameMatchesPeer =
-            !slugNorm || !usernameNorm || slugNorm === usernameNorm;
+              !slugNorm || !usernameNorm || slugNorm === usernameNorm;
 
             const usernameKey =
-            clientUsernameField || (
-            looksLikeFiverrSlug(slugKey) ? slugKey : null) || (
-            usernameMatchesPeer && rawUsernameField ? rawUsernameField : null) || (
-            looksLikeFiverrSlug(peerFromMessages) ? peerFromMessages : null) ||
-            rawUsernameField ||
-            null;
+              clientUsernameField ||
+              (looksLikeFiverrSlug(slugKey) ? slugKey : null) ||
+              (usernameMatchesPeer && rawUsernameField
+                ? rawUsernameField
+                : null) ||
+              (looksLikeFiverrSlug(peerFromMessages)
+                ? peerFromMessages
+                : null) ||
+              rawUsernameField ||
+              null;
 
             const canonicalKey =
-            usernameKey ||
-            getCanonicalMessageStorageKey(clientPayload) ||
-            getCanonicalMessageStorageKey(data.data) || (
-            looksLikeFiverrSlug(conversationId) ? conversationId : null);
+              usernameKey ||
+              getCanonicalMessageStorageKey(clientPayload) ||
+              getCanonicalMessageStorageKey(data.data) ||
+              (looksLikeFiverrSlug(conversationId) ? conversationId : null);
             if (!canonicalKey) {
               break;
             }
 
             const isGenericKey = (val) => {
               if (!val) return true;
-              const norm = String(val).
-              trim().
-              toLowerCase().
-              replace(/^@/, "").
-              replace(/[^a-z0-9]+/g, "");
+              const norm = String(val)
+                .trim()
+                .toLowerCase()
+                .replace(/^@/, "")
+                .replace(/[^a-z0-9]+/g, "");
               return (
                 !norm ||
                 [
-                "conversation",
-                "default",
-                "undefined",
-                "null",
-                "messages",
-                "client",
-                "objectobject"].
-                includes(norm));
-
+                  "conversation",
+                  "default",
+                  "undefined",
+                  "null",
+                  "messages",
+                  "client",
+                  "objectobject",
+                ].includes(norm)
+              );
             };
 
             // Prefer inbox peer (conversation/clientUsername) for storage + lookup.
             const storageIdentity = String(
-              (
-              usernameKey && !isGenericKey(String(usernameKey)) ?
-              String(usernameKey) :
-              null) || (
-              looksLikeFiverrSlug(slugKey) ? slugKey : null) ||
-              String(canonicalKey)
+              (usernameKey && !isGenericKey(String(usernameKey))
+                ? String(usernameKey)
+                : null) ||
+                (looksLikeFiverrSlug(slugKey) ? slugKey : null) ||
+                String(canonicalKey),
             );
 
             const storageKeys = Array.from(
               new Set(
                 [
-                storageIdentity,
-                String(canonicalKey),
-                usernameKey && !isGenericKey(String(usernameKey)) ?
-                String(usernameKey) :
-                null,
-                clientUsernameField && !isGenericKey(String(clientUsernameField)) ?
-                String(clientUsernameField) :
-                null,
-                looksLikeFiverrSlug(slugKey) ? String(slugKey) : null,
-                looksLikeFiverrSlug(conversationId) ?
-                String(conversationId) :
-                null,
-                // Keep seller/session username as alias only when it differed.
-                rawUsernameField && !isGenericKey(String(rawUsernameField)) ?
-                String(rawUsernameField) :
-                null].
-
-                filter(Boolean).
-                filter((key) => !isGenericKey(key))
-              )
+                  storageIdentity,
+                  String(canonicalKey),
+                  usernameKey && !isGenericKey(String(usernameKey))
+                    ? String(usernameKey)
+                    : null,
+                  clientUsernameField &&
+                  !isGenericKey(String(clientUsernameField))
+                    ? String(clientUsernameField)
+                    : null,
+                  looksLikeFiverrSlug(slugKey) ? String(slugKey) : null,
+                  looksLikeFiverrSlug(conversationId)
+                    ? String(conversationId)
+                    : null,
+                  // Keep seller/session username as alias only when it differed.
+                  rawUsernameField && !isGenericKey(String(rawUsernameField))
+                    ? String(rawUsernameField)
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .filter((key) => !isGenericKey(key)),
+              ),
             );
 
             const validStorageNorms = new Set(
-              storageKeys.
-              map((k) => normalizeClientLookupValue(k)).
-              filter(Boolean)
+              storageKeys
+                .map((k) => normalizeClientLookupValue(k))
+                .filter(Boolean),
             );
 
             const normalizeText = (value) =>
-            String(value || "").
-            replace(/\s+/g, " ").
-            trim();
+              String(value || "")
+                .replace(/\s+/g, " ")
+                .trim();
 
             setMessages((prev) => {
               const updatedMessages = { ...prev };
@@ -2033,13 +1910,13 @@ export const WebSocketProvider = ({ children }) => {
                     continue;
                   }
                   const stableId =
-                  getCanonicalMessageId(entry) || entry.id || entry._id;
+                    getCanonicalMessageId(entry) || entry.id || entry._id;
                   const textSig = normalizeText(
-                    entry.text || entry.content || entry.message || ""
+                    entry.text || entry.content || entry.message || "",
                   );
-                  const dedupeSig = stableId ?
-                  `id:${stableId}` :
-                  `text:${textSig}|${entry.isFromMe ? "me" : "client"}|${entry.absoluteTimestamp || entry.time || ""}`;
+                  const dedupeSig = stableId
+                    ? `id:${stableId}`
+                    : `text:${textSig}|${entry.isFromMe ? "me" : "client"}|${entry.absoluteTimestamp || entry.time || ""}`;
                   if (seenExisting.has(dedupeSig)) {
                     continue;
                   }
@@ -2049,10 +1926,12 @@ export const WebSocketProvider = ({ children }) => {
               };
 
               addExistingBucket(prev[storageKey]);
-              storageKeys.forEach((aliasKey) => addExistingBucket(prev[aliasKey]));
-              const usernameNorm = usernameKey ?
-              normalizeClientLookupValue(usernameKey) :
-              null;
+              storageKeys.forEach((aliasKey) =>
+                addExistingBucket(prev[aliasKey]),
+              );
+              const usernameNorm = usernameKey
+                ? normalizeClientLookupValue(usernameKey)
+                : null;
               Object.entries(prev).forEach(([key, bucket]) => {
                 const keyNorm = normalizeClientLookupValue(key);
                 if (keyNorm && validStorageNorms.has(keyNorm)) {
@@ -2065,17 +1944,19 @@ export const WebSocketProvider = ({ children }) => {
                 }
                 const owned = bucket.some((entry) => {
                   const entryNorms = [
-                  normalizeClientLookupValue(entry?.clientUsername),
-                  normalizeClientLookupValue(entry?.conversationId),
-                  normalizeClientLookupValue(entry?.conversation_id),
-                  normalizeClientLookupValue(
-                    !entry?.isFromMe ? entry?.senderUsername || entry?.sender : null
-                  )].
-                  filter(Boolean);
+                    normalizeClientLookupValue(entry?.clientUsername),
+                    normalizeClientLookupValue(entry?.conversationId),
+                    normalizeClientLookupValue(entry?.conversation_id),
+                    normalizeClientLookupValue(
+                      !entry?.isFromMe
+                        ? entry?.senderUsername || entry?.sender
+                        : null,
+                    ),
+                  ].filter(Boolean);
                   return entryNorms.some(
                     (norm) =>
-                    validStorageNorms.has(norm) ||
-                    norm && usernameNorm && norm === usernameNorm
+                      validStorageNorms.has(norm) ||
+                      (norm && usernameNorm && norm === usernameNorm),
                   );
                 });
                 if (owned) {
@@ -2085,110 +1966,119 @@ export const WebSocketProvider = ({ children }) => {
 
               const existing = existingBuckets;
 
-              const transformedMessages = data.data.messages.
-              filter((msg) => Boolean(msg)).
-              map((msg) => {
-                const taggedConversationId = storageIdentity;
-                const taggedClientUsername = usernameKey ?
-                String(usernameKey) :
-                taggedConversationId;
-                const rawTime = msg.timestamp || msg.time || msg.date;
-                const msgText = normalizeText(
-                  msg.text || msg.content || msg.message || ""
-                );
-                const incomingTimeKey = String(rawTime || "").
-                trim().
-                toLowerCase();
-                const incomingCanonicalId = getCanonicalMessageId(msg);
-                const existingMatch = existing.find((prevMsg) => {
-                  if (!prevMsg) return false;
-                  if (msg.id && prevMsg.id && String(msg.id) === String(prevMsg.id)) {
-                    return true;
-                  }
-                  const prevCanonicalId = getCanonicalMessageId(prevMsg);
-                  if (
-                  incomingCanonicalId &&
-                  prevCanonicalId &&
-                  incomingCanonicalId === prevCanonicalId)
-                  {
-                    return true;
-                  }
-                  const prevText = normalizeText(
-                    prevMsg.text || prevMsg.content || prevMsg.message || ""
+              const transformedMessages = data.data.messages
+                .filter((msg) => Boolean(msg))
+                .map((msg) => {
+                  const taggedConversationId = storageIdentity;
+                  const taggedClientUsername = usernameKey
+                    ? String(usernameKey)
+                    : taggedConversationId;
+                  const rawTime = msg.timestamp || msg.time || msg.date;
+                  const msgText = normalizeText(
+                    msg.text || msg.content || msg.message || "",
                   );
-                  const sameSide =
-                  Boolean(prevMsg.isFromMe) === Boolean(msg.isFromMe);
-                  if (!sameSide || !prevText || prevText !== msgText) {
+                  const incomingTimeKey = String(rawTime || "")
+                    .trim()
+                    .toLowerCase();
+                  const incomingCanonicalId = getCanonicalMessageId(msg);
+                  const existingMatch = existing.find((prevMsg) => {
+                    if (!prevMsg) return false;
+                    if (
+                      msg.id &&
+                      prevMsg.id &&
+                      String(msg.id) === String(prevMsg.id)
+                    ) {
+                      return true;
+                    }
+                    const prevCanonicalId = getCanonicalMessageId(prevMsg);
+                    if (
+                      incomingCanonicalId &&
+                      prevCanonicalId &&
+                      incomingCanonicalId === prevCanonicalId
+                    ) {
+                      return true;
+                    }
+                    const prevText = normalizeText(
+                      prevMsg.text || prevMsg.content || prevMsg.message || "",
+                    );
+                    const sameSide =
+                      Boolean(prevMsg.isFromMe) === Boolean(msg.isFromMe);
+                    if (!sameSide || !prevText || prevText !== msgText) {
+                      return false;
+                    }
+                    const prevTimeKey = String(
+                      prevMsg.time || prevMsg.timestamp || prevMsg.date || "",
+                    )
+                      .trim()
+                      .toLowerCase();
+                    // Require matching times when both sides have them so
+                    // repeated short replies do not collapse into one row.
+                    if (incomingTimeKey && prevTimeKey) {
+                      return incomingTimeKey === prevTimeKey;
+                    }
+                    const prevAbs =
+                      typeof prevMsg.absoluteTimestamp === "number"
+                        ? prevMsg.absoluteTimestamp
+                        : 0;
+                    const incomingAbs =
+                      typeof msg.absoluteTimestamp === "number"
+                        ? msg.absoluteTimestamp
+                        : 0;
+                    if (prevAbs > 0 && incomingAbs > 0) {
+                      return Math.abs(prevAbs - incomingAbs) < 120000;
+                    }
+                    // Without timestamps, only reuse when the existing row is the sole same-text match.
                     return false;
-                  }
-                  const prevTimeKey = String(
-                    prevMsg.time || prevMsg.timestamp || prevMsg.date || ""
-                  ).
-                  trim().
-                  toLowerCase();
-                  // Require matching times when both sides have them so
-                  // repeated short replies do not collapse into one row.
-                  if (incomingTimeKey && prevTimeKey) {
-                    return incomingTimeKey === prevTimeKey;
-                  }
-                  const prevAbs =
-                  typeof prevMsg.absoluteTimestamp === "number" ?
-                  prevMsg.absoluteTimestamp :
-                  0;
-                  const incomingAbs =
-                  typeof msg.absoluteTimestamp === "number" ?
-                  msg.absoluteTimestamp :
-                  0;
-                  if (prevAbs > 0 && incomingAbs > 0) {
-                    return Math.abs(prevAbs - incomingAbs) < 120000;
-                  }
-                  // Without timestamps, only reuse when the existing row is the sole same-text match.
-                  return false;
-                });
-                // Freeze an absolute timestamp once so relative Fiverr times
-                // ("26 minutes") can still age for auto-reply. Calendar labels
-                // with a clock always recompute so we don't keep a midnight bucket.
-                const computedAbsolute = getMessageTimestamp({
-                  time: rawTime,
-                  timestamp: rawTime
-                });
-                const hasClockLabel =
-                typeof rawTime === "string" &&
-                /\d{1,2}:\d{2}\s*(AM|PM)/i.test(rawTime);
-                const absoluteTimestamp = hasClockLabel && computedAbsolute > 0 ?
-                computedAbsolute : (
-                  typeof existingMatch?.absoluteTimestamp === "number" &&
-                  existingMatch.absoluteTimestamp > 0 ?
-                  existingMatch.absoluteTimestamp :
-                  null) || (
-                  typeof msg.absoluteTimestamp === "number" &&
-                  msg.absoluteTimestamp > 0 ?
-                  msg.absoluteTimestamp :
-                  null) ||
-                computedAbsolute ||
-                Date.now();
+                  });
+                  // Freeze an absolute timestamp once so relative Fiverr times
+                  // ("26 minutes") can still age for auto-reply. Calendar labels
+                  // with a clock always recompute so we don't keep a midnight bucket.
+                  const computedAbsolute = getMessageTimestamp({
+                    time: rawTime,
+                    timestamp: rawTime,
+                  });
+                  const hasClockLabel =
+                    typeof rawTime === "string" &&
+                    /\d{1,2}:\d{2}\s*(AM|PM)/i.test(rawTime);
+                  const absoluteTimestamp =
+                    hasClockLabel && computedAbsolute > 0
+                      ? computedAbsolute
+                      : (typeof existingMatch?.absoluteTimestamp === "number" &&
+                        existingMatch.absoluteTimestamp > 0
+                          ? existingMatch.absoluteTimestamp
+                          : null) ||
+                        (typeof msg.absoluteTimestamp === "number" &&
+                        msg.absoluteTimestamp > 0
+                          ? msg.absoluteTimestamp
+                          : null) ||
+                        computedAbsolute ||
+                        Date.now();
 
-                const inferredFromMe =
-                msg.isFromMe === true ||
-                msg.isFromMe === "true" ||
-                String(msg.sender || "").trim().toLowerCase() === "me" ||
-                String(msg.senderUsername || "").trim().toLowerCase() === "me";
+                  const inferredFromMe =
+                    msg.isFromMe === true ||
+                    msg.isFromMe === "true" ||
+                    String(msg.sender || "")
+                      .trim()
+                      .toLowerCase() === "me" ||
+                    String(msg.senderUsername || "")
+                      .trim()
+                      .toLowerCase() === "me";
 
-                return {
-                  ...msg,
-                  text: collapseDuplicateParagraphs(
-                    msg.text || msg.content || msg.message || ""
-                  ),
-                  sender: inferredFromMe ?
-                  "me" :
-                  msg.senderUsername || msg.sender || "client",
-                  isFromMe: inferredFromMe,
-                  time: rawTime,
-                  absoluteTimestamp,
-                  conversationId: taggedConversationId,
-                  clientUsername: msg.clientUsername || taggedClientUsername
-                };
-              });
+                  return {
+                    ...msg,
+                    text: collapseDuplicateParagraphs(
+                      msg.text || msg.content || msg.message || "",
+                    ),
+                    sender: inferredFromMe
+                      ? "me"
+                      : msg.senderUsername || msg.sender || "client",
+                    isFromMe: inferredFromMe,
+                    time: rawTime,
+                    absoluteTimestamp,
+                    conversationId: taggedConversationId,
+                    clientUsername: msg.clientUsername || taggedClientUsername,
+                  };
+                });
 
               const existingToKeep = existing.filter((message) => {
                 // Always keep synced/history rows — only optimistic copies are eligible for drop.
@@ -2196,39 +2086,37 @@ export const WebSocketProvider = ({ children }) => {
                   return true;
                 }
                 const optimisticText = normalizeText(
-                  message.text || message.content || message.message
+                  message.text || message.content || message.message,
                 );
                 // Drop optimistic copies once the extension has synced the same message.
                 if (
-                optimisticText &&
-                transformedMessages.some((incoming) => {
-                  const incomingText = normalizeText(
-                    incoming.text || incoming.content || incoming.message
-                  );
-                  const fromMe =
-                  incoming.isFromMe === true ||
-                  incoming.sender === "me" ||
-                  incoming.sender === "Me";
-                  return fromMe && incomingText === optimisticText;
-                }))
-                {
+                  optimisticText &&
+                  transformedMessages.some((incoming) => {
+                    const incomingText = normalizeText(
+                      incoming.text || incoming.content || incoming.message,
+                    );
+                    const fromMe =
+                      incoming.isFromMe === true ||
+                      incoming.sender === "me" ||
+                      incoming.sender === "Me";
+                    return fromMe && incomingText === optimisticText;
+                  })
+                ) {
                   return false;
                 }
                 const messageConv =
-                message.conversationId || message.conversation_id;
+                  message.conversationId || message.conversation_id;
                 if (!messageConv) {
                   return true;
                 }
-                return (
-                  normalizeClientLookupValue(messageConv) === storageNorm);
-
+                return normalizeClientLookupValue(messageConv) === storageNorm;
               });
 
               // Union full existing history with the new extract. Never replace a
               // long thread with a short viewport payload (that hid seller/history rows).
               updatedMessages[storageKey] = mergeConversationMessages(
                 existingToKeep,
-                transformedMessages
+                transformedMessages,
               );
 
               // Point aliases at the same array so lookups by username/slug work,
@@ -2262,17 +2150,17 @@ export const WebSocketProvider = ({ children }) => {
                 const fullyOwned = bucket.every((entry) => {
                   if (!entry) return true;
                   const entryNorms = [
-                  normalizeClientLookupValue(entry?.clientUsername),
-                  normalizeClientLookupValue(entry?.conversationId),
-                  normalizeClientLookupValue(entry?.conversation_id)].
-                  filter(Boolean);
+                    normalizeClientLookupValue(entry?.clientUsername),
+                    normalizeClientLookupValue(entry?.conversationId),
+                    normalizeClientLookupValue(entry?.conversation_id),
+                  ].filter(Boolean);
                   if (entryNorms.length === 0) {
                     return false;
                   }
                   return entryNorms.some(
                     (norm) =>
-                    validStorageNorms.has(norm) ||
-                    norm && usernameNorm && norm === usernameNorm
+                      validStorageNorms.has(norm) ||
+                      (norm && usernameNorm && norm === usernameNorm),
                   );
                 });
                 if (fullyOwned) {
@@ -2288,27 +2176,18 @@ export const WebSocketProvider = ({ children }) => {
             // (e.g. from bulk client refresh) could prematurely hide the loading spinner
             // for the conversation the user is actually waiting on.
             const currentlyLoadingKey = loadingConversationIdRef.current;
-            const currentlyLoadingNorm = currentlyLoadingKey ?
-            normalizeClientLookupValue(currentlyLoadingKey) :
-            null;
+            const currentlyLoadingNorm = currentlyLoadingKey
+              ? normalizeClientLookupValue(currentlyLoadingKey)
+              : null;
             const shouldClearLoading =
-            !currentlyLoadingNorm || validStorageNorms.has(currentlyLoadingNorm);
+              !currentlyLoadingNorm ||
+              validStorageNorms.has(currentlyLoadingNorm);
 
             if (shouldClearLoading) {
-
-
-
-
-
-
               loadingConversationIdRef.current = null;
               setLoadingConversationId(null);
               setIsLoadingMessages(false);
             } else {
-
-
-
-
             }
 
             // Save sync timestamp
@@ -2317,54 +2196,50 @@ export const WebSocketProvider = ({ children }) => {
           break;
 
         case "new_message_detected":
-
-
-
-
           if (data.data?.historical === true) {
             break;
           }
           // Request updated messages for this conversation
           if (
-          data.data?.conversationId ||
-          data.data?.username ||
-          data.data?.clientUsername)
-          {
-            const targetIdentifier =
             data.data?.conversationId ||
             data.data?.username ||
-            data.data?.clientUsername;
+            data.data?.clientUsername
+          ) {
+            const targetIdentifier =
+              data.data?.conversationId ||
+              data.data?.username ||
+              data.data?.clientUsername;
             const targetNorm = normalizeClientLookupValue(targetIdentifier);
             const selectedKey = selectedConversationIdRef.current;
-            const selectedNorm = selectedKey ?
-            normalizeClientLookupValue(selectedKey) :
-            null;
+            const selectedNorm = selectedKey
+              ? normalizeClientLookupValue(selectedKey)
+              : null;
             const clientUsernameNorm = normalizeClientLookupValue(
-              data.data?.clientUsername || data.data?.username
+              data.data?.clientUsername || data.data?.username,
             );
             const isSelectedConversation = Boolean(
               targetNorm &&
-              selectedNorm && (
-              targetNorm === selectedNorm ||
-              clientUsernameNorm && clientUsernameNorm === selectedNorm)
+              selectedNorm &&
+              (targetNorm === selectedNorm ||
+                (clientUsernameNorm && clientUsernameNorm === selectedNorm)),
             );
 
             requestClientData(targetIdentifier);
             requestMessages(targetIdentifier, {
               force: true,
               background: !isSelectedConversation,
-              triggerExtraction: true
+              triggerExtraction: true,
             });
             triggerMessageExtraction(targetIdentifier, { force: true });
 
             // Show popup/alert for new message
             const clientUsername =
-            data.data?.clientUsername || data.data?.username || "Unknown";
+              data.data?.clientUsername || data.data?.username || "Unknown";
             const conversationId = data.data?.conversationId;
             const messageText =
-            data.data?.messageText ||
-            data.data?.lastMessage ||
-            "You have a new message";
+              data.data?.messageText ||
+              data.data?.lastMessage ||
+              "You have a new message";
 
             // Find client name from clients list
             const client = clients.find((c) => {
@@ -2372,7 +2247,8 @@ export const WebSocketProvider = ({ children }) => {
               return (
                 clientKey === conversationId ||
                 c.username === clientUsername ||
-                c.conversationId === conversationId);
+                c.conversationId === conversationId
+              );
             });
 
             const clientName = client?.name || clientUsername;
@@ -2387,7 +2263,7 @@ export const WebSocketProvider = ({ children }) => {
                 messageText,
                 conversationId,
                 username: clientUsername,
-                selectedConversationId: selectedConversationIdRef.current
+                selectedConversationId: selectedConversationIdRef.current,
               }).catch(() => {});
             }
 
@@ -2400,9 +2276,9 @@ export const WebSocketProvider = ({ children }) => {
                     clientUsername,
                     conversationId,
                     messageCount,
-                    data: data.data
-                  }
-                })
+                    data: data.data,
+                  },
+                }),
               );
             }
           }
@@ -2410,30 +2286,21 @@ export const WebSocketProvider = ({ children }) => {
 
         case "new_client_detected":
           {
-
             const clientData = data.data || data;
             const clientName =
-            clientData.name || clientData.clientName || clientData.username;
+              clientData.name || clientData.clientName || clientData.username;
             const clientUsername =
-            clientData.username || clientData.clientUsername;
+              clientData.username || clientData.clientUsername;
             const conversationId = clientData.conversationId || clientUsername;
 
-            if (
-            clientUsername &&
-            shouldNotifyNewClient(clientUsername))
-            {
-              notificationService.
-              handleNewClientAlert({
-                clientName,
-                clientUsername,
-                conversationId
-              }).
-              catch((error) => {
-
-
-
-
-              });
+            if (clientUsername && shouldNotifyNewClient(clientUsername)) {
+              notificationService
+                .handleNewClientAlert({
+                  clientName,
+                  clientUsername,
+                  conversationId,
+                })
+                .catch((error) => {});
             }
 
             // Set new client data to show in UI
@@ -2441,29 +2308,29 @@ export const WebSocketProvider = ({ children }) => {
               ...clientData,
               conversationId: conversationId,
               username: clientUsername,
-              name: clientName
+              name: clientName,
             });
 
             if (clientUsername) {
               setClients((prevClients) => {
                 const alreadyListed = prevClients.some((client) => {
                   const key =
-                  client.username ||
-                  client.conversationId ||
-                  client.id ||
-                  client._id;
+                    client.username ||
+                    client.conversationId ||
+                    client.id ||
+                    client._id;
                   return (
                     key === clientUsername ||
                     key === conversationId ||
-                    client.username === clientUsername);
-
+                    client.username === clientUsername
+                  );
                 });
                 if (alreadyListed) {
                   return prevClients;
                 }
 
                 const clientId = String(
-                  conversationId || clientUsername
+                  conversationId || clientUsername,
                 ).trim();
                 const newClient = {
                   id: clientId,
@@ -2475,17 +2342,13 @@ export const WebSocketProvider = ({ children }) => {
                   country: clientData.country || "",
                   language: clientData.language || "",
                   avatar_url:
-                  clientData.avatar_url || clientData.avatarUrl || "",
+                    clientData.avatar_url || clientData.avatarUrl || "",
                   avatarUrl:
-                  clientData.avatarUrl || clientData.avatar_url || "",
+                    clientData.avatarUrl || clientData.avatar_url || "",
                   isNewClient: true,
                   last_message_timestamp: "now",
-                  ...clientData
+                  ...clientData,
                 };
-
-
-
-
 
                 return [newClient, ...prevClients];
               });
@@ -2499,16 +2362,15 @@ export const WebSocketProvider = ({ children }) => {
                     clientName,
                     clientUsername,
                     conversationId,
-                    clientData: clientData
-                  }
-                })
+                    clientData: clientData,
+                  },
+                }),
               );
             }
           }
           break;
 
         case "client_activated":
-
           // Client activation is handled locally when a user selects a conversation.
           // Avoid refreshing the whole client list on every activation event to
           // prevent unnecessary refresh loops.
@@ -2524,12 +2386,12 @@ export const WebSocketProvider = ({ children }) => {
               updated_at: data.data.updated_at || null,
               online: Boolean(data.data.online),
               avatarUrl: data.data.avatarUrl || data.data.avatar_url || null,
-              avatar_url: data.data.avatarUrl || data.data.avatar_url || null
+              avatar_url: data.data.avatarUrl || data.data.avatar_url || null,
             };
             setSellerProfile(profile);
             setSellerProfiles((prev) => {
               const byUsername = new Map(
-                prev.map((p) => [p.username || p.profileName, p])
+                prev.map((p) => [p.username || p.profileName, p]),
               );
               const u = profile.username || profile.profileName;
               if (u) byUsername.set(u, profile);
@@ -2538,27 +2400,11 @@ export const WebSocketProvider = ({ children }) => {
             setSelectedSellerProfile((prev) => {
               const u = profile.username || profile.profileName;
               if (!prev || (prev.username || prev.profileName) === u)
-              return profile;
+                return profile;
               return prev;
             });
             const u = profile.username || profile.profileName;
-
-
-
-
-
-
-
-
-
-
-
-
           } else {
-
-
-
-
           }
           break;
 
@@ -2575,8 +2421,8 @@ export const WebSocketProvider = ({ children }) => {
               if (!current?.username && !current?.profileName) return current;
               const inList = data.data.find(
                 (p) =>
-                (p.username || p.profileName) === (
-                current.username || current.profileName)
+                  (p.username || p.profileName) ===
+                  (current.username || current.profileName),
               );
               if (inList) return { ...current, online: Boolean(inList.online) };
               return current;
@@ -2584,22 +2430,17 @@ export const WebSocketProvider = ({ children }) => {
             setSelectedSellerProfile((prev) => {
               const arr = Array.from(byUsername.values());
               const inList =
-              prev &&
-              arr.find(
-                (p) =>
-                (p.username || p.profileName) === (
-                prev.username || prev.profileName)
-              );
+                prev &&
+                arr.find(
+                  (p) =>
+                    (p.username || p.profileName) ===
+                    (prev.username || prev.profileName),
+                );
               if (inList) return { ...prev, online: Boolean(inList.online) };
               if (prev) return prev;
               if (arr.length > 0) return arr[0];
               return null;
             });
-
-
-
-
-
           }
           break;
 
@@ -2607,81 +2448,71 @@ export const WebSocketProvider = ({ children }) => {
           // Heartbeat response
           break;
 
-        case "message_updated":{
-            const payload = data.data || {};
-            const updatedMsg = payload.message || payload;
-            if (!updatedMsg || !updatedMsg._id && !updatedMsg.id) break;
-            setMessages((prev) => {
-              const updated = { ...prev };
-              for (const key of Object.keys(updated)) {
-                const arr = Array.isArray(updated[key]) ? [...updated[key]] : [];
-                let changed = false;
-                for (let i = 0; i < arr.length; i++) {
-                  const m = arr[i];
-                  if (!m) continue;
-                  const mid = m._id || m.id;
-                  const uid = updatedMsg._id || updatedMsg.id;
-                  if (mid && uid && String(mid) === String(uid)) {
-                    arr[i] = { ...arr[i], ...updatedMsg };
-                    changed = true;
-                  }
+        case "message_updated": {
+          const payload = data.data || {};
+          const updatedMsg = payload.message || payload;
+          if (!updatedMsg || (!updatedMsg._id && !updatedMsg.id)) break;
+          setMessages((prev) => {
+            const updated = { ...prev };
+            for (const key of Object.keys(updated)) {
+              const arr = Array.isArray(updated[key]) ? [...updated[key]] : [];
+              let changed = false;
+              for (let i = 0; i < arr.length; i++) {
+                const m = arr[i];
+                if (!m) continue;
+                const mid = m._id || m.id;
+                const uid = updatedMsg._id || updatedMsg.id;
+                if (mid && uid && String(mid) === String(uid)) {
+                  arr[i] = { ...arr[i], ...updatedMsg };
+                  changed = true;
                 }
-                if (changed) updated[key] = arr;
               }
-              return updated;
-            });
-            break;
-          }
-
-        case "message_deleted":{
-            const payload = data.data || {};
-            const deletedId = payload.messageId || payload._id || payload.id;
-            if (!deletedId) break;
-            setMessages((prev) => {
-              const next = {};
-              for (const [k, arr] of Object.entries(prev)) {
-                if (!Array.isArray(arr)) {
-                  next[k] = arr;
-                  continue;
-                }
-                next[k] = arr.filter((m) => {
-                  const mid = m && (m._id || m.id) || null;
-                  return !(mid && String(mid) === String(deletedId));
-                });
-              }
-              return next;
-            });
-            break;
-          }
-
-        case "send_message_result":{
-            const result = data.data || {};
-            const key = String(result.conversationId || "").toLowerCase();
-
-
-
-
-
-
-            const pending = sendConfirmationsRef.current[key];
-            if (pending) {
-              clearTimeout(pending.timeoutId);
-              delete sendConfirmationsRef.current[key];
-              pending.resolve({
-                success: result.success === true,
-                error: result.error || null
-              });
-            } else {
-
-
-
-
+              if (changed) updated[key] = arr;
             }
-            break;
+            return updated;
+          });
+          break;
+        }
+
+        case "message_deleted": {
+          const payload = data.data || {};
+          const deletedId = payload.messageId || payload._id || payload.id;
+          if (!deletedId) break;
+          setMessages((prev) => {
+            const next = {};
+            for (const [k, arr] of Object.entries(prev)) {
+              if (!Array.isArray(arr)) {
+                next[k] = arr;
+                continue;
+              }
+              next[k] = arr.filter((m) => {
+                const mid = (m && (m._id || m.id)) || null;
+                return !(mid && String(mid) === String(deletedId));
+              });
+            }
+            return next;
+          });
+          break;
+        }
+
+        case "send_message_result": {
+          const result = data.data || {};
+          const key = String(result.conversationId || "").toLowerCase();
+
+          const pending = sendConfirmationsRef.current[key];
+          if (pending) {
+            clearTimeout(pending.timeoutId);
+            delete sendConfirmationsRef.current[key];
+            pending.resolve({
+              success: result.success === true,
+              error: result.error || null,
+            });
+          } else {
           }
+          break;
+        }
 
         case "ack":
-
           // Handle error acks for fetch_client_details
           if (data.status === "error" && data.message) {
             // Check if this is related to fetch_client_details
@@ -2696,17 +2527,13 @@ export const WebSocketProvider = ({ children }) => {
             }
             // Also check for general fetch_client_details errors
             if (
-            data.message.includes("fetch_client_details") ||
-            data.message.includes("Failed to") ||
-            data.message.includes("Browser extension"))
-            {
-
-
-
-
+              data.message.includes("fetch_client_details") ||
+              data.message.includes("Failed to") ||
+              data.message.includes("Browser extension")
+            ) {
               // Try to find any pending callback
               const pendingUsernames = Object.keys(
-                fetchDetailsCallbacksRef.current
+                fetchDetailsCallbacksRef.current,
               );
               if (pendingUsernames.length > 0) {
                 const username = pendingUsernames[0];
@@ -2721,23 +2548,22 @@ export const WebSocketProvider = ({ children }) => {
           break;
 
         default:
-
       }
     },
 
     [
-    requestClientData,
-    requestMessages,
-    triggerMessageExtraction,
-    requestClientList,
-    endClientListLoad,
-    clients,
-    selectedConversationId,
-    assignedClientIds,
-    isAdminRole,
-    isAssignmentsLoaded,
-    shouldNotifyNewClient]
-
+      requestClientData,
+      requestMessages,
+      triggerMessageExtraction,
+      requestClientList,
+      endClientListLoad,
+      clients,
+      selectedConversationId,
+      assignedClientIds,
+      isAdminRole,
+      isAssignmentsLoaded,
+      shouldNotifyNewClient,
+    ],
   );
 
   handleMessageRef.current = handleMessage;
@@ -2746,16 +2572,10 @@ export const WebSocketProvider = ({ children }) => {
   // Load stored data on mount (client data only, messages are retrieved in-memory/server)
   useEffect(() => {
     const loadStoredData = async () => {
-
       const storedClientData = await loadClientData();
 
       if (storedClientData && Object.keys(storedClientData).length > 0) {
         setClientData(storedClientData);
-
-
-
-
-
       }
 
       isInitialLoadRef.current = false;
@@ -2774,13 +2594,7 @@ export const WebSocketProvider = ({ children }) => {
     }
 
     saveClientDataTimeoutRef.current = setTimeout(() => {
-      saveClientData(clientData).then((success) => {
-
-
-
-
-
-      });
+      saveClientData(clientData).then((success) => {});
     }, 500);
 
     return () => {
@@ -2802,7 +2616,6 @@ export const WebSocketProvider = ({ children }) => {
 
     const onAppStateChange = (nextState) => {
       if (nextState === "active") {
-
         ensureConnected();
       }
     };
@@ -2814,7 +2627,6 @@ export const WebSocketProvider = ({ children }) => {
     if (Platform.OS === "web" && typeof document !== "undefined") {
       onVisibilityChange = () => {
         if (document.visibilityState === "visible") {
-
           ensureConnected();
         }
       };
@@ -2822,7 +2634,6 @@ export const WebSocketProvider = ({ children }) => {
         ensureConnected();
       };
       onOnline = () => {
-
         ensureConnected();
       };
       document.addEventListener("visibilitychange", onVisibilityChange);
@@ -2878,17 +2689,17 @@ export const WebSocketProvider = ({ children }) => {
       getState: () => ({
         clients: clientsRef.current,
         messages: messagesRef.current,
-        isConnected: isConnectedRef.current
+        isConnected: isConnectedRef.current,
       }),
       sendMessageToClient: (text, conversationId) =>
-      sendMessageToClientRef.current(text, conversationId, {
-        autoReply: true,
-        awaitConfirmation: true
-      }),
+        sendMessageToClientRef.current(text, conversationId, {
+          autoReply: true,
+          awaitConfirmation: true,
+        }),
       requestMessages: (conversationId, options) =>
-      requestMessagesRef.current(conversationId, options),
+        requestMessagesRef.current(conversationId, options),
       triggerMessageExtraction: (conversationId, options) =>
-      triggerMessageExtractionRef.current(conversationId, options)
+        triggerMessageExtractionRef.current(conversationId, options),
     });
     return stop;
   }, []);
@@ -2910,35 +2721,24 @@ export const WebSocketProvider = ({ children }) => {
           type: "auto_reply_settings",
           data: {
             enabled: settings.aiAutoReplyEnabled === true,
-            delayMinutes:
-            Number.isFinite(delay) && delay > 0 ? delay : 30,
+            delayMinutes: Number.isFinite(delay) && delay > 0 ? delay : 30,
             apiKey:
-            settings.geminiApiKey ||
-            settings.aiApiKey ||
-            process.env.EXPO_PUBLIC_GEMINI_API_KEY ||
-            "",
+              settings.geminiApiKey ||
+              settings.aiApiKey ||
+              process.env.EXPO_PUBLIC_GEMINI_API_KEY ||
+              "",
             model:
-            settings.aiModel ||
-            process.env.EXPO_PUBLIC_GEMINI_MODEL ||
-            "gemini-3.5-flash",
+              settings.aiModel ||
+              process.env.EXPO_PUBLIC_GEMINI_MODEL ||
+              "gemini-3.5-flash",
             userProfile: {
               name: settings.name || "",
               skills: settings.skills || "",
-              aboutMe: settings.aboutMe || ""
-            }
-          }
+              aboutMe: settings.aboutMe || "",
+            },
+          },
         });
-
-
-
-
-
-      } catch (error) {
-
-
-
-
-      }
+      } catch (error) {}
     };
 
     syncAutoReplySettings();
@@ -2947,7 +2747,7 @@ export const WebSocketProvider = ({ children }) => {
     if (Platform.OS === "web" && typeof window !== "undefined") {
       window.addEventListener(
         "fiverr-auto-reply-settings-changed",
-        onSettingsChanged
+        onSettingsChanged,
       );
     }
 
@@ -2957,7 +2757,7 @@ export const WebSocketProvider = ({ children }) => {
       if (Platform.OS === "web" && typeof window !== "undefined") {
         window.removeEventListener(
           "fiverr-auto-reply-settings-changed",
-          onSettingsChanged
+          onSettingsChanged,
         );
       }
     };
@@ -2974,19 +2774,9 @@ export const WebSocketProvider = ({ children }) => {
 
         const synced = sendMessage({
           type: "tab_reload_settings",
-          data: profileReloadSettings
+          data: profileReloadSettings,
         });
-
-
-
-
-
-      } catch (error) {
-
-
-
-
-      }
+      } catch (error) {}
     };
 
     syncTabReloadSettings();
@@ -3000,7 +2790,10 @@ export const WebSocketProvider = ({ children }) => {
       cancelled = true;
       clearInterval(intervalId);
       if (Platform.OS === "web" && typeof window !== "undefined") {
-        window.removeEventListener(TAB_RELOAD_SETTINGS_EVENT, onSettingsChanged);
+        window.removeEventListener(
+          TAB_RELOAD_SETTINGS_EVENT,
+          onSettingsChanged,
+        );
       }
     };
   }, [isConnected, sendMessage]);
@@ -3017,16 +2810,16 @@ export const WebSocketProvider = ({ children }) => {
 
     const sendExpoActivity = () => {
       const username =
-      selectedSellerProfile?.username ||
-      selectedSellerProfile?.profileName ||
-      "";
+        selectedSellerProfile?.username ||
+        selectedSellerProfile?.profileName ||
+        "";
       sendMessage({
         type: "expo_app_activity",
         data: {
           active: isAppInForeground(),
           selectedProfileUsername: username,
-          at: Date.now()
-        }
+          at: Date.now(),
+        },
       });
     };
 
@@ -3050,8 +2843,8 @@ export const WebSocketProvider = ({ children }) => {
         data: {
           active: false,
           selectedProfileUsername: "",
-          at: Date.now()
-        }
+          at: Date.now(),
+        },
       });
     };
   }, [isConnected, sendMessage, selectedSellerProfile]);
@@ -3091,12 +2884,12 @@ export const WebSocketProvider = ({ children }) => {
     addOptimisticMessage,
     cancelOptimisticMessage,
     deleteClient,
-    loadAssignments
+    loadAssignments,
   };
 
   return (
     <WebSocketContext.Provider value={value}>
       {children}
-    </WebSocketContext.Provider>);
-
+    </WebSocketContext.Provider>
+  );
 };

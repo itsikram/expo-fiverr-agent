@@ -48,6 +48,134 @@ class NotificationService {
   }
 
   /**
+   * Convert Base64 VAPID key to Uint8Array
+   * @param {string} base64String
+   * @returns {Uint8Array}
+   */
+  urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+
+  async getWebServiceWorkerRegistration() {
+    if (!this.isWebPlatform() || typeof navigator === 'undefined' || !navigator.serviceWorker) {
+      return null;
+    }
+
+    if (this.webServiceWorkerRegistration) {
+      return this.webServiceWorkerRegistration;
+    }
+
+    try {
+      await navigator.serviceWorker.register('/sw.js', {
+        scope: '/',
+      });
+      this.webServiceWorkerRegistration = await navigator.serviceWorker.ready;
+      return this.webServiceWorkerRegistration;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async getWebPushPublicKey(serverUrl) {
+    if (!serverUrl || typeof fetch === 'undefined') {
+      return null;
+    }
+
+    try {
+      const response = await fetch(`${serverUrl.replace(/\/+$/, '')}/push/vapid-public-key`, {
+        method: 'GET',
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        return null;
+      }
+      const data = await response.json();
+      return data?.publicKey || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async getWebPushSubscription(serverUrl) {
+    if (!this.isWebPlatform()) {
+      return null;
+    }
+
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker || !('PushManager' in window)) {
+      return null;
+    }
+
+    const registration = await this.getWebServiceWorkerRegistration();
+    if (!registration) {
+      return null;
+    }
+
+    try {
+      let subscription = await registration.pushManager.getSubscription();
+      if (!subscription) {
+        if (Notification.permission !== 'granted') {
+          const granted = await this.requestPermissions();
+          if (!granted) {
+            return null;
+          }
+        }
+
+        const publicKey = await this.getWebPushPublicKey(serverUrl);
+        if (!publicKey) {
+          return null;
+        }
+
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: this.urlBase64ToUint8Array(publicKey)
+        });
+      }
+
+      this.webPushSubscription = subscription;
+      return subscription;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async getWebPushSubscriptionPayload(serverUrl) {
+    const subscription = await this.getWebPushSubscription(serverUrl);
+    if (!subscription) {
+      return null;
+    }
+    try {
+      return subscription.toJSON();
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async registerWebPushSubscription(serverUrl) {
+    if (!this.isWebPlatform()) {
+      return null;
+    }
+
+    const payload = await this.getWebPushSubscriptionPayload(serverUrl);
+    if (!payload) {
+      return null;
+    }
+
+    this.webPushSubscription = payload;
+    return payload;
+  }
+
+  /**
    * Request notification permissions
    * @returns {Promise<boolean>} True if permissions granted, false otherwise
    */
@@ -451,10 +579,7 @@ class NotificationService {
 
       if (!this.isWebPlatform()) {
         await this.getExpoPushToken();
-      } else {
-
       }
-
 
       return true;
     } catch (error) {
