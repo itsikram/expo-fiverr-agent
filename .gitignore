@@ -32,3 +32,5 @@ android/build/
 android/.gradle/
 *.apk
 *.aab
+# Web export build (may embed secrets)
+dist-web/
