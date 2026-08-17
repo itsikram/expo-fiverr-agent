@@ -125,3 +125,29 @@ export const saveAdminAssignments = async (token, userId, clientIds) => {
     body: { userId, clientIds },
   });
 };
+
+export const logUserActivity = async (token, activity) => {
+  return request("/activities", {
+    token,
+    method: "POST",
+    body: activity,
+  });
+};
+
+export const listAdminActivities = async (
+  token,
+  { userId, activityType, limit = 200 } = {},
+) => {
+  const searchParams = new URLSearchParams();
+  if (userId) {
+    searchParams.set("userId", String(userId));
+  }
+  if (activityType) {
+    searchParams.set("activityType", String(activityType));
+  }
+  if (limit) {
+    searchParams.set("limit", String(limit));
+  }
+  const query = searchParams.toString();
+  return request(`/admin/activities${query ? `?${query}` : ""}`, { token });
+};

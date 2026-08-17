@@ -9,6 +9,7 @@ import React, {
 import { Platform, AppState } from "react-native";
 import { SERVER_CONFIG } from "../config/server";
 import { getMyAssignments } from "../utils/adminService";
+import { trackUserActivity } from "../utils/activityLogger";
 import {
   saveMessages,
   loadMessages,
@@ -1068,9 +1069,15 @@ export const WebSocketProvider = ({ children }) => {
     }
 
     beginClientListLoad();
-    sendMessage({ type: "request_client_list" });
-    return true;
-  }, [beginClientListLoad, sendMessage, shouldThrottleRequest]);
+    const sent = sendMessage({ type: "request_client_list" });
+    if (sent) {
+      trackUserActivity(token, role, {
+        activityType: "request_client_list",
+        action: "Requested client list",
+      });
+    }
+    return sent;
+  }, [beginClientListLoad, role, sendMessage, shouldThrottleRequest, token]);
 
   const requestMessages = useCallback(
     (conversationIdOrUsername, options = {}) => {
@@ -1109,10 +1116,23 @@ export const WebSocketProvider = ({ children }) => {
         payload.triggerExtraction = true;
       }
 
-      sendMessage(payload);
-      return true;
+      const sent = sendMessage(payload);
+      if (sent && clientKey) {
+        trackUserActivity(token, role, {
+          activityType: "request_messages",
+          action: "Requested messages",
+          conversationId: clientKey,
+          username: clientKey,
+          metadata: {
+            force,
+            triggerExtraction,
+            background,
+          },
+        });
+      }
+      return sent;
     },
-    [clearThrottle, sendMessage, shouldThrottleRequest],
+    [clearThrottle, role, sendMessage, shouldThrottleRequest, token],
   );
 
   const requestClientData = useCallback(
@@ -1128,14 +1148,22 @@ export const WebSocketProvider = ({ children }) => {
         return false;
       }
 
-      sendMessage({
+      const sent = sendMessage({
         type: "request_client_data",
         username: clientKey,
         conversationId: clientKey,
       });
-      return true;
+      if (sent && clientKey) {
+        trackUserActivity(token, role, {
+          activityType: "request_client_data",
+          action: "Requested client details",
+          conversationId: clientKey,
+          username: clientKey,
+        });
+      }
+      return sent;
     },
-    [clientData, sendMessage, shouldThrottleRequest],
+    [clientData, role, sendMessage, shouldThrottleRequest, token],
   );
 
   const triggerClientListExtraction = useCallback(() => {
@@ -1145,12 +1173,18 @@ export const WebSocketProvider = ({ children }) => {
 
     beginClientListLoad();
     // Send command to trigger browser extension to fetch client list
-    sendMessage({
+    const sent = sendMessage({
       type: "trigger",
       action: "extract_client_list",
     });
-    return true;
-  }, [beginClientListLoad, sendMessage, shouldThrottleRequest]);
+    if (sent) {
+      trackUserActivity(token, role, {
+        activityType: "extract_client_list",
+        action: "Triggered client list extraction",
+      });
+    }
+    return sent;
+  }, [beginClientListLoad, role, sendMessage, shouldThrottleRequest, token]);
 
   const triggerMessageExtraction = useCallback(
     (targetIdentifier, options = {}) => {
@@ -1179,10 +1213,26 @@ export const WebSocketProvider = ({ children }) => {
       if (scrollToLoadAll) {
         payload.scrollToLoadAll = true;
       }
-      sendMessage(payload);
-      return true;
+      const sent = sendMessage(payload);
+      if (sent) {
+        trackUserActivity(token, role, {
+          activityType: scrollToLoadAll
+            ? "load_all_messages"
+            : "extract_messages",
+          action: scrollToLoadAll
+            ? "Triggered full message history extraction"
+            : "Triggered message extraction",
+          conversationId: targetIdentifier || null,
+          username: targetIdentifier || null,
+          metadata: {
+            force,
+            scrollToLoadAll,
+          },
+        });
+      }
+      return sent;
     },
-    [clearThrottle, sendMessage, shouldThrottleRequest],
+    [clearThrottle, role, sendMessage, shouldThrottleRequest, token],
   );
 
   const triggerClientDataExtraction = useCallback(() => {
@@ -1261,14 +1311,23 @@ export const WebSocketProvider = ({ children }) => {
         return false;
       }
 
-      return sendMessage({
+      const sent = sendMessage({
         type: "click_client",
         username: cleanId,
         conversationId: cleanId,
         useFirstClient: false,
       });
+      if (sent) {
+        trackUserActivity(token, role, {
+          activityType: "click_client",
+          action: "Opened client in Fiverr",
+          conversationId: cleanId,
+          username: cleanId,
+        });
+      }
+      return sent;
     },
-    [sendMessage],
+    [role, sendMessage, token],
   );
 
   const addOptimisticMessage = useCallback((messageText, conversationId) => {
@@ -1364,6 +1423,22 @@ export const WebSocketProvider = ({ children }) => {
         // blocking messages the user sent by hand.
         autoReply: options.autoReply === true,
       });
+
+      if (queued) {
+        trackUserActivity(token, role, {
+          activityType:
+            options.autoReply === true ? "auto_reply_sent" : "send_message",
+          action:
+            options.autoReply === true ? "Sent AI auto-reply" : "Sent message",
+          conversationId: conversationId,
+          username: conversationId,
+          metadata: {
+            autoReply: options.autoReply === true,
+            messageLength: normalizedMessage.length,
+            awaitConfirmation: options.awaitConfirmation === true,
+          },
+        });
+      }
 
       if (!options.awaitConfirmation) {
         return queued;
@@ -2607,9 +2682,7 @@ export const WebSocketProvider = ({ children }) => {
           break;
 
         case "updateActivatedTabUrl":
-          if (data.url) {
-            setCurrentActivatedFiverrUrl(data.url);
-          }
+          setCurrentActivatedFiverrUrl(data.url || null);
           break;
 
         default:

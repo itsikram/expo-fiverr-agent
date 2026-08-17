@@ -1020,7 +1020,7 @@ const styles = StyleSheet.create({
   },
   statusText: {
     color: colors.text.white,
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.sizes.sm,
     fontWeight: "500",
   },
   messagesContent: {
