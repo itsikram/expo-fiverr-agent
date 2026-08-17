@@ -526,6 +526,8 @@ export const WebSocketProvider = ({ children }) => {
   const [isAssignmentsLoaded, setIsAssignmentsLoaded] = useState(false);
   const assignedClientIdsRef = useRef([]);
   const isAssignmentsLoadedRef = useRef(false);
+  const [currentActivatedFiverrUrl, setCurrentActivatedFiverrUrl] =
+    useState(null);
   const { token, role, isAuthReady } = useAuth();
   const fetchDetailsCallbacksRef = useRef({}); // Track callbacks for fetch_details requests
   // Pending send confirmations keyed by lowercase conversation id.
@@ -2604,6 +2606,12 @@ export const WebSocketProvider = ({ children }) => {
           }
           break;
 
+        case "updateActivatedTabUrl":
+          if (data.url) {
+            setCurrentActivatedFiverrUrl(data.url);
+          }
+          break;
+
         default:
       }
     },
@@ -2871,7 +2879,8 @@ export const WebSocketProvider = ({ children }) => {
         selectedSellerProfile?.username ||
         selectedSellerProfile?.profileName ||
         "";
-      const convo = selectedConversationId || (username ? String(username).trim() : null);
+      const convo =
+        selectedConversationId || (username ? String(username).trim() : null);
       // Debug: ensure we capture current selectedConversationId and seller profile
       try {
         console.log("[WebSocket] sendExpoActivity preparing payload", {
@@ -2965,6 +2974,8 @@ export const WebSocketProvider = ({ children }) => {
     isLoadingMessages,
     isLoadingClients,
     setSelectedConversationId,
+    currentActivatedFiverrUrl,
+    setCurrentActivatedFiverrUrl,
     connect,
     disconnect,
     sendMessage,

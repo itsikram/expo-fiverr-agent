@@ -11,8 +11,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
-  Switch } from
-"react-native";
+  Switch,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -20,21 +20,28 @@ import {
   spacing,
   borderRadius,
   typography,
-  shadows } from
-"../constants/theme";
+  shadows,
+} from "../constants/theme";
 import { loadSettings, saveSettings } from "../utils/storage";
 import { AI_CONFIG, RETIRED_GEMINI_MODELS } from "../config/ai";
 import {
   AUTO_REPLY_DEFAULT_DELAY_MINUTES,
-  wakeAutoReplyWatcher } from
-"../utils/autoReplyService";
+  wakeAutoReplyWatcher,
+} from "../utils/autoReplyService";
 import { SERVER_CONFIG } from "../config/server";
 import { useWebSocket } from "../context/WebSocketContext";
 import { useAuth } from "../context/AuthContext";
 import AdminDashboard from "../components/AdminDashboard";
 
 const SettingsScreen = ({ onBack }) => {
-  const { navigateToInbox, reloadFiverrTab, isConnected, connect, disconnect } = useWebSocket();
+  const {
+    navigateToInbox,
+    reloadFiverrTab,
+    isConnected,
+    connect,
+    disconnect,
+    currentActivatedFiverrUrl,
+  } = useWebSocket();
   const { username, email, logout, isAuthenticated, role } = useAuth();
   const [name, setName] = useState("");
   const [skills, setSkills] = useState("");
@@ -49,7 +56,7 @@ const SettingsScreen = ({ onBack }) => {
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [aiAutoReplyEnabled, setAiAutoReplyEnabled] = useState(false);
   const [aiAutoReplyMinutes, setAiAutoReplyMinutes] = useState(
-    String(AUTO_REPLY_DEFAULT_DELAY_MINUTES)
+    String(AUTO_REPLY_DEFAULT_DELAY_MINUTES),
   );
 
   // Load settings on mount
@@ -77,24 +84,24 @@ const SettingsScreen = ({ onBack }) => {
           setServerAddress(settings.serverHost);
         }
         if (
-        settings.geminiApiKey ||
-        settings.aiApiKey ||
-        settings.openaiApiKey)
-        {
+          settings.geminiApiKey ||
+          settings.aiApiKey ||
+          settings.openaiApiKey
+        ) {
           const rawKey =
-          settings.geminiApiKey || settings.aiApiKey || settings.openaiApiKey;
-          const maskedKey = rawKey.startsWith("sk-") ?
-          "sk-" + "*".repeat(Math.max(rawKey.length - 3, 8)) :
-          rawKey.startsWith("AIza") ?
-          "AIza" + "*".repeat(Math.max(rawKey.length - 4, 8)) :
-          "*".repeat(rawKey.length);
+            settings.geminiApiKey || settings.aiApiKey || settings.openaiApiKey;
+          const maskedKey = rawKey.startsWith("sk-")
+            ? "sk-" + "*".repeat(Math.max(rawKey.length - 3, 8))
+            : rawKey.startsWith("AIza")
+              ? "AIza" + "*".repeat(Math.max(rawKey.length - 4, 8))
+              : "*".repeat(rawKey.length);
           setApiKey(maskedKey);
           setIsApiKeyMasked(true);
         }
         if (
-        settings.aiModel &&
-        !RETIRED_GEMINI_MODELS.includes(settings.aiModel.trim()))
-        {
+          settings.aiModel &&
+          !RETIRED_GEMINI_MODELS.includes(settings.aiModel.trim())
+        ) {
           setAiModel(settings.aiModel);
         } else {
           setAiModel(AI_CONFIG.DEFAULT_MODEL);
@@ -105,25 +112,23 @@ const SettingsScreen = ({ onBack }) => {
         setAiAutoReplyEnabled(settings.aiAutoReplyEnabled === true);
         const delay = Number(settings.aiAutoReplyMinutes);
         setAiAutoReplyMinutes(
-          Number.isFinite(delay) && delay > 0 ?
-          String(delay) :
-          String(AUTO_REPLY_DEFAULT_DELAY_MINUTES)
+          Number.isFinite(delay) && delay > 0
+            ? String(delay)
+            : String(AUTO_REPLY_DEFAULT_DELAY_MINUTES),
         );
       }
-    } catch (error) {
-
-    }
+    } catch (error) {}
   };
 
   const persistAutoReplySettings = async (enabled, minutesText) => {
     const parsed = parseInt(String(minutesText).trim(), 10);
     const delayMinutes =
-    Number.isFinite(parsed) && parsed > 0 ?
-    parsed :
-    AUTO_REPLY_DEFAULT_DELAY_MINUTES;
+      Number.isFinite(parsed) && parsed > 0
+        ? parsed
+        : AUTO_REPLY_DEFAULT_DELAY_MINUTES;
     const saved = await saveSettings({
       aiAutoReplyEnabled: enabled === true,
-      aiAutoReplyMinutes: delayMinutes
+      aiAutoReplyMinutes: delayMinutes,
     });
     if (!saved) {
       throw new Error("Unable to save auto-reply settings");
@@ -149,9 +154,9 @@ const SettingsScreen = ({ onBack }) => {
         // overridden at runtime via the Settings screen.
         serverUrl: serverAddressTrimmed || undefined,
         serverHost:
-        serverAddressTrimmed && !serverAddressTrimmed.includes('://') ?
-        serverAddressTrimmed :
-        undefined,
+          serverAddressTrimmed && !serverAddressTrimmed.includes("://")
+            ? serverAddressTrimmed
+            : undefined,
         geminiApiKey: isApiKeyMasked ? undefined : apiKeyToSave || undefined,
         aiApiKey: isApiKeyMasked ? undefined : apiKeyToSave || undefined,
         aiModel: aiModel.trim() || undefined,
@@ -159,10 +164,10 @@ const SettingsScreen = ({ onBack }) => {
         aiAutoReplyEnabled: aiAutoReplyEnabled === true,
         aiAutoReplyMinutes: (() => {
           const parsed = parseInt(String(aiAutoReplyMinutes).trim(), 10);
-          return Number.isFinite(parsed) && parsed > 0 ?
-          parsed :
-          AUTO_REPLY_DEFAULT_DELAY_MINUTES;
-        })()
+          return Number.isFinite(parsed) && parsed > 0
+            ? parsed
+            : AUTO_REPLY_DEFAULT_DELAY_MINUTES;
+        })(),
       };
 
       Object.keys(settings).forEach((key) => {
@@ -184,15 +189,14 @@ const SettingsScreen = ({ onBack }) => {
       } catch (_) {}
 
       Alert.alert("Success", "Settings saved successfully!", [
-      {
-        text: "OK",
-        onPress: () => {
-          if (onBack) onBack();
-        }
-      }]
-      );
+        {
+          text: "OK",
+          onPress: () => {
+            if (onBack) onBack();
+          },
+        },
+      ]);
     } catch (error) {
-
       Alert.alert("Error", "Failed to save settings. Please try again.");
     } finally {
       setIsSaving(false);
@@ -214,12 +218,12 @@ const SettingsScreen = ({ onBack }) => {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      keyboardVerticalOffset={Platform.OS === "ios" ? 200 : 200}>
-      
+      keyboardVerticalOffset={Platform.OS === "ios" ? 200 : 200}
+    >
       <LinearGradient
         colors={[colors.background.primary, colors.background.secondary]}
-        style={styles.gradient}>
-        
+        style={styles.gradient}
+      >
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onBack} style={styles.backButton}>
@@ -232,11 +236,11 @@ const SettingsScreen = ({ onBack }) => {
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}>
-          
+          showsVerticalScrollIndicator={false}
+        >
           {/* Server address — native only; web uses EXPO_PUBLIC_SERVER_URL from .env */}
-          {Platform.OS !== "web" ?
-          <View style={styles.section}>
+          {Platform.OS !== "web" ? (
+            <View style={styles.section}>
               <Text style={styles.sectionTitle}>Server</Text>
               <Text style={styles.sectionDescription}>
                 Server address (full URL with protocol and port). Used for
@@ -247,42 +251,45 @@ const SettingsScreen = ({ onBack }) => {
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Server address</Text>
                 <TextInput
-                style={styles.input}
-                value={serverAddress}
-                onChangeText={setServerAddress}
-                placeholder="e.g. http://192.168.0.102:8765"
-                placeholderTextColor={colors.text.secondary}
-                autoCapitalize="none"
-                autoCorrect={false} />
-              
+                  style={styles.input}
+                  value={serverAddress}
+                  onChangeText={setServerAddress}
+                  placeholder="e.g. http://192.168.0.102:8765"
+                  placeholderTextColor={colors.text.secondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
               </View>
-            </View> :
-
-          <View style={styles.section}>
+            </View>
+          ) : (
+            <View style={styles.section}>
               <Text style={styles.sectionTitle}>Server</Text>
               <Text style={styles.sectionDescription}>
                 Web builds read the server URL from runtime-config.js (or
-                runtime-config.json) on the live server. Use the field below
-                to override the runtime value for local development or testing.
-                EXPO_PUBLIC_SERVER_URL in .env is only applied when you run
-                the web export build.
+                runtime-config.json) on the live server. Use the field below to
+                override the runtime value for local development or testing.
+                EXPO_PUBLIC_SERVER_URL in .env is only applied when you run the
+                web export build.
               </Text>
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Server address</Text>
                 <TextInput
-                style={styles.input}
-                value={serverAddress}
-                onChangeText={setServerAddress}
-                placeholder={SERVER_CONFIG.serverUrl || 'e.g. http://192.168.0.102:8765'}
-                placeholderTextColor={colors.text.secondary}
-                autoCapitalize="none"
-                autoCorrect={false} />
+                  style={styles.input}
+                  value={serverAddress}
+                  onChangeText={setServerAddress}
+                  placeholder={
+                    SERVER_CONFIG.serverUrl || "e.g. http://192.168.0.102:8765"
+                  }
+                  placeholderTextColor={colors.text.secondary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
                 <Text style={styles.hint}>
                   Saved value will override the runtime-config for this browser.
                 </Text>
               </View>
             </View>
-          }
+          )}
 
           {/* Profile Section */}
           <View style={styles.section}>
@@ -298,8 +305,8 @@ const SettingsScreen = ({ onBack }) => {
                 value={name}
                 onChangeText={setName}
                 placeholder="Your name"
-                placeholderTextColor={colors.text.secondary} />
-              
+                placeholderTextColor={colors.text.secondary}
+              />
             </View>
 
             <View style={styles.inputGroup}>
@@ -312,8 +319,8 @@ const SettingsScreen = ({ onBack }) => {
                 placeholderTextColor={colors.text.secondary}
                 multiline
                 numberOfLines={4}
-                textAlignVertical="top" />
-              
+                textAlignVertical="top"
+              />
             </View>
 
             <View style={styles.inputGroup}>
@@ -326,27 +333,27 @@ const SettingsScreen = ({ onBack }) => {
                 placeholderTextColor={colors.text.secondary}
                 multiline
                 numberOfLines={6}
-                textAlignVertical="top" />
-              
+                textAlignVertical="top"
+              />
             </View>
           </View>
 
-          {role === "admin" ?
-          <View style={styles.section}>
+          {role === "admin" ? (
+            <View style={styles.section}>
               <Text style={styles.sectionTitle}>Admin Tools</Text>
               <Text style={styles.sectionDescription}>
                 Manage clients, messages, and user access.
               </Text>
               <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={() => setShowAdminDashboard(true)}>
-              
+                style={styles.primaryButton}
+                onPress={() => setShowAdminDashboard(true)}
+              >
                 <Text style={styles.primaryButtonText}>
                   Open Admin Dashboard
                 </Text>
               </TouchableOpacity>
-            </View> :
-          null}
+            </View>
+          ) : null}
 
           {/* AI Auto-Reply */}
           <View style={styles.section}>
@@ -371,20 +378,19 @@ const SettingsScreen = ({ onBack }) => {
                   try {
                     await persistAutoReplySettings(value, aiAutoReplyMinutes);
                   } catch (error) {
-
-
-
-
                     setAiAutoReplyEnabled(!value);
-                    Alert.alert("Error", "Failed to update auto-reply setting.");
+                    Alert.alert(
+                      "Error",
+                      "Failed to update auto-reply setting.",
+                    );
                   }
                 }}
                 trackColor={{
                   false: colors.border.light,
-                  true: colors.accent.primary
+                  true: colors.accent.primary,
                 }}
-                thumbColor={colors.text.white} />
-              
+                thumbColor={colors.text.white}
+              />
             </View>
 
             <View style={styles.inputGroup}>
@@ -397,19 +403,15 @@ const SettingsScreen = ({ onBack }) => {
                   try {
                     await persistAutoReplySettings(
                       aiAutoReplyEnabled,
-                      aiAutoReplyMinutes
+                      aiAutoReplyMinutes,
                     );
-                  } catch (error) {
-
-
-
-
-                  }
+                  } catch (error) {}
                 }}
                 placeholder={String(AUTO_REPLY_DEFAULT_DELAY_MINUTES)}
                 placeholderTextColor={colors.text.secondary}
-                keyboardType="number-pad" />
-              
+                keyboardType="number-pad"
+              />
+
               <Text style={styles.hint}>
                 Default is {AUTO_REPLY_DEFAULT_DELAY_MINUTES} minutes after the
                 client's last message.
@@ -435,22 +437,24 @@ const SettingsScreen = ({ onBack }) => {
                   placeholderTextColor={colors.text.secondary}
                   secureTextEntry={!showApiKey}
                   autoCapitalize="none"
-                  autoCorrect={false} />
-                
+                  autoCorrect={false}
+                />
+
                 <TouchableOpacity
                   style={styles.eyeButton}
-                  onPress={() => setShowApiKey(!showApiKey)}>
-                  
+                  onPress={() => setShowApiKey(!showApiKey)}
+                >
                   <Ionicons
                     name={showApiKey ? "eye-off" : "eye"}
                     size={20}
-                    color={colors.text.secondary} />
-                  
+                    color={colors.text.secondary}
+                  />
                 </TouchableOpacity>
               </View>
               <Text style={styles.hint}>
-                Get a free key from Google AI Studio (aistudio.google.com/apikey).
-                Your key is stored locally and masked for privacy.
+                Get a free key from Google AI Studio
+                (aistudio.google.com/apikey). Your key is stored locally and
+                masked for privacy.
               </Text>
             </View>
 
@@ -463,12 +467,14 @@ const SettingsScreen = ({ onBack }) => {
                 placeholder={AI_CONFIG.DEFAULT_MODEL}
                 placeholderTextColor={colors.text.secondary}
                 autoCapitalize="none"
-                autoCorrect={false} />
-              
+                autoCorrect={false}
+              />
+
               <Text style={styles.hint}>
                 Default is {AI_CONFIG.DEFAULT_MODEL}. Free-tier keys can use the
-                Flash and Flash-Lite models only ({AI_CONFIG.GEMINI_FALLBACK_MODELS.slice(0, 4).join(", ")}).
-                Pro models and gemini-2.5-flash are not available on new keys.
+                Flash and Flash-Lite models only (
+                {AI_CONFIG.GEMINI_FALLBACK_MODELS.slice(0, 4).join(", ")}). Pro
+                models and gemini-2.5-flash are not available on new keys.
               </Text>
             </View>
 
@@ -481,8 +487,9 @@ const SettingsScreen = ({ onBack }) => {
                 placeholder="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
                 placeholderTextColor={colors.text.secondary}
                 autoCapitalize="none"
-                autoCorrect={false} />
-              
+                autoCorrect={false}
+              />
+
               <Text style={styles.hint}>
                 Leave blank to use the default Gemini endpoint. Only change this
                 if you use a custom provider.
@@ -509,37 +516,38 @@ const SettingsScreen = ({ onBack }) => {
 
             <TouchableOpacity
               style={[
-              styles.actionButton,
-              !isAuthenticated && styles.actionButtonDisabled]
-              }
+                styles.actionButton,
+                !isAuthenticated && styles.actionButtonDisabled,
+              ]}
               onPress={async () => {
                 await logout();
                 if (onBack) onBack();
               }}
-              disabled={!isAuthenticated}>
-              
+              disabled={!isAuthenticated}
+            >
               <LinearGradient
                 colors={
-                isAuthenticated ?
-                [colors.accent.error, colors.accent.danger] :
-                [colors.text.secondary, colors.text.secondary]
+                  isAuthenticated
+                    ? [colors.accent.error, colors.accent.danger]
+                    : [colors.text.secondary, colors.text.secondary]
                 }
-                style={styles.actionButtonGradient}>
-                
+                style={styles.actionButtonGradient}
+              >
                 <Ionicons
                   name="log-out-outline"
                   size={20}
                   color={colors.text.white}
-                  style={styles.actionButtonIcon} />
-                
+                  style={styles.actionButtonIcon}
+                />
+
                 <Text style={styles.actionButtonText}>Sign Out</Text>
               </LinearGradient>
             </TouchableOpacity>
 
             <Text style={styles.hint}>
-              {isAuthenticated ?
-              "Sign out of the current account and return to the login screen." :
-              "No authenticated user is currently signed in."}
+              {isAuthenticated
+                ? "Sign out of the current account and return to the login screen."
+                : "No authenticated user is currently signed in."}
             </Text>
 
             <View style={styles.divider} />
@@ -551,107 +559,153 @@ const SettingsScreen = ({ onBack }) => {
 
             <TouchableOpacity
               style={[
-              styles.actionButton,
-              !isConnected && styles.actionButtonDisabled]
-              }
+                styles.actionButton,
+                !isConnected && styles.actionButtonDisabled,
+              ]}
               onPress={() => {
                 if (isConnected) {
                   navigateToInbox();
                   Alert.alert(
                     "Success",
                     "Command sent to navigate to Fiverr inbox page",
-                    [{ text: "OK" }]
+                    [{ text: "OK" }],
                   );
                 } else {
                   Alert.alert(
                     "Not Connected",
                     "Please wait for connection to server before using this feature.",
-                    [{ text: "OK" }]
+                    [{ text: "OK" }],
                   );
                 }
               }}
-              disabled={!isConnected}>
-              
+              disabled={!isConnected}
+            >
               <LinearGradient
                 colors={
-                isConnected ?
-                [colors.accent.primary, colors.accent.secondary] :
-                [colors.text.secondary, colors.text.secondary]
+                  isConnected
+                    ? [colors.accent.primary, colors.accent.secondary]
+                    : [colors.text.secondary, colors.text.secondary]
                 }
-                style={styles.actionButtonGradient}>
-                
+                style={styles.actionButtonGradient}
+              >
                 <Ionicons
                   name="open-outline"
                   size={20}
                   color={colors.text.white}
-                  style={styles.actionButtonIcon} />
-                
+                  style={styles.actionButtonIcon}
+                />
+
                 <Text style={styles.actionButtonText}>Navigate to Inbox</Text>
               </LinearGradient>
             </TouchableOpacity>
             <Text style={styles.hint}>
-              {isConnected ?
-              "Click to redirect the active Fiverr tab to the inbox page" :
-              "Connect to server to use this feature"}
+              {isConnected
+                ? "Click to redirect the active Fiverr tab to the inbox page"
+                : "Connect to server to use this feature"}
             </Text>
 
             <TouchableOpacity
               style={[
-              styles.actionButton,
-              !isConnected && styles.actionButtonDisabled]
-              }
+                styles.actionButton,
+                !isConnected && styles.actionButtonDisabled,
+              ]}
               onPress={() => {
                 if (isConnected) {
                   reloadFiverrTab();
                   Alert.alert(
                     "Success",
                     "Command sent to reload the activated Fiverr tab",
-                    [{ text: "OK" }]
+                    [{ text: "OK" }],
                   );
                 } else {
                   Alert.alert(
                     "Not Connected",
                     "Please wait for connection to server before using this feature.",
-                    [{ text: "OK" }]
+                    [{ text: "OK" }],
                   );
                 }
               }}
-              disabled={!isConnected}>
-              
+              disabled={!isConnected}
+            >
               <LinearGradient
                 colors={
-                isConnected ?
-                [colors.accent.primary, colors.accent.secondary] :
-                [colors.text.secondary, colors.text.secondary]
+                  isConnected
+                    ? [colors.accent.primary, colors.accent.secondary]
+                    : [colors.text.secondary, colors.text.secondary]
                 }
-                style={styles.actionButtonGradient}>
-                
+                style={styles.actionButtonGradient}
+              >
                 <Ionicons
                   name="reload"
                   size={20}
                   color={colors.text.white}
-                  style={styles.actionButtonIcon} />
-                
+                  style={styles.actionButtonIcon}
+                />
+
                 <Text style={styles.actionButtonText}>Reload Fiverr</Text>
               </LinearGradient>
             </TouchableOpacity>
             <Text style={styles.hint}>
-              {isConnected ?
-              "Click to reload the activated Fiverr tab" :
-              "Connect to server to use this feature"}
+              {isConnected
+                ? "Click to reload the activated Fiverr tab"
+                : "Connect to server to use this feature"}
             </Text>
+          </View>
+
+          {/* Activated Fiverr Tab Section */}
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Ionicons
+                name="link"
+                size={20}
+                color={colors.accent.primary}
+                style={styles.sectionIcon}
+              />
+              <Text style={styles.sectionTitle}>Activated Fiverr Tab</Text>
+            </View>
+            <View style={styles.activatedTabContainer}>
+              {currentActivatedFiverrUrl ? (
+                <TouchableOpacity
+                  style={styles.urlCopyArea}
+                  onPress={() => {
+                    if (Platform.OS === "web" && navigator?.clipboard) {
+                      navigator.clipboard.writeText(currentActivatedFiverrUrl);
+                      Alert.alert("Copied", "URL copied to clipboard", [
+                        { text: "OK" },
+                      ]);
+                    }
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.urlText} selectable>
+                    {currentActivatedFiverrUrl}
+                  </Text>
+                  <Ionicons
+                    name="copy"
+                    size={16}
+                    color={colors.accent.primary}
+                    style={styles.copyIcon}
+                  />
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.noUrlText}>
+                  No active Fiverr tab detected. Open Fiverr in your browser and
+                  activate a tab through the extension.
+                </Text>
+              )}
+            </View>
           </View>
 
           {/* Save Button */}
           <TouchableOpacity
             style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
             onPress={handleSave}
-            disabled={isSaving}>
-            
+            disabled={isSaving}
+          >
             <LinearGradient
               colors={[colors.accent.primary, colors.accent.secondary]}
-              style={styles.saveButtonGradient}>
-              
+              style={styles.saveButtonGradient}
+            >
               <Text style={styles.saveButtonText}>
                 {isSaving ? "Saving..." : "Save Settings"}
               </Text>
@@ -666,23 +720,23 @@ const SettingsScreen = ({ onBack }) => {
             onClose={() => {
               setShowAdminDashboard(false);
               loadSettingsData();
-            }} />
-          
+            }}
+          />
         </View>
       </Modal>
-    </KeyboardAvoidingView>);
-
+    </KeyboardAvoidingView>
+  );
 };
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1
+    flex: 1,
   },
   gradient: {
     flex: 1,
-    paddingTop: 40
+    paddingTop: 40,
   },
   header: {
     flexDirection: "row",
@@ -691,28 +745,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border.light
+    borderBottomColor: colors.border.light,
   },
   backButton: {
     width: 40,
     height: 40,
     justifyContent: "center",
-    alignItems: "center"
+    alignItems: "center",
   },
   headerTitle: {
     fontSize: typography.sizes["2xl"],
     fontWeight: typography.weights.bold,
-    color: colors.text.primary
+    color: colors.text.primary,
   },
   placeholder: {
-    width: 40
+    width: 40,
   },
   scrollView: {
-    flex: 1
+    flex: 1,
   },
   scrollContent: {
     padding: spacing.lg,
-    paddingBottom: spacing.xxxl
+    paddingBottom: spacing.xxxl,
   },
   section: {
     marginBottom: spacing.lg,
@@ -720,28 +774,28 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     borderWidth: 1,
-    borderColor: colors.border.light
+    borderColor: colors.border.light,
   },
   sectionTitle: {
     fontSize: typography.sizes.lg,
     fontWeight: typography.weights.semibold,
     color: colors.text.primary,
-    marginBottom: spacing.xs
+    marginBottom: spacing.xs,
   },
   sectionDescription: {
     fontSize: typography.sizes.sm,
     color: colors.text.secondary,
     marginBottom: spacing.lg,
-    lineHeight: 20
+    lineHeight: 20,
   },
   inputGroup: {
-    marginBottom: spacing.lg
+    marginBottom: spacing.lg,
   },
   label: {
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
     color: colors.text.primary,
-    marginBottom: spacing.sm
+    marginBottom: spacing.sm,
   },
   input: {
     backgroundColor: colors.background.secondary,
@@ -750,59 +804,59 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.base,
     color: colors.text.primary,
     borderWidth: 1,
-    borderColor: colors.border.light
+    borderColor: colors.border.light,
   },
   textArea: {
     minHeight: 100,
-    paddingTop: spacing.md
+    paddingTop: spacing.md,
   },
   apiKeyContainer: {
     flexDirection: "row",
-    alignItems: "center"
+    alignItems: "center",
   },
   apiKeyInput: {
     flex: 1,
-    marginRight: spacing.sm
+    marginRight: spacing.sm,
   },
   eyeButton: {
-    padding: spacing.sm
+    padding: spacing.sm,
   },
   hint: {
     fontSize: typography.sizes.xs,
     color: colors.text.secondary,
     marginTop: spacing.xs,
-    fontStyle: "italic"
+    fontStyle: "italic",
   },
   saveButton: {
     marginTop: spacing.lg,
     borderRadius: borderRadius.md,
     overflow: "hidden",
-    ...shadows.md
+    ...shadows.md,
   },
   saveButtonDisabled: {
-    opacity: 0.6
+    opacity: 0.6,
   },
   saveButtonGradient: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
   },
   saveButtonText: {
     fontSize: typography.sizes.lg,
     fontWeight: typography.weights.bold,
-    color: colors.text.white
+    color: colors.text.white,
   },
   actionButton: {
     marginTop: spacing.sm,
     borderRadius: borderRadius.md,
     overflow: "hidden",
-    ...shadows.md
+    ...shadows.md,
   },
   divider: {
     height: 1,
     backgroundColor: colors.border.light,
-    marginVertical: spacing.lg
+    marginVertical: spacing.lg,
   },
   infoText: {
     color: colors.text.primary,
@@ -811,53 +865,89 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.secondary,
     padding: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border.light
+    borderColor: colors.border.light,
   },
   actionButtonDisabled: {
-    opacity: 0.5
+    opacity: 0.5,
   },
   actionButtonGradient: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center"
+    justifyContent: "center",
   },
   actionButtonIcon: {
-    marginRight: spacing.sm
+    marginRight: spacing.sm,
   },
   actionButtonText: {
     fontSize: typography.sizes.base,
     fontWeight: typography.weights.semibold,
-    color: colors.text.white
+    color: colors.text.white,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)"
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.md,
+  },
+  sectionIcon: {
+    marginRight: spacing.sm,
+  },
+  activatedTabContainer: {
+    backgroundColor: colors.background.secondary,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+  },
+  urlCopyArea: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  urlText: {
+    flex: 1,
+    fontSize: typography.sizes.sm,
+    color: colors.accent.primary,
+    fontFamily: Platform.OS === "web" ? "monospace" : undefined,
+    marginRight: spacing.md,
+  },
+  copyIcon: {
+    marginLeft: spacing.sm,
+  },
+  noUrlText: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+    fontStyle: "italic",
   },
   primaryButton: {
     backgroundColor: colors.accent.primary,
     borderRadius: borderRadius.md,
     paddingVertical: spacing.md,
     alignItems: "center",
-    marginTop: spacing.sm
+    marginTop: spacing.sm,
+    marginBottom: spacing.lg,
   },
   primaryButtonText: {
     color: colors.text.white,
     fontWeight: typography.weights.bold,
-    fontSize: typography.sizes.base
+    fontSize: typography.sizes.base,
   },
   switchRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: spacing.lg,
-    gap: spacing.md
+    gap: spacing.md,
   },
   switchTextWrap: {
     flex: 1,
-    paddingRight: spacing.sm
-  }
+    paddingRight: spacing.sm,
+  },
 });
 
 export default SettingsScreen;
