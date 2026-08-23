@@ -182,6 +182,8 @@ const AdminProfileSettings = ({ onBack }) => {
   const [reloadStatus, setReloadStatus] = useState("idle");
   const [extensionStatus, setExtensionStatus] = useState("checking");
   const [lastReloadStatusAt, setLastReloadStatusAt] = useState(null);
+  const [dailyStats, setDailyStats] = useState({});
+  const [statsFilter, setStatsFilter] = useState("today");
   const extensionStatusTimeoutRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -220,6 +222,9 @@ const AdminProfileSettings = ({ onBack }) => {
       sendMessage({
         type: "request_reload_status",
       });
+      sendMessage({
+        type: "request_reload_daily_stats",
+      });
     }, 300);
 
     return () => {
@@ -246,6 +251,26 @@ const AdminProfileSettings = ({ onBack }) => {
 
     window.addEventListener("fiverr-reload-status-update", handleReloadStatusUpdate);
     return () => window.removeEventListener("fiverr-reload-status-update", handleReloadStatusUpdate);
+  }, []);
+
+  // Handle incoming daily reload/online-time stats from WebSocket
+  useEffect(() => {
+    const handleDailyStatsUpdate = (event) => {
+      const data = event.detail;
+      if (data?.type === "reload_daily_stats_update") {
+        setDailyStats(data.dailyStats || {});
+      }
+    };
+
+    window.addEventListener(
+      "fiverr-reload-daily-stats-update",
+      handleDailyStatsUpdate,
+    );
+    return () =>
+      window.removeEventListener(
+        "fiverr-reload-daily-stats-update",
+        handleDailyStatsUpdate,
+      );
   }, []);
 
   // Monitor extension connection health
@@ -276,7 +301,7 @@ const AdminProfileSettings = ({ onBack }) => {
   // Update countdown timer every second (force re-render for time display)
   useEffect(() => {
     if (!nextReloadTime) return;
-    
+
     const interval = setInterval(() => {
       // Force a re-render to update the countdown display
       setNextReloadTime((prev) => {
@@ -336,11 +361,11 @@ const AdminProfileSettings = ({ onBack }) => {
     const now = new Date();
     const diff = date - now;
     if (diff < 0) return "Ready to reload";
-    
+
     const seconds = Math.floor(diff / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
-    
+
     if (hours > 0) {
       return `${hours}h ${minutes % 60}m`;
     } else if (minutes > 0) {
@@ -349,6 +374,66 @@ const AdminProfileSettings = ({ onBack }) => {
       return `${seconds}s`;
     }
   }, []);
+
+  const getStatsDateKey = useCallback((date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  const formatDuration = useCallback((ms) => {
+    const totalMinutes = Math.round((ms || 0) / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  }, []);
+
+  const STATS_FILTER_OPTIONS = useMemo(
+    () => [
+      { key: "today", label: "Today", days: 1 },
+      { key: "week", label: "This Week", days: 7 },
+      { key: "month", label: "This Month", days: 30 },
+    ],
+    [],
+  );
+
+  const aggregatedStats = useMemo(() => {
+    const activeOption =
+      STATS_FILTER_OPTIONS.find((option) => option.key === statsFilter) ||
+      STATS_FILTER_OPTIONS[0];
+    const daysBack = activeOption.days;
+    const now = new Date();
+
+    let reloadCount = 0;
+    let reloadSuccessCount = 0;
+    let reloadFailedCount = 0;
+    let onlineMs = 0;
+    let offlineMs = 0;
+
+    for (let i = 0; i < daysBack; i++) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const entry = dailyStats[getStatsDateKey(d)];
+      if (!entry) continue;
+      reloadCount += entry.reloadCount || 0;
+      reloadSuccessCount += entry.reloadSuccessCount || 0;
+      reloadFailedCount += entry.reloadFailedCount || 0;
+      onlineMs += entry.onlineMs || 0;
+      offlineMs += entry.offlineMs || 0;
+    }
+
+    return {
+      reloadCount,
+      reloadSuccessCount,
+      reloadFailedCount,
+      onlineMs,
+      offlineMs,
+    };
+  }, [dailyStats, statsFilter, getStatsDateKey, STATS_FILTER_OPTIONS]);
 
 
 
@@ -544,6 +629,59 @@ const AdminProfileSettings = ({ onBack }) => {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Activity Stats</Text>
+          <Text style={styles.sectionHint}>
+            Reload counts and connection time reported by the browser
+            extension.
+          </Text>
+
+          <View style={styles.statsFilterRow}>
+            {STATS_FILTER_OPTIONS.map((option) => (
+              <TouchableOpacity
+                key={option.key}
+                style={[
+                  styles.statsFilterButton,
+                  statsFilter === option.key &&
+                    styles.statsFilterButtonActive,
+                ]}
+                onPress={() => setStatsFilter(option.key)}
+              >
+                <Text
+                  style={[
+                    styles.statsFilterButtonText,
+                    statsFilter === option.key &&
+                      styles.statsFilterButtonTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.statsCardsRow}>
+            <View style={styles.statsCard}>
+              <Text style={styles.statsCardValue}>
+                {aggregatedStats.reloadCount}
+              </Text>
+              <Text style={styles.statsCardLabel}>Total Reloads</Text>
+            </View>
+            <View style={styles.statsCard}>
+              <Text style={styles.statsCardValue}>
+                {formatDuration(aggregatedStats.onlineMs)}
+              </Text>
+              <Text style={styles.statsCardLabel}>Online Time</Text>
+            </View>
+            <View style={styles.statsCard}>
+              <Text style={styles.statsCardValue}>
+                {formatDuration(aggregatedStats.offlineMs)}
+              </Text>
+              <Text style={styles.statsCardLabel}>Offline Time</Text>
+            </View>
+          </View>
+        </View>
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Global defaults</Text>
           <Text style={styles.sectionHint}>
@@ -807,6 +945,55 @@ const styles = StyleSheet.create({
   },
   addInput: {
     flex: 1,
+  },
+  statsFilterRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  statsFilterButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background.secondary,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+  },
+  statsFilterButtonActive: {
+    backgroundColor: colors.accent.primary,
+    borderColor: colors.accent.primary,
+  },
+  statsFilterButtonText: {
+    fontSize: typography.sizes.sm,
+    fontWeight: "600",
+    color: colors.text.secondary,
+  },
+  statsFilterButtonTextActive: {
+    color: colors.text.white,
+  },
+  statsCardsRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  statsCard: {
+    flex: 1,
+    backgroundColor: colors.background.secondary,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    alignItems: "center",
+    gap: 4,
+  },
+  statsCardValue: {
+    fontSize: typography.sizes.lg,
+    fontWeight: "700",
+    color: colors.text.primary,
+  },
+  statsCardLabel: {
+    fontSize: typography.sizes.xs,
+    color: colors.text.secondary,
+    textAlign: "center",
   },
   addButton: {
     backgroundColor: colors.accent.primary,

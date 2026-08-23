@@ -2723,6 +2723,21 @@ export const WebSocketProvider = ({ children }) => {
           }
           break;
 
+        case "reload_daily_stats_update":
+          // Forward daily reload/online-time stats to AdminProfileSettings
+          // component for the day/week/month filtered dashboard view.
+          if (typeof window !== "undefined" && window.dispatchEvent) {
+            window.dispatchEvent(
+              new CustomEvent("fiverr-reload-daily-stats-update", {
+                detail: {
+                  type: "reload_daily_stats_update",
+                  dailyStats: data.dailyStats || {},
+                },
+              })
+            );
+          }
+          break;
+
         case "extension_status":
           // Server reports extension is connected
           lastExtensionStatusAtRef.current = Date.now();
