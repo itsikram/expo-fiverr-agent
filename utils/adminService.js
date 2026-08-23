@@ -110,8 +110,11 @@ export const listAdminUsers = async (token) => {
   return request("/admin/users", { token });
 };
 
-export const listAdminAssignments = async (token) => {
-  return request("/admin/assignments", { token });
+export const listAdminAssignments = async (token, userId) => {
+  if (!userId) {
+    return { clientIds: [] };
+  }
+  return request(`/admin/assignments?userId=${encodeURIComponent(userId)}`, { token });
 };
 
 export const getMyAssignments = async (token) => {

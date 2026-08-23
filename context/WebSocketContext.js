@@ -1558,7 +1558,9 @@ export const WebSocketProvider = ({ children }) => {
           break;
 
         case "client_list_data": {
+
           const incomingClientsRaw = data.data?.clients;
+          console.log('[WebSocketContext] incomingClientsRaw', incomingClientsRaw)
           const incomingClients = Array.isArray(incomingClientsRaw)
             ? incomingClientsRaw
             : null;
@@ -2682,7 +2684,7 @@ export const WebSocketProvider = ({ children }) => {
           break;
 
         case "updateActivatedTabUrl":
-          setCurrentActivatedFiverrUrl(data.url || null);
+          setCurrentActivatedFiverrUrl(data.data?.url || null);
           break;
 
         default:
@@ -2701,6 +2703,7 @@ export const WebSocketProvider = ({ children }) => {
       isAdminRole,
       isAssignmentsLoaded,
       shouldNotifyNewClient,
+      setCurrentActivatedFiverrUrl,
     ],
   );
 

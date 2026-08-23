@@ -103,3 +103,17 @@ export const authLogout = async (token) => {
     },
   });
 };
+
+export const requestPasswordReset = async ({ email }) => {
+  return request('/auth/request-password-reset', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+};
+
+export const resetPassword = async ({ email, token, newPassword }) => {
+  return request('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, token, newPassword }),
+  });
+};

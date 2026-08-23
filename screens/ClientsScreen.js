@@ -37,6 +37,7 @@ import BottomBar from "../components/BottomBar";
 import TranslationModal from "../components/TranslationModal";
 import Snackbar from "../components/Snackbar";
 import AdminDashboard from "../components/AdminDashboard";
+import AccessConflictModal from "../components/AccessConflictModal";
 import {
   colors,
   spacing,
@@ -78,6 +79,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   } = useWebSocket();
   const { username, email, token, role, logout } = useAuth();
 
+  console.log('<ClientsScreen> clients', clientData)
+
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Open sidebar by default
   const [isTranslationModalVisible, setIsTranslationModalVisible] =
@@ -96,6 +99,9 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   const [assignedClientIds, setAssignedClientIds] = useState([]);
   const [isAssignmentsLoaded, setIsAssignmentsLoaded] = useState(false);
   const [isMessageSending, setIsMessageSending] = useState(false); // Track if message is being sent
+  const [accessConflictModal, setAccessConflictModal] = useState(null); // { clientName, otherUserName } or null
+  const [isHandlingAccessConflict, setIsHandlingAccessConflict] =
+    useState(false);
   const prevClientsCountRef = React.useRef(0);
   const prevMessagesKeysRef = React.useRef(new Set());
   const clientsRef = React.useRef(clients);
@@ -303,6 +309,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
   const visibleClientsRef = React.useRef(visibleClients);
   const selectedClientRef = React.useRef(null);
+
 
   React.useEffect(() => {
     visibleClientsRef.current = visibleClients;
@@ -800,6 +807,54 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     [requestMessages, triggerMessageExtraction],
   );
 
+  // Track active users per client (for access control)
+  const activeUsersPerClient = React.useRef(new Map()); // clientId -> { userName, userName, userId, timestamp }
+
+  const registerClientAccess = React.useCallback(
+    (clientId, clientName) => {
+      // Check if another user is accessing this client
+      const normalized = String(clientId || "")
+        .trim()
+        .toLowerCase();
+      const currentAccess = activeUsersPerClient.current.get(normalized);
+
+      if (currentAccess && currentAccess.userId !== username) {
+        // Another user is accessing this client, show modal
+        setAccessConflictModal({
+          clientId,
+          clientName,
+          otherUserName: currentAccess.userName,
+        });
+        return false; // Don't proceed with access
+      }
+
+      // Register this user's access
+      activeUsersPerClient.current.set(normalized, {
+        userName: username,
+        userId: email,
+        timestamp: Date.now(),
+      });
+
+      // Clean up old entries after 30 minutes
+      const thirtyMinutesAgo = Date.now() - 30 * 60 * 1000;
+      for (const [key, access] of activeUsersPerClient.current.entries()) {
+        if (access.timestamp < thirtyMinutesAgo) {
+          activeUsersPerClient.current.delete(key);
+        }
+      }
+
+      return true; // Proceed with access
+    },
+    [username, email],
+  );
+
+  const releaseClientAccess = React.useCallback((clientId) => {
+    const normalized = String(clientId || "")
+      .trim()
+      .toLowerCase();
+    activeUsersPerClient.current.delete(normalized);
+  }, []);
+
   const activateClientAndLoadMessages = React.useCallback(
     (client) => {
       if (!client) {
@@ -807,11 +862,19 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       }
 
       const conversationId = getClientConversationId(client);
-      const username = client.username;
-      const targetIdentifier = conversationId || username;
+      const username_local = client.username;
+      const clientDisplayName =
+        client.name || client.username || "Unknown Client";
+      const clientKey = conversationId || username_local;
+      const targetIdentifier = clientKey;
 
       if (!targetIdentifier) {
         return false;
+      }
+
+      // Check for access conflicts
+      if (!registerClientAccess(targetIdentifier, clientDisplayName)) {
+        return false; // Access denied due to conflict
       }
 
       fetchSnackbarConversationRef.current = targetIdentifier;
@@ -836,7 +899,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       clickClientInFiverr({
         identifier: targetIdentifier,
         conversationId,
-        username,
+        username: username_local,
       });
 
       scheduleClientMessageSync(targetIdentifier);
@@ -851,8 +914,18 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
       requestMessages,
       triggerMessageExtraction,
       scheduleClientMessageSync,
+      registerClientAccess,
     ],
   );
+
+  // Clean up access when client is deselected
+  React.useEffect(() => {
+    return () => {
+      if (selectedConversationId) {
+        releaseClientAccess(selectedConversationId);
+      }
+    };
+  }, [selectedConversationId, releaseClientAccess]);
 
   const handleFetchMessages = () => {
     if (!selectedClient) {
@@ -1486,6 +1559,28 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
           </View>
         </View>
       </Modal>
+
+      <AccessConflictModal
+        visible={accessConflictModal !== null}
+        clientName={accessConflictModal?.clientName}
+        currentUserName={accessConflictModal?.otherUserName}
+        onTakeOver={async () => {
+          setIsHandlingAccessConflict(true);
+          try {
+            // Simulate takeover action
+            await new Promise((resolve) => setTimeout(resolve, 500));
+            setAccessConflictModal(null);
+            // Proceed with client selection
+            if (accessConflictModal?.clientId) {
+              setSelectedClientId(accessConflictModal.clientId);
+            }
+          } finally {
+            setIsHandlingAccessConflict(false);
+          }
+        }}
+        onCancel={() => setAccessConflictModal(null)}
+        loading={isHandlingAccessConflict}
+      />
     </View>
   );
 };

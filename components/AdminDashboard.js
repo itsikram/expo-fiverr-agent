@@ -76,6 +76,11 @@ const normalizeAdminClientRecord = (client) => {
     id: client?.id ? String(client.id) : fallbackId,
     name: client?.name || client?.username || "Client",
     username: client?.username || client?.clientUsername || null,
+    // Preserve timestamp fields
+    updated_at: client?.updated_at || client?.lastMessageTime || null,
+    created_at: client?.created_at || null,
+    company: client?.company || null,
+    country: client?.country || null,
   };
 };
 
@@ -116,15 +121,62 @@ const mergeAdminClientSources = (
   }
 
   return Array.from(byKey.values()).sort((left, right) => {
-    const leftTime =
-      Date.parse(left?.updated_at || left?.created_at || "") || 0;
-    const rightTime =
-      Date.parse(right?.updated_at || right?.created_at || "") || 0;
+    // Sort by created_at in descending order (most recently created first)
+    const leftTime = Date.parse(left?.created_at || "") || 0;
+    const rightTime = Date.parse(right?.created_at || "") || 0;
     if (leftTime !== rightTime) {
       return rightTime - leftTime;
     }
     return String(left?.name || "").localeCompare(String(right?.name || ""));
   });
+};
+
+const normalizeAdminUserRecord = (user) => {
+  const fallbackId = String(
+    user?._id || user?.id || user?.email || user?.username || "",
+  ).trim();
+  const normalizedRole = (user?.role || "user")
+    .toString()
+    .trim()
+    .toLowerCase();
+
+  return {
+    ...user,
+    _id: user?._id ? String(user._id) : fallbackId,
+    id: user?.id ? String(user.id) : fallbackId,
+    role: normalizedRole,
+    name: user?.name || user?.username || user?.email || "User",
+    username: user?.username || null,
+    email: user?.email || null,
+  };
+};
+
+const formatLastMessageTime = (timestamp) => {
+  try {
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) {
+      return "No activity";
+    }
+
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return "Just now";
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+
+    return date.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+    });
+  } catch (error) {
+    return "No activity";
+  }
 };
 
 const AdminDashboard = ({ onClose }) => {
@@ -194,46 +246,51 @@ const AdminDashboard = ({ onClose }) => {
       } else {
         setLoading(true);
       }
-      const [clientsRes, usersRes, assignmentsRes, activitiesRes] =
-        await Promise.all([
-          listAdminClients(token),
-          listAdminUsers(token),
-          listAdminAssignments(token),
-          listAdminActivities(token),
-        ]);
+      const [clientsRes, usersRes, activitiesRes] = await Promise.all([
+        listAdminClients(token),
+        listAdminUsers(token),
+        listAdminActivities(token),
+      ]);
+
+      // Debug: Log raw client data
+      if (clientsRes.clients && clientsRes.clients.length > 0) {
+        console.log('[Admin] All clients data:');
+        clientsRes.clients.slice(0, 5).forEach((c, i) => {
+          console.log(`  [${i}] ${c.name} created: ${c.created_at}`);
+        });
+      }
+
       setClients(
-        (clientsRes.clients || []).map((client) => ({
-          ...client,
-          _id: client._id
-            ? String(client._id)
-            : client.id
-              ? String(client.id)
-              : client._id,
-          id: client.id
-            ? String(client.id)
-            : client._id
-              ? String(client._id)
-              : client.id,
-        })),
+        (clientsRes.clients || []).map((client) => 
+          normalizeAdminClientRecord(client)
+        )
       );
-      setUsers(
-        (usersRes.users || []).map((user) => ({
-          ...user,
-          _id: user._id
-            ? String(user._id)
-            : user.id
-              ? String(user.id)
-              : user._id,
-          id: user.id ? String(user.id) : user._id ? String(user._id) : user.id,
-        })),
-      );
-      setAssignments(assignmentsRes.assignments || []);
+
+      const usersPayload = Array.isArray(usersRes)
+        ? usersRes
+        : Array.isArray(usersRes?.users)
+          ? usersRes.users
+          : Array.isArray(usersRes?.data?.users)
+            ? usersRes.data.users
+            : Array.isArray(usersRes?.data)
+              ? usersRes.data
+              : Array.isArray(usersRes?.result?.users)
+                ? usersRes.result.users
+                : [];
+
+      setUsers(usersPayload.map((user) => normalizeAdminUserRecord(user)));
       setActivities(activitiesRes.activities || []);
-      if (!selectedUserId && usersRes.users?.length) {
-        const firstUser = usersRes.users[0];
+
+      const assignableUsers = usersPayload
+        .map((user) => normalizeAdminUserRecord(user))
+        .filter((user) => user.role !== "admin");
+
+      if (!selectedUserId && assignableUsers.length) {
+        const firstUser = assignableUsers[0];
         setSelectedUserId(String(firstUser._id || firstUser.id || ""));
       }
     } catch (error) {
+      console.error('[AdminDashboard] Error loading data:', error);
       Alert.alert("Error", error.message || "Unable to load dashboard");
     } finally {
       setLoading(false);
@@ -246,19 +303,9 @@ const AdminDashboard = ({ onClose }) => {
     try {
       const clientsRes = await listAdminClients(token);
       setClients(
-        (clientsRes.clients || []).map((client) => ({
-          ...client,
-          _id: client._id
-            ? String(client._id)
-            : client.id
-              ? String(client.id)
-              : client._id,
-          id: client.id
-            ? String(client.id)
-            : client._id
-              ? String(client._id)
-              : client.id,
-        })),
+        (clientsRes.clients || []).map((client) => 
+          normalizeAdminClientRecord(client)
+        )
       );
     } catch (error) {}
   };
@@ -294,28 +341,50 @@ const AdminDashboard = ({ onClose }) => {
 
   const roleLabel = role === "admin" ? "Administrator" : "User";
 
-  const assignmentsByUser = useMemo(() => {
-    return assignments.reduce((acc, item) => {
-      if (!item.userId) return acc;
-      acc[item.userId] = acc[item.userId] || [];
-      acc[item.userId].push(item.clientId);
-      return acc;
-    }, {});
-  }, [assignments]);
+  const assignableUsers = useMemo(
+    () => users.filter((user) => user?.role !== "admin"),
+    [users],
+  );
 
   const filteredUsers = useMemo(() => {
     const query = userSearchQuery.trim().toLowerCase();
-    if (!query) return users;
-    return users.filter((user) => matchesNameUsernameEmail(user, query));
-  }, [users, userSearchQuery]);
+    if (!query) return assignableUsers;
+    return assignableUsers.filter((user) =>
+      matchesNameUsernameEmail(user, query),
+    );
+  }, [assignableUsers, userSearchQuery]);
+
+  const sortClientsByCreatedAt = (clientsToSort) => {
+    return [...clientsToSort].sort((a, b) => {
+      // Sort by created_at in descending order (most recently created first)
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      if (timeA !== timeB) return timeB - timeA;
+      // Fallback to name if timestamps are the same
+      return String(a.name || "").localeCompare(String(b.name || ""));
+    });
+  };
 
   const filteredClients = useMemo(() => {
     const query = clientSearchQuery.trim().toLowerCase();
-    if (!query) return displayClients;
-    return displayClients.filter((client) =>
+    const filtered = !query ? displayClients : displayClients.filter((client) =>
       matchesNameUsernameEmail(client, query),
     );
+    // Sort by created_at in descending order (most recently created first)
+    const sorted = sortClientsByCreatedAt(filtered);
+    
+    // Debug: Log sorted client data
+    if (sorted.length > 0) {
+      console.log('[Admin] Sorted clients (first 5):');
+      sorted.slice(0, 5).forEach((c, i) => {
+        console.log(`  [${i}] ${c.name} created: ${c.created_at}`);
+      });
+    }
+    
+    return sorted;
   }, [displayClients, clientSearchQuery]);
+
+
 
   const activityTypes = useMemo(() => {
     const values = new Set();
@@ -407,20 +476,30 @@ const AdminDashboard = ({ onClose }) => {
 
   useEffect(() => {
     if (!selectedUserId) {
+      setSelectedClientIds([]);
       return;
     }
 
-    const currentAssignments = assignmentsByUser[selectedUserId] || [];
-    const normalizedAssignments = currentAssignments
-      .map((clientId) => String(clientId))
-      .filter((clientId) =>
-        displayClients.some(
-          (client) => String(client._id || client.id) === clientId,
-        ),
-      );
+    const loadUserAssignments = async () => {
+      try {
+        const assignmentRes = await listAdminAssignments(token, selectedUserId);
+        const clientIds = assignmentRes.clientIds || [];
+        const normalizedClientIds = clientIds
+          .map((clientId) => String(clientId))
+          .filter((clientId) =>
+            displayClients.some(
+              (client) => String(client._id || client.id) === clientId,
+            ),
+          );
+        setSelectedClientIds(normalizedClientIds);
+      } catch (error) {
+        console.error('Error loading assignments:', error);
+        setSelectedClientIds([]);
+      }
+    };
 
-    setSelectedClientIds(normalizedAssignments);
-  }, [selectedUserId, assignmentsByUser, displayClients]);
+    loadUserAssignments();
+  }, [selectedUserId, displayClients, token]);
 
   if (loading) {
     return (
@@ -435,7 +514,7 @@ const AdminDashboard = ({ onClose }) => {
     return (
       <View style={styles.container}>
         <LinearGradient
-          colors={[colors.background.primary, colors.background.secondary]}
+          colors={["#1e3a8a", "#1e40af"]}
           style={styles.gradient}
         >
           <AdminProfileSettings onBack={() => setActiveView("main")} />
@@ -447,7 +526,7 @@ const AdminDashboard = ({ onClose }) => {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={[colors.background.primary, colors.background.secondary]}
+        colors={["#1e3a8a", "#1e40af"]}
         style={styles.gradient}
       >
         <View style={styles.header}>
@@ -802,7 +881,7 @@ const AdminDashboard = ({ onClose }) => {
                 </View>
                 <View style={styles.chipGroup}>
                   {filteredUsers.length === 0 ? (
-                    <Text style={styles.emptyState}>No users found.</Text>
+                    <Text style={styles.emptyState}>No developers available.</Text>
                   ) : (
                     filteredUsers.map((user) => (
                       <TouchableOpacity
@@ -922,9 +1001,13 @@ const AdminDashboard = ({ onClose }) => {
                                 style={styles.clientCardMeta}
                                 numberOfLines={1}
                               >
-                                {client.company ||
-                                  client.country ||
-                                  "No details"}
+                                {client.company || client.country || "No details"}
+                              </Text>
+                              <Text
+                                style={[styles.clientCardMeta, { fontSize: 11, marginTop: 4 }]}
+                                numberOfLines={1}
+                              >
+                                Created: {formatLastMessageTime(client.created_at)}
                               </Text>
                             </View>
                             <Ionicons
@@ -963,7 +1046,12 @@ const AdminDashboard = ({ onClose }) => {
 };
 
 const styles = StyleSheet.create({
-  chipGroup: { overflowY: scroll },
+  chipGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    paddingBottom: spacing.xs,
+  },
   container: { flex: 1 },
   gradient: { flex: 1 },
   loadingContainer: {

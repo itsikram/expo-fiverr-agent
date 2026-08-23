@@ -381,23 +381,39 @@ const ClientDetailsScreen = ({
           if (onSendingStateChange) {
             onSendingStateChange(false);
           }
-          return true;
+          return {
+            success: true,
+            message: "Message sent successfully to Fiverr",
+          };
         }
-        // Notify parent that send failed
+        // Notify parent that send failed with detailed error
         if (onSendingStateChange) {
           onSendingStateChange(false);
         }
-        return false;
+        const errorMessage =
+          result?.error || "Failed to send message to Fiverr";
+        return {
+          success: false,
+          message: errorMessage,
+          details: result,
+        };
       } catch (error) {
         console.error("[ERROR] Failed to send message:", error);
         // Notify parent that send failed
         if (onSendingStateChange) {
           onSendingStateChange(false);
         }
-        return false;
+        return {
+          success: false,
+          message: error?.message || "Failed to send message",
+          details: error,
+        };
       }
     }
-    return false;
+    return {
+      success: false,
+      message: "Send handler not available",
+    };
   };
 
   const handleFetchMessages = () => {

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ResetPasswordScreen from './ResetPasswordScreen';
 import {
   View,
   Text,
@@ -18,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 const AuthScreen = ({ onAuthenticated }) => {
   const { login, register, authError } = useAuth();
   const [isLoginMode, setIsLoginMode] = useState(true);
+  const [showResetPassword, setShowResetPassword] = useState(false);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -31,6 +33,10 @@ const AuthScreen = ({ onAuthenticated }) => {
 
     if (!normalizedEmail || !normalizedPassword || (!isLoginMode && !normalizedUsername)) {
       Alert.alert('Validation error', 'Please fill in all required fields.');
+      return;
+    }
+
+    if (showResetPassword) {
       return;
     }
 
@@ -48,6 +54,14 @@ const AuthScreen = ({ onAuthenticated }) => {
       setIsSubmitting(false);
     }
   };
+
+  if (showResetPassword) {
+    return (
+      <ResetPasswordScreen
+        onBack={() => setShowResetPassword(false)}
+      />
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -142,6 +156,15 @@ const AuthScreen = ({ onAuthenticated }) => {
                 </Text>
               </LinearGradient>
             </TouchableOpacity>
+
+            {isLoginMode && (
+              <TouchableOpacity
+                style={styles.forgotPasswordButton}
+                onPress={() => setShowResetPassword(true)}
+              >
+                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+              </TouchableOpacity>
+            )}
 
             <View style={styles.switchRow}>
               <Text style={styles.switchText}>
@@ -261,6 +284,16 @@ const styles = StyleSheet.create({
     color: colors.accent.error,
     fontSize: typography.sizes.sm,
     marginTop: spacing.sm,
+  },
+  forgotPasswordButton: {
+    alignSelf: 'center',
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  forgotPasswordText: {
+    fontSize: typography.sizes.sm,
+    color: colors.accent.primary,
+    fontWeight: typography.weights.semibold,
   },
 });
 

@@ -17,12 +17,21 @@ export const trackUserActivity = async (token, role, activity = {}) => {
   }
 
   try {
-    await logUserActivity(token, {
+    const payload = {
       ...activity,
-      activityType: normalizeActivityType(activity.activityType || activity.type),
-    });
+      activityType: normalizeActivityType(
+        activity.activityType || activity.type,
+      ),
+    };
+    await logUserActivity(token, payload);
     return true;
   } catch (error) {
+    try {
+      console.warn(
+        "[ActivityLogger] Failed to track activity:",
+        error?.message || String(error),
+      );
+    } catch (_) {}
     return false;
   }
 };
