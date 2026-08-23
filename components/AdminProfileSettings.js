@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -22,6 +22,7 @@ import {
   TAB_RELOAD_DEFAULT_MAX_SECONDS,
   TAB_RELOAD_DEFAULT_MIN_SECONDS,
   TAB_RELOAD_MIN_FLOOR_SECONDS,
+  TAB_RELOAD_DEFAULT_PAGE_SLUGS,
   mergeProfileKeys,
   normalizeProfileReloadEntry,
   normalizeProfileReloadSettings,
@@ -39,11 +40,18 @@ const ProfileReloadCard = ({
 }) => {
   const [minText, setMinText] = useState(String(entry.minSeconds));
   const [maxText, setMaxText] = useState(String(entry.maxSeconds));
+  const [slugsText, setSlugsText] = useState(
+    Array.isArray(entry.pageSlugs) ? entry.pageSlugs.join("\n") : TAB_RELOAD_DEFAULT_PAGE_SLUGS.join("\n")
+  );
+  const [showSlugsEditor, setShowSlugsEditor] = useState(false);
 
   useEffect(() => {
     setMinText(String(entry.minSeconds));
     setMaxText(String(entry.maxSeconds));
-  }, [entry.minSeconds, entry.maxSeconds, entry.enabled]);
+    setSlugsText(
+      Array.isArray(entry.pageSlugs) ? entry.pageSlugs.join("\n") : TAB_RELOAD_DEFAULT_PAGE_SLUGS.join("\n")
+    );
+  }, [entry.minSeconds, entry.maxSeconds, entry.enabled, entry.pageSlugs]);
 
   const commitRange = () => {
     onChange(
@@ -53,6 +61,20 @@ const ProfileReloadCard = ({
         maxSeconds: maxText,
       }),
     );
+  };
+
+  const commitSlugs = () => {
+    const newSlugs = slugsText
+      .split("\n")
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+    onChange(
+      normalizeProfileReloadEntry({
+        ...entry,
+        pageSlugs: newSlugs,
+      }),
+    );
+    setShowSlugsEditor(false);
   };
 
   return (
@@ -108,6 +130,36 @@ const ProfileReloadCard = ({
         with this profile selected.
       </Text>
 
+      <View>
+        <TouchableOpacity
+          style={styles.linkButton}
+          onPress={() => setShowSlugsEditor(!showSlugsEditor)}
+        >
+          <Text style={styles.linkButtonText}>
+            {showSlugsEditor ? "Hide" : "Edit"} page rotation slugs
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {showSlugsEditor ? (
+        <View>
+          <Text style={styles.fieldLabel}>Page Rotation Slugs (one per line)</Text>
+          <TextInput
+            style={[styles.input, styles.slugsInput]}
+            value={slugsText}
+            onChangeText={setSlugsText}
+            multiline
+            numberOfLines={6}
+            textAlignVertical="top"
+            placeholder={TAB_RELOAD_DEFAULT_PAGE_SLUGS.join("\n")}
+            placeholderTextColor={colors.text.secondary}
+          />
+          <TouchableOpacity style={styles.saveButton} onPress={commitSlugs}>
+            <Text style={styles.saveButtonText}>Save Slugs</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
       {showUseGlobal ? (
         <TouchableOpacity style={styles.linkButton} onPress={onUseGlobal}>
           <Text style={styles.linkButtonText}>Use global defaults</Text>
@@ -118,7 +170,7 @@ const ProfileReloadCard = ({
 };
 
 const AdminProfileSettings = ({ onBack }) => {
-  const { sellerProfiles, isConnected, sendMessage } = useWebSocket();
+  const { sellerProfiles, isConnected, sendMessage, selectedSellerProfile } = useWebSocket();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedSettings, setSavedSettings] = useState(null);
@@ -126,14 +178,20 @@ const AdminProfileSettings = ({ onBack }) => {
   const [newProfileUsername, setNewProfileUsername] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [statusKind, setStatusKind] = useState("");
+  const [nextReloadTime, setNextReloadTime] = useState(null);
+  const [reloadStatus, setReloadStatus] = useState("idle");
+  const [extensionStatus, setExtensionStatus] = useState("checking");
+  const [lastReloadStatusAt, setLastReloadStatusAt] = useState(null);
+  const extensionStatusTimeoutRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setStatusMessage("");
     try {
       const loaded = await loadProfileReloadSettings();
-      setSavedSettings(loaded);
-      setDraftSettings(loaded);
+      const copy = JSON.parse(JSON.stringify(loaded));
+      setSavedSettings(copy);
+      setDraftSettings(copy);
     } catch (error) {
       setStatusKind("error");
       setStatusMessage(error.message || "Could not load profile settings");
@@ -145,6 +203,91 @@ const AdminProfileSettings = ({ onBack }) => {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Request reload status on mount and when profile changes
+  useEffect(() => {
+    if (!isConnected) {
+      setExtensionStatus("disconnected");
+      return;
+    }
+
+    // Debounce requests to avoid rapid successive calls
+    if (extensionStatusTimeoutRef.current) {
+      clearTimeout(extensionStatusTimeoutRef.current);
+    }
+
+    extensionStatusTimeoutRef.current = setTimeout(() => {
+      sendMessage({
+        type: "request_reload_status",
+      });
+    }, 300);
+
+    return () => {
+      if (extensionStatusTimeoutRef.current) {
+        clearTimeout(extensionStatusTimeoutRef.current);
+      }
+    };
+  }, [isConnected, sendMessage, selectedSellerProfile]);
+
+  // Handle incoming reload status from WebSocket
+  useEffect(() => {
+    const handleReloadStatusUpdate = (event) => {
+      const data = event.detail;
+      if (data?.type === "reload_status_update") {
+        // Mark that we received an update from the extension
+        setLastReloadStatusAt(Date.now());
+        setExtensionStatus("connected");
+        setReloadStatus(data.status || "idle");
+        if (data.nextReloadAt) {
+          setNextReloadTime(new Date(data.nextReloadAt));
+        }
+      }
+    };
+
+    window.addEventListener("fiverr-reload-status-update", handleReloadStatusUpdate);
+    return () => window.removeEventListener("fiverr-reload-status-update", handleReloadStatusUpdate);
+  }, []);
+
+  // Monitor extension connection health
+  useEffect(() => {
+    if (!isConnected) {
+      setExtensionStatus("disconnected");
+      return;
+    }
+
+    const healthCheckInterval = setInterval(() => {
+      if (lastReloadStatusAt === null) {
+        // No status received yet, still checking
+        setExtensionStatus("checking");
+      } else {
+        const timeSinceLastUpdate = Date.now() - lastReloadStatusAt;
+        // Consider disconnected if no update in 15 seconds
+        if (timeSinceLastUpdate > 15000) {
+          setExtensionStatus("disconnected");
+        } else {
+          setExtensionStatus("connected");
+        }
+      }
+    }, 2000);
+
+    return () => clearInterval(healthCheckInterval);
+  }, [isConnected, lastReloadStatusAt]);
+
+  // Update countdown timer every second (force re-render for time display)
+  useEffect(() => {
+    if (!nextReloadTime) return;
+    
+    const interval = setInterval(() => {
+      // Force a re-render to update the countdown display
+      setNextReloadTime((prev) => {
+        if (!prev) return prev;
+        // Return a fresh Date object to trigger re-render
+        return new Date(prev.getTime());
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [nextReloadTime]);
 
   const profileKeys = useMemo(
     () => mergeProfileKeys(sellerProfiles, draftSettings?.profiles),
@@ -175,13 +318,39 @@ const AdminProfileSettings = ({ onBack }) => {
       if (!isConnected) {
         return false;
       }
-      return sendMessage({
+      const result = sendMessage({
         type: "tab_reload_settings",
         data: settings,
       });
+      // Request status update after syncing settings
+      sendMessage({
+        type: "request_reload_status",
+      });
+      return result;
     },
     [isConnected, sendMessage],
   );
+
+  const formatTimeRemaining = useCallback((date) => {
+    if (!date) return null;
+    const now = new Date();
+    const diff = date - now;
+    if (diff < 0) return "Ready to reload";
+    
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes % 60}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  }, []);
+
+
 
   const handleSave = async () => {
     if (!draftSettings) return;
@@ -197,8 +366,9 @@ const AdminProfileSettings = ({ onBack }) => {
         throw new Error("Could not save profile settings to storage");
       }
 
-      setSavedSettings(saved);
-      setDraftSettings(saved);
+      const saveCopy = JSON.parse(JSON.stringify(saved));
+      setSavedSettings(saveCopy);
+      setDraftSettings(saveCopy);
 
       const synced = syncToExtension(saved);
       setStatusKind("success");
@@ -217,23 +387,25 @@ const AdminProfileSettings = ({ onBack }) => {
 
   const updateGlobal = (entry) => {
     if (!draftSettings) return;
-    setDraftSettings({
+    const updated = {
       ...draftSettings,
       global: entry,
-    });
+    };
+    setDraftSettings(updated);
   };
 
   const updateProfile = (username, entry) => {
     if (!draftSettings) return;
     const key = String(username || "").trim().toLowerCase();
     if (!key) return;
-    setDraftSettings({
+    const updated = {
       ...draftSettings,
       profiles: {
         ...draftSettings.profiles,
         [key]: entry,
       },
-    });
+    };
+    setDraftSettings(updated);
   };
 
   const removeProfileOverride = (username) => {
@@ -242,10 +414,11 @@ const AdminProfileSettings = ({ onBack }) => {
     if (!key || !draftSettings.profiles[key]) return;
     const nextProfiles = { ...draftSettings.profiles };
     delete nextProfiles[key];
-    setDraftSettings({
+    const updated = {
       ...draftSettings,
       profiles: nextProfiles,
-    });
+    };
+    setDraftSettings(updated);
   };
 
   const addProfile = () => {
@@ -303,6 +476,46 @@ const AdminProfileSettings = ({ onBack }) => {
         </TouchableOpacity>
       </View>
 
+      {/* Server Sync Container */}
+      <View
+        style={[
+          styles.serverSyncContainer,
+          extensionStatus === "connected"
+            ? styles.serverSyncConnected
+            : styles.serverSyncDisconnected,
+        ]}
+      >
+        <View style={styles.serverSyncContent}>
+          <View style={styles.serverSyncLeft}>
+            <View
+              style={[
+                styles.statusDot,
+                extensionStatus === "connected"
+                  ? styles.statusDotConnected
+                  : styles.statusDotDisconnected,
+              ]}
+            />
+            <Text style={styles.serverSyncLabel}>
+              {extensionStatus === "connected" ? "Extension Connected" : "Extension Disconnected"}
+            </Text>
+          </View>
+          {extensionStatus === "connected" && nextReloadTime && (
+            <View style={styles.serverSyncRight}>
+              <Text style={styles.nextReloadLabel}>Next reload:</Text>
+              <Text style={styles.nextReloadTime}>
+                {formatTimeRemaining(nextReloadTime)}
+              </Text>
+            </View>
+          )}
+        </View>
+        {extensionStatus === "connected" && reloadStatus && reloadStatus !== "idle" && (
+          <Text style={[styles.reloadStatusText, styles.reloadStatusActive]}>
+            Status: {reloadStatus}
+          </Text>
+        )}
+      </View>
+
+      {/* Status messages */}
       {statusMessage ? (
         <View
           style={[
@@ -619,6 +832,76 @@ const styles = StyleSheet.create({
     color: colors.text.white,
     fontWeight: "700",
     fontSize: typography.sizes.md,
+  },
+  slugsInput: {
+    minHeight: 120,
+    paddingTop: spacing.md,
+  },
+  serverSyncContainer: {
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.md,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  serverSyncConnected: {
+    backgroundColor: colors.background.secondary,
+    borderWidth: 1,
+    borderColor: "rgba(76, 175, 80, 0.3)",
+  },
+  serverSyncDisconnected: {
+    backgroundColor: colors.background.secondary,
+    borderWidth: 1,
+    borderColor: "rgba(244, 67, 54, 0.3)",
+  },
+  serverSyncContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  serverSyncLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  statusDotConnected: {
+    backgroundColor: "#4CAF50",
+  },
+  statusDotDisconnected: {
+    backgroundColor: "#F44336",
+  },
+  serverSyncLabel: {
+    fontSize: typography.sizes.sm,
+    fontWeight: "600",
+    color: colors.text.primary,
+  },
+  serverSyncRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  nextReloadLabel: {
+    fontSize: typography.sizes.xs,
+    color: colors.text.secondary,
+  },
+  nextReloadTime: {
+    fontSize: typography.sizes.sm,
+    fontWeight: "700",
+    color: colors.accent.primary,
+  },
+  reloadStatusText: {
+    fontSize: typography.sizes.xs,
+    color: colors.text.secondary,
+  },
+  reloadStatusActive: {
+    color: colors.accent.primary,
+    fontWeight: "600",
   },
 });
 

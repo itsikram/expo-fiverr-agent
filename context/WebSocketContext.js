@@ -507,6 +507,7 @@ const mergeConversationMessages = (
 export const WebSocketProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState("disconnected"); // 'connecting', 'connected', 'disconnected', 'error'
+  const [extensionConnectionStatus, setExtensionConnectionStatus] = useState("unknown"); // 'checking', 'connected', 'disconnected'
   const [clients, setClients] = useState([]);
   const [messages, setMessages] = useState({}); // Keyed by conversationId or username
   const [clientData, setClientData] = useState({}); // Keyed by username/conversationId
@@ -519,6 +520,8 @@ export const WebSocketProvider = ({ children }) => {
   const selectedSellerProfileRef = useRef(null);
   const handleMessageRef = useRef(null);
   const clientListLoadTimeoutRef = useRef(null);
+  const lastExtensionStatusAtRef = useRef(null);
+  const extensionStatusTimeoutRef = useRef(null);
   const [newClientData, setNewClientData] = useState(null); // New client data that doesn't exist in clients list
   const [sellerProfile, setSellerProfile] = useState(null); // { profileName, username, updated_at, online } - current from extension
   const [sellerProfiles, setSellerProfiles] = useState([]); // all unique profiles by username
@@ -900,6 +903,21 @@ export const WebSocketProvider = ({ children }) => {
               );
             }
           } catch (webPushError) {}
+        }
+
+        // Request extension status from server
+        if (
+          ws.readyState === WebSocket.OPEN &&
+          connectGenerationRef.current === thisGeneration &&
+          wsRef.current === ws
+        ) {
+          try {
+            ws.send(
+              JSON.stringify({
+                type: "request_extension_status",
+              }),
+            );
+          } catch (_) {}
         }
 
         // Start ping interval
@@ -2687,6 +2705,30 @@ export const WebSocketProvider = ({ children }) => {
           setCurrentActivatedFiverrUrl(data.data?.url || null);
           break;
 
+        case "reload_status_update":
+          // Mark that extension sent us an update
+          lastExtensionStatusAtRef.current = Date.now();
+          setExtensionConnectionStatus("connected");
+          // Forward reload status from extension to AdminProfileSettings component
+          if (typeof window !== "undefined" && window.dispatchEvent) {
+            window.dispatchEvent(
+              new CustomEvent("fiverr-reload-status-update", {
+                detail: {
+                  type: "reload_status_update",
+                  status: data.status || "idle",
+                  nextReloadAt: data.nextReloadAt || null,
+                },
+              })
+            );
+          }
+          break;
+
+        case "extension_status":
+          // Server reports extension is connected
+          lastExtensionStatusAtRef.current = Date.now();
+          setExtensionConnectionStatus("connected");
+          break;
+
         default:
       }
     },
@@ -2745,6 +2787,56 @@ export const WebSocketProvider = ({ children }) => {
       }
     };
   }, [clientData]);
+
+  // Request extension status periodically when connected
+  useEffect(() => {
+    if (!isConnected) {
+      setExtensionConnectionStatus("unknown");
+      return;
+    }
+
+    // Request initial status
+    setExtensionConnectionStatus("checking");
+    if (extensionStatusTimeoutRef.current) {
+      clearTimeout(extensionStatusTimeoutRef.current);
+    }
+    extensionStatusTimeoutRef.current = setTimeout(() => {
+      sendMessage({
+        type: "request_extension_status",
+      });
+    }, 500);
+
+    return () => {
+      if (extensionStatusTimeoutRef.current) {
+        clearTimeout(extensionStatusTimeoutRef.current);
+      }
+    };
+  }, [isConnected, sendMessage]);
+
+  // Monitor extension connection health (check if status is stale)
+  useEffect(() => {
+    const healthCheckInterval = setInterval(() => {
+      if (!isConnected) {
+        setExtensionConnectionStatus("unknown");
+        return;
+      }
+
+      if (lastExtensionStatusAtRef.current === null) {
+        // No status received yet, still checking
+        setExtensionConnectionStatus("checking");
+      } else {
+        const timeSinceLastUpdate = Date.now() - lastExtensionStatusAtRef.current;
+        // Consider disconnected if no update in 15 seconds
+        if (timeSinceLastUpdate > 15000) {
+          setExtensionConnectionStatus("disconnected");
+        } else {
+          setExtensionConnectionStatus("connected");
+        }
+      }
+    }, 2000);
+
+    return () => clearInterval(healthCheckInterval);
+  }, [isConnected]);
 
   // Connect only after auth has a token — avoids an empty unauthenticated sync
   // and a second full reconnect when authMe finishes.
@@ -3036,6 +3128,7 @@ export const WebSocketProvider = ({ children }) => {
   const value = {
     isConnected,
     connectionStatus,
+    extensionConnectionStatus,
     clients,
     messages,
     clientData,

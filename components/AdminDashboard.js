@@ -151,6 +151,141 @@ const normalizeAdminUserRecord = (user) => {
   };
 };
 
+const getTimeUnitPriority = (timeString) => {
+  if (!timeString) return { priority: 8, timestamp: 0 };
+
+  const now = Date.now();
+
+  // If it's already an ISO date string, parse it directly
+  if (
+    timeString.includes("T") ||
+    (timeString.includes("-") && timeString.length > 10)
+  ) {
+    const date = new Date(timeString);
+    if (!isNaN(date.getTime())) {
+      return { priority: 7, timestamp: date.getTime() };
+    }
+  }
+
+  // Try parsing as a standard date string (handles most date formats)
+  const dateAttempt = new Date(timeString);
+  if (!isNaN(dateAttempt.getTime())) {
+    return { priority: 7, timestamp: dateAttempt.getTime() };
+  }
+
+  // Parse relative time strings like "26 minutes", "2 hours", "2 months ago", etc.
+  const lowerTime = timeString.toLowerCase().trim();
+
+  // Handle "just now" or "now" - treat as minutes (most recent)
+  if (
+    lowerTime.includes("just now") ||
+    (lowerTime.includes("now") && !lowerTime.includes("ago"))
+  ) {
+    return { priority: 1, timestamp: now };
+  }
+
+  // Handle minutes (e.g., "46 minutes ago", "46m ago", "46 min ago")
+  const minutesMatch = lowerTime.match(/(\d+)\s*(?:minute|min|m)(?:\s+ago)?/);
+  if (minutesMatch) {
+    return {
+      priority: 1,
+      timestamp: now - parseInt(minutesMatch[1]) * 60 * 1000,
+    };
+  }
+
+  // Handle hours (e.g., "2 hours ago", "2h ago", "2 hr ago")
+  const hoursMatch = lowerTime.match(/(\d+)\s*(?:hour|hr|h)(?:\s+ago)?/);
+  if (hoursMatch) {
+    return {
+      priority: 2,
+      timestamp: now - parseInt(hoursMatch[1]) * 60 * 60 * 1000,
+    };
+  }
+
+  // Handle days (e.g., "3 days ago", "3d ago")
+  const daysMatch = lowerTime.match(/(\d+)\s*(?:day|d)(?:\s+ago)?/);
+  if (daysMatch) {
+    return {
+      priority: 3,
+      timestamp: now - parseInt(daysMatch[1]) * 24 * 60 * 60 * 1000,
+    };
+  }
+
+  // Handle weeks (e.g., "2 weeks ago", "2w ago")
+  const weeksMatch = lowerTime.match(/(\d+)\s*(?:week|wk|w)(?:\s+ago)?/);
+  if (weeksMatch) {
+    return {
+      priority: 4,
+      timestamp: now - parseInt(weeksMatch[1]) * 7 * 24 * 60 * 60 * 1000,
+    };
+  }
+
+  // Handle months (e.g., "2 months ago", "2mo ago", "2 month ago")
+  const monthsMatch = lowerTime.match(/(\d+)\s*(?:month|mo|mon)(?:\s+ago)?/);
+  if (monthsMatch) {
+    return {
+      priority: 5,
+      timestamp: now - parseInt(monthsMatch[1]) * 30 * 24 * 60 * 60 * 1000,
+    };
+  }
+
+  // Handle years (e.g., "1 year ago", "1y ago")
+  const yearsMatch = lowerTime.match(/(\d+)\s*(?:year|yr|y)(?:\s+ago)?/);
+  if (yearsMatch) {
+    return {
+      priority: 6,
+      timestamp: now - parseInt(yearsMatch[1]) * 365 * 24 * 60 * 60 * 1000,
+    };
+  }
+
+  // Handle "yesterday" - treat as days
+  if (lowerTime.includes("yesterday")) {
+    return { priority: 3, timestamp: now - 24 * 60 * 60 * 1000 };
+  }
+
+  // Handle "today" - treat as minutes (most recent)
+  if (lowerTime.includes("today")) {
+    return { priority: 1, timestamp: now };
+  }
+
+  // Try to parse date strings like "Mar 08" or "Mar 08, 2024"
+  const dateStringMatch = timeString.match(
+    /([A-Za-z]{3})\s+(\d{1,2})(?:,\s+(\d{4}))?/,
+  );
+  if (dateStringMatch) {
+    const monthNames = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+    const monthIndex = monthNames.findIndex(
+      (m) => m.toLowerCase() === dateStringMatch[1].toLowerCase(),
+    );
+    if (monthIndex !== -1) {
+      const day = parseInt(dateStringMatch[2]);
+      const year = dateStringMatch[3]
+        ? parseInt(dateStringMatch[3])
+        : new Date().getFullYear();
+      const date = new Date(year, monthIndex, day);
+      if (!isNaN(date.getTime())) {
+        return { priority: 7, timestamp: date.getTime() };
+      }
+    }
+  }
+
+  // If we can't parse it, return lowest priority
+  return { priority: 8, timestamp: 0 };
+};
+
 const formatLastMessageTime = (timestamp) => {
   try {
     const date = new Date(timestamp);
@@ -181,7 +316,7 @@ const formatLastMessageTime = (timestamp) => {
 
 const AdminDashboard = ({ onClose }) => {
   const { token, role } = useAuth();
-  const { clients: liveClients, newClientData } = useWebSocket();
+  const { clients: liveClients, newClientData, extensionConnectionStatus } = useWebSocket();
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState([]);
   const [assignments, setAssignments] = useState([]);
@@ -261,7 +396,7 @@ const AdminDashboard = ({ onClose }) => {
       }
 
       setClients(
-        (clientsRes.clients || []).map((client) => 
+        (clientsRes.clients || []).map((client) =>
           normalizeAdminClientRecord(client)
         )
       );
@@ -303,7 +438,7 @@ const AdminDashboard = ({ onClose }) => {
     try {
       const clientsRes = await listAdminClients(token);
       setClients(
-        (clientsRes.clients || []).map((client) => 
+        (clientsRes.clients || []).map((client) =>
           normalizeAdminClientRecord(client)
         )
       );
@@ -354,34 +489,32 @@ const AdminDashboard = ({ onClose }) => {
     );
   }, [assignableUsers, userSearchQuery]);
 
-  const sortClientsByCreatedAt = (clientsToSort) => {
-    return [...clientsToSort].sort((a, b) => {
-      // Sort by created_at in descending order (most recently created first)
-      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-      if (timeA !== timeB) return timeB - timeA;
-      // Fallback to name if timestamps are the same
-      return String(a.name || "").localeCompare(String(b.name || ""));
-    });
-  };
+
 
   const filteredClients = useMemo(() => {
     const query = clientSearchQuery.trim().toLowerCase();
     const filtered = !query ? displayClients : displayClients.filter((client) =>
       matchesNameUsernameEmail(client, query),
     );
-    // Sort by created_at in descending order (most recently created first)
-    const sorted = sortClientsByCreatedAt(filtered);
-    
-    // Debug: Log sorted client data
-    if (sorted.length > 0) {
-      console.log('[Admin] Sorted clients (first 5):');
-      sorted.slice(0, 5).forEach((c, i) => {
-        console.log(`  [${i}] ${c.name} created: ${c.created_at}`);
-      });
-    }
-    
-    return sorted;
+    // Sort by time unit priority (minutes > hours > days > weeks > months), matching
+    // the ordering already applied upstream in ClientList
+    return [...filtered].sort((a, b) => {
+      const timeA = getTimeUnitPriority(a.last_message_timestamp);
+      const timeB = getTimeUnitPriority(b.last_message_timestamp);
+
+      if (timeA.priority !== timeB.priority) {
+        return timeA.priority - timeB.priority;
+      }
+
+      if (timeA.timestamp > 0 && timeB.timestamp > 0) {
+        return timeB.timestamp - timeA.timestamp; // Most recent first
+      }
+
+      if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
+      if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
+
+      return 0;
+    });
   }, [displayClients, clientSearchQuery]);
 
 
@@ -532,9 +665,30 @@ const AdminDashboard = ({ onClose }) => {
         <View style={styles.header}>
           <View style={styles.headerInfo}>
             <Text style={styles.headerTitle}>Admin Dashboard</Text>
-            <Text style={styles.headerSubtitle}>
-              {roleLabel} • {displayClients.length} clients
-            </Text>
+            <View style={[styles.headerSubtitleRow, { marginTop: spacing.xs }]}>
+              <Text style={styles.headerSubtitle}>
+                {roleLabel} • {displayClients.length} clients
+              </Text>
+            </View>
+            <View style={[styles.headerSubtitleRow, { marginTop: spacing.xs }]}>
+              <View style={[styles.extensionStatusBadge, 
+                extensionConnectionStatus === 'connected' ? styles.extensionStatusConnected :
+                extensionConnectionStatus === 'checking' ? styles.extensionStatusChecking :
+                styles.extensionStatusDisconnected
+              ]}>
+                <View style={[
+                  styles.extensionStatusDot,
+                  extensionConnectionStatus === 'connected' ? styles.dotConnected :
+                  extensionConnectionStatus === 'checking' ? styles.dotChecking :
+                  styles.dotDisconnected
+                ]} />
+                <Text style={styles.extensionStatusText}>
+                  Extension: {extensionConnectionStatus === 'connected' ? 'Connected' : 
+                  extensionConnectionStatus === 'checking' ? 'Checking' :
+                  'Disconnected'}
+                </Text>
+              </View>
+            </View>
           </View>
           {onClose ? (
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
@@ -995,19 +1149,14 @@ const AdminDashboard = ({ onClose }) => {
                           >
                             <View style={styles.clientCardTextWrap}>
                               <Text style={styles.clientCardTitle}>
-                                {client.name || client.username || "Client"}
+                                {client.name || client.displayName || "Client"}
                               </Text>
-                              <Text
-                                style={styles.clientCardMeta}
-                                numberOfLines={1}
-                              >
-                                {client.company || client.country || "No details"}
-                              </Text>
+
                               <Text
                                 style={[styles.clientCardMeta, { fontSize: 11, marginTop: 4 }]}
                                 numberOfLines={1}
                               >
-                                Created: {formatLastMessageTime(client.created_at)}
+                                Username: @{client.username}
                               </Text>
                             </View>
                             <Ionicons
@@ -1079,11 +1228,52 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
   },
   headerSubtitle: { color: colors.text.secondary, marginTop: 4 },
+  headerSubtitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  extensionStatusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.md,
+    gap: spacing.xs,
+  },
+  extensionStatusConnected: {
+    backgroundColor: "rgba(34, 197, 94, 0.15)",
+  },
+  extensionStatusChecking: {
+    backgroundColor: "rgba(251, 146, 60, 0.15)",
+  },
+  extensionStatusDisconnected: {
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+  },
+  extensionStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  dotConnected: {
+    backgroundColor: "#22c55e",
+  },
+  dotChecking: {
+    backgroundColor: "#fb923c",
+  },
+  dotDisconnected: {
+    backgroundColor: "#ef4444",
+  },
   closeButton: {
     width: 40,
     height: 40,
     justifyContent: "center",
     alignItems: "center",
+  },
+  extensionStatusText: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+    fontWeight: typography.weights.medium,
   },
   content: { padding: spacing.lg, paddingBottom: spacing.xxxl },
   section: {

@@ -1,0 +1,19 @@
+Fix extension connection status and remove polling loop spam
+
+- Track Extension↔Server connection via lastReloadStatusAt instead of isConnected
+- Replace 5-second polling interval with event-driven requests only
+- Add health check (2s) to detect when extension silent for 15+ seconds
+- Add selectedSellerProfile to request trigger for profile change detection
+- Status now shows: "checking" → "connected" → "disconnected" accurately
+- Reduce request spam from ~12/min to ~1-3/min (85-90% reduction)
+
+Changes to AdminProfileSettings.js:
+• Extract selectedSellerProfile from WebSocket context
+• Add lastReloadStatusAt state to track message timing
+• Refactor request effect with debounce (300ms)
+• Add status update handler that sets lastReloadStatusAt
+• Add health check interval monitoring connection freshness
+• Remove old 5-second polling loop and duplicate profile listener
+
+Architecture improvement: Status now reflects actual Extension response timing,
+not just Expo↔Server connectivity. User can trust the connection indicator.

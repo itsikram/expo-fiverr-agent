@@ -3,9 +3,17 @@
  */
 import { loadSettings, saveSettings } from "./storage";
 
-export const TAB_RELOAD_DEFAULT_MIN_SECONDS = 60;
+export const TAB_RELOAD_DEFAULT_MIN_SECONDS = 10;
 export const TAB_RELOAD_DEFAULT_MAX_SECONDS = 180;
-export const TAB_RELOAD_MIN_FLOOR_SECONDS = 60;
+export const TAB_RELOAD_MIN_FLOOR_SECONDS = 10;
+
+export const TAB_RELOAD_DEFAULT_PAGE_SLUGS = [
+  "/seller_dashboard",
+  "/manage_gigs",
+  "/earnings?source=header_nav",
+  "/seller_analytics_dashboard?source=header_nav&tab=overview",
+  "/manage_orders?source=header_nav"
+];
 
 export const TAB_RELOAD_SETTINGS_EVENT = "fiverr-tab-reload-settings-changed";
 
@@ -17,6 +25,14 @@ export const normalizeReloadSeconds = (value, fallback) => {
   return Math.max(TAB_RELOAD_MIN_FLOOR_SECONDS, parsed);
 };
 
+export const normalizePageSlugs = (slugs = []) => {
+  if (!Array.isArray(slugs)) return [...TAB_RELOAD_DEFAULT_PAGE_SLUGS];
+  const normalized = slugs
+    .map(slug => String(slug || "").trim())
+    .filter(slug => slug.length > 0);
+  return normalized.length > 0 ? normalized : [...TAB_RELOAD_DEFAULT_PAGE_SLUGS];
+};
+
 export const normalizeProfileReloadEntry = (entry = {}) => {
   const minSeconds = normalizeReloadSeconds(
     entry.minSeconds,
@@ -26,10 +42,12 @@ export const normalizeProfileReloadEntry = (entry = {}) => {
     entry.maxSeconds,
     TAB_RELOAD_DEFAULT_MAX_SECONDS
   );
+  const pageSlugs = normalizePageSlugs(entry.pageSlugs);
   return {
     enabled: entry.enabled === true,
     minSeconds,
-    maxSeconds: Math.max(minSeconds, maxSeconds)
+    maxSeconds: Math.max(minSeconds, maxSeconds),
+    pageSlugs
   };
 };
 
@@ -37,7 +55,8 @@ export const defaultProfileReloadSettings = () => ({
   global: normalizeProfileReloadEntry({
     enabled: false,
     minSeconds: TAB_RELOAD_DEFAULT_MIN_SECONDS,
-    maxSeconds: TAB_RELOAD_DEFAULT_MAX_SECONDS
+    maxSeconds: TAB_RELOAD_DEFAULT_MAX_SECONDS,
+    pageSlugs: [...TAB_RELOAD_DEFAULT_PAGE_SLUGS]
   }),
   profiles: {}
 });
@@ -97,6 +116,11 @@ export const getProfileReloadEntry = (settings, username) => {
     return normalized.profiles[key];
   }
   return normalized.global;
+};
+
+export const getPageSlugsForProfile = (settings, username) => {
+  const entry = getProfileReloadEntry(settings, username);
+  return entry.pageSlugs || [...TAB_RELOAD_DEFAULT_PAGE_SLUGS];
 };
 
 export const mergeProfileKeys = (sellerProfiles = [], savedProfiles = {}) => {
