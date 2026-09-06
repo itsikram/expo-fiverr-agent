@@ -621,7 +621,6 @@ const MessagesTab = ({
           }, 100);
         }
       } catch (error) {
-        console.error("[ERROR] Message send error:", error);
         if (client && cancelOptimisticMessage) {
           const conversationId = getClientConversationId(client);
           if (conversationId) {

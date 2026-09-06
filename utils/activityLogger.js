@@ -26,12 +26,6 @@ export const trackUserActivity = async (token, role, activity = {}) => {
     await logUserActivity(token, payload);
     return true;
   } catch (error) {
-    try {
-      console.warn(
-        "[ActivityLogger] Failed to track activity:",
-        error?.message || String(error),
-      );
-    } catch (_) {}
     return false;
   }
 };

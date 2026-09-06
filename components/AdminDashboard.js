@@ -387,14 +387,6 @@ const AdminDashboard = ({ onClose }) => {
         listAdminActivities(token),
       ]);
 
-      // Debug: Log raw client data
-      if (clientsRes.clients && clientsRes.clients.length > 0) {
-        console.log('[Admin] All clients data:');
-        clientsRes.clients.slice(0, 5).forEach((c, i) => {
-          console.log(`  [${i}] ${c.name} created: ${c.created_at}`);
-        });
-      }
-
       setClients(
         (clientsRes.clients || []).map((client) =>
           normalizeAdminClientRecord(client)
@@ -425,7 +417,6 @@ const AdminDashboard = ({ onClose }) => {
         setSelectedUserId(String(firstUser._id || firstUser.id || ""));
       }
     } catch (error) {
-      console.error('[AdminDashboard] Error loading data:', error);
       Alert.alert("Error", error.message || "Unable to load dashboard");
     } finally {
       setLoading(false);
@@ -626,7 +617,6 @@ const AdminDashboard = ({ onClose }) => {
           );
         setSelectedClientIds(normalizedClientIds);
       } catch (error) {
-        console.error('Error loading assignments:', error);
         setSelectedClientIds([]);
       }
     };

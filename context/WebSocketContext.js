@@ -795,12 +795,6 @@ export const WebSocketProvider = ({ children }) => {
 
       const url = SERVER_CONFIG.getWebSocketUrl(Platform.OS);
 
-      // Debug: log attempted connection URL
-      try {
-        // eslint-disable-next-line no-console
-        console.log("[WebSocket] connecting to", url);
-      } catch (_) {}
-
       setConnectionStatus("connecting");
 
       // Quick health ping — don't block the UI for a long cold-start budget.
@@ -823,14 +817,6 @@ export const WebSocketProvider = ({ children }) => {
 
       clearPingWatchdogs();
       clearReconnectTimer();
-
-      // Debug: show which server URL we're connecting to
-      try {
-        // eslint-disable-next-line no-console
-        console.log("[WebSocket] connecting to", url, {
-          serverUrl: SERVER_CONFIG.serverUrl,
-        });
-      } catch (_) {}
 
       const ws = new WebSocket(url);
       wsRef.current = ws;
@@ -1036,38 +1022,12 @@ export const WebSocketProvider = ({ children }) => {
 
   const sendMessage = useCallback((message) => {
     try {
-      // Debug: log outbound messages locally to help diagnose missing server/extension
-      try {
-        // Avoid heavy objects in logs
-
-        console.log("[WebSocket] sendMessage called", message);
-        const short = {
-          type: message && message.type,
-          conversationId:
-            message && (message.conversationId || message.username),
-          len: message && message.message ? String(message.message).length : 0,
-        };
-        // eslint-disable-next-line no-console
-        console.log("[WebSocket] sendMessage called", short, {
-          readyState: wsRef.current?.readyState,
-          sessionId: sessionIdRef.current,
-        });
-      } catch (_) {}
-
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify(message));
         return true;
       }
-      // If not open, log and return false so callers can handle it
-      // eslint-disable-next-line no-console
-      console.warn("[WebSocket] sendMessage failed - socket not open", {
-        readyState: wsRef.current?.readyState,
-        messageType: message && message.type,
-      });
       return false;
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("[WebSocket] sendMessage error", err);
       return false;
     }
   }, []);
@@ -1423,13 +1383,6 @@ export const WebSocketProvider = ({ children }) => {
       // Add message optimistically to show it immediately
       addOptimisticMessage(normalizedMessage, conversationId);
 
-      console.log("[Expo] send_message outbound", {
-        conversationId,
-        messageLength: normalizedMessage.length,
-        messagePreview: normalizedMessage.slice(0, 240),
-        autoReply: options.autoReply === true,
-      });
-
       const queued = sendMessage({
         type: "send_message",
         message: normalizedMessage,
@@ -1578,7 +1531,6 @@ export const WebSocketProvider = ({ children }) => {
         case "client_list_data": {
 
           const incomingClientsRaw = data.data?.clients;
-          console.log('[WebSocketContext] incomingClientsRaw', incomingClientsRaw)
           const incomingClients = Array.isArray(incomingClientsRaw)
             ? incomingClientsRaw
             : null;
@@ -3064,17 +3016,6 @@ export const WebSocketProvider = ({ children }) => {
         "";
       const convo =
         selectedConversationId || (username ? String(username).trim() : null);
-      // Debug: ensure we capture current selectedConversationId and seller profile
-      try {
-        console.log("[WebSocket] sendExpoActivity preparing payload", {
-          selectedConversationId,
-          selectedSellerProfile: selectedSellerProfile && {
-            username: selectedSellerProfile.username,
-            profileName: selectedSellerProfile.profileName,
-          },
-          convo,
-        });
-      } catch (_) {}
       const activityPayload = {
         type: "expo_app_activity",
         data: {

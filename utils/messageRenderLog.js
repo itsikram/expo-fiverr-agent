@@ -31,15 +31,7 @@ const resolveMessagesMap = (messagesMap, client, inputMessages = []) => {
 };
 
 export const logMessageRender = (label, payload = {}) => {
-  if (!ENABLED) {
-    return;
-  }
-
-  try {
-    console.log(PREFIX, label, payload);
-  } catch (_) {
-    // ignore
-  }
+  return;
 };
 
 /**

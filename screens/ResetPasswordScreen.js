@@ -78,15 +78,10 @@ const ResetPasswordScreen = ({ onBack, initialEmail = '', initialToken = '' }) =
         newPassword,
       });
 
+      onBack();
       Alert.alert(
         'Success',
         'Your password has been reset successfully. You can now log in with your new password.',
-        [
-          {
-            text: 'Back to Login',
-            onPress: onBack,
-          },
-        ]
       );
     } catch (error) {
       Alert.alert('Error', error.message || 'Failed to reset password.');

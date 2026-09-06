@@ -398,7 +398,6 @@ const ClientDetailsScreen = ({
           details: result,
         };
       } catch (error) {
-        console.error("[ERROR] Failed to send message:", error);
         // Notify parent that send failed
         if (onSendingStateChange) {
           onSendingStateChange(false);

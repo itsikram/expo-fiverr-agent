@@ -79,8 +79,6 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   } = useWebSocket();
   const { username, email, token, role, logout } = useAuth();
 
-  console.log('<ClientsScreen> clients', clientData)
-
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Open sidebar by default
   const [isTranslationModalVisible, setIsTranslationModalVisible] =

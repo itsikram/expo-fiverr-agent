@@ -170,7 +170,6 @@ const ClientList = ({
 }) => {
   const [searchText, setSearchText] = useState("");
 
-  console.log('[ClientList] clients:', clients)
   const normalizedClients = useMemo(() => {
     return (clients || []).map((client, index) => {
       const listRowId = getListRowId(client, index);
@@ -182,9 +181,6 @@ const ClientList = ({
       };
     });
   }, [clients]);
-
-  console.log('[ClientList] normalizedClients:', normalizedClients)
-
 
   const sortedClients = [...normalizedClients].sort((a, b) => {
     // Sort by time unit priority (minutes > hours > days > weeks > months), matching
@@ -207,8 +203,6 @@ const ClientList = ({
     return 0;
   });
 
-  console.log('[ClientList] sortedClients:', sortedClients)
-
   const filteredClients = sortedClients.filter((client) => {
     // Filter to show clients with minute-based (priority 1) or hour-based (priority 2) timestamps
 
@@ -224,8 +218,6 @@ const ClientList = ({
       company.includes(searchLower)
     );
   });
-
-  console.log('[ClientList] filteredClients:', filteredClients)
 
   const renderClient = ({ item }) => {
     const rowId = item.listRowId || item.id;
