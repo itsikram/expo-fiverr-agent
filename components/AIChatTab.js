@@ -791,26 +791,6 @@ Example (return exactly this format, no other text):
     }
   };
 
-  // Generate conversation-level actions whenever the active Fiverr thread
-  // changes, including after loading a saved chat history.
-  useEffect(() => {
-    if (!isActive) {
-      suggestionsRequestRef.current += 1;
-      setAiSuggestedActions([]);
-      return;
-    }
-    generateAiSuggestedActions();
-    // The latest thread message and chat count are sufficient to refresh actions.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    isActive,
-    clientStorageKey,
-    messages.length,
-    messages[messages.length - 1]?.text,
-    messages[messages.length - 1]?.content,
-    chatMessages.length,
-  ]);
-
   // Generate suggested prompts based on context
   const generateSuggestedPrompts = (lastAIMessage, messageIndex) => {
     const messageText = lastAIMessage?.text || "";
@@ -2070,49 +2050,6 @@ Example (return exactly this format, no other text):
               generate visuals for your work.
             </Text>
 
-            {(aiSuggestedActions.length > 0 || isGeneratingActions) && (
-              <View style={styles.aiSuggestedActionsContainer}>
-                <Text style={styles.aiSuggestedActionsTitle}>
-                  {isGeneratingActions
-                    ? "Analyzing conversation..."
-                    : "Suggested Actions"}
-                </Text>
-                {isGeneratingActions ? (
-                  <View style={styles.aiSuggestedActionsLoading}>
-                    <ActivityIndicator
-                      size="small"
-                      color={colors.accent.primary}
-                    />
-                    <Text style={styles.aiSuggestedActionsLoadingText}>
-                      Generating suggestions...
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={styles.aiSuggestedActionsList}>
-                    {aiSuggestedActions.map((action) => (
-                      <TouchableOpacity
-                        key={action.id}
-                        style={[
-                          styles.aiSuggestedActionButton,
-                          styles[action.style],
-                        ]}
-                        onPress={action.handler}
-                        disabled={isLoading}
-                      >
-                        <Ionicons
-                          name={action.icon}
-                          size={20}
-                          color={colors.text.white}
-                        />
-                        <Text style={styles.aiSuggestedActionText}>
-                          {action.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </View>
-            )}
             {/* Default buttons when no messages */}
             {!isLoading && renderQuickActions()}
           </View>
@@ -2131,50 +2068,6 @@ Example (return exactly this format, no other text):
             {hasNoChatHistory && !isLoading && (
               <>
                 {renderQuickActions()}
-                {/* AI Suggested Action Buttons - Based on last messages */}
-                {(aiSuggestedActions.length > 0 || isGeneratingActions) && (
-                  <View style={styles.aiSuggestedActionsContainer}>
-                    <Text style={styles.aiSuggestedActionsTitle}>
-                      {isGeneratingActions
-                        ? "Analyzing conversation..."
-                        : "Suggested Actions"}
-                    </Text>
-                    {isGeneratingActions ? (
-                      <View style={styles.aiSuggestedActionsLoading}>
-                        <ActivityIndicator
-                          size="small"
-                          color={colors.accent.primary}
-                        />
-                        <Text style={styles.aiSuggestedActionsLoadingText}>
-                          Generating suggestions...
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={styles.aiSuggestedActionsList}>
-                        {aiSuggestedActions.map((action) => (
-                          <TouchableOpacity
-                            key={action.id}
-                            style={[
-                              styles.aiSuggestedActionButton,
-                              styles[action.style],
-                            ]}
-                            onPress={action.handler}
-                            disabled={isLoading}
-                          >
-                            <Ionicons
-                              name={action.icon}
-                              size={20}
-                              color={colors.text.white}
-                            />
-                            <Text style={styles.aiSuggestedActionText}>
-                              {action.label}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                )}
               </>
             )}
           </>
