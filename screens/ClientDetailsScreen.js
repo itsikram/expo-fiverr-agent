@@ -117,11 +117,14 @@ const ClientDetailsScreen = ({
   onSendingStateChange,
   isLoadingMessages,
   isMessageInputMinimized = false,
+  externalMessageText = '',
+  onExternalMessageTextApplied,
 }) => {
   const { isConnected, fetchClientDetails, clientData, navigateToInbox } =
     useWebSocket();
   const [activeTab, setActiveTab] = useState("messages");
   const [messageText, setMessageText] = useState("");
+  const [aiInputText, setAiInputText] = useState("");
   const [isTranslationModalVisible, setIsTranslationModalVisible] =
     useState(false);
   const [isFetchingMessages, setIsFetchingMessages] = useState(false);
@@ -129,6 +132,18 @@ const ClientDetailsScreen = ({
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
   const [isHeaderMinimized, setIsHeaderMinimized] = useState(false);
   const fetchTimeoutRef = useRef(null);
+  const fetchInitialDataRef = useRef(null);
+
+  useEffect(() => {
+    const nextText = externalMessageText?.trim();
+    if (!nextText) return;
+    if (activeTab === "aichat") {
+      setAiInputText(externalMessageText);
+    } else {
+      setMessageText(externalMessageText);
+    }
+    onExternalMessageTextApplied?.();
+  }, [activeTab, externalMessageText, onExternalMessageTextApplied]);
 
   // Merge fetched client data with client prop
   const mergedClient = React.useMemo(() => {
@@ -479,13 +494,17 @@ const ClientDetailsScreen = ({
     if (isFetchingDetails && client) {
       const conversationId = getClientConversationId(client);
       const key = client.username || conversationId;
-      if (clientData[key]) {
+      if (
+        clientData[key] &&
+        clientData[key] !== fetchInitialDataRef.current
+      ) {
         // Clear timeout if data is received
         if (fetchTimeoutRef.current) {
           clearTimeout(fetchTimeoutRef.current);
           fetchTimeoutRef.current = null;
         }
         setIsFetchingDetails(false);
+        fetchInitialDataRef.current = null;
 
         // Navigate back to inbox after successfully fetching client details
         // Add a small delay to ensure data is fully processed before navigation
@@ -539,10 +558,12 @@ const ClientDetailsScreen = ({
     }
 
     setIsFetchingDetails(true);
+    fetchInitialDataRef.current = clientData[username] || null;
 
     // Handle error callback
     const handleError = (errorMessage) => {
       setIsFetchingDetails(false);
+      fetchInitialDataRef.current = null;
       if (fetchTimeoutRef.current) {
         clearTimeout(fetchTimeoutRef.current);
         fetchTimeoutRef.current = null;
@@ -557,6 +578,7 @@ const ClientDetailsScreen = ({
 
     if (!success) {
       setIsFetchingDetails(false);
+      fetchInitialDataRef.current = null;
       Alert.alert("Error", "Failed to send fetch request. Please try again.");
       return;
     }
@@ -565,6 +587,7 @@ const ClientDetailsScreen = ({
     fetchTimeoutRef.current = setTimeout(() => {
       setIsFetchingDetails(false);
       fetchTimeoutRef.current = null;
+      fetchInitialDataRef.current = null;
       Alert.alert(
         "Timeout",
         "Fetching client details is taking longer than expected. Please check if the browser extension is connected and try again.",
@@ -710,6 +733,8 @@ const ClientDetailsScreen = ({
           messages={messages}
           onSendMessage={onSendMessage}
           isActive={activeTab === "aichat"}
+          externalInputText={aiInputText}
+          onExternalInputTextApplied={() => setAiInputText("")}
         />
       </View>
       <View
@@ -743,11 +768,19 @@ const ClientDetailsScreen = ({
             : (mergedClient || client)?.language?.toLowerCase() || "en"
         }
         onTextReady={(translatedText) => {
-          setMessageText(translatedText);
+          if (activeTab === "aichat") {
+            setAiInputText(translatedText);
+          } else {
+            setMessageText(translatedText);
+          }
           setIsTranslationModalVisible(false);
         }}
         onUseInputText={(inputText) => {
-          setMessageText(inputText);
+          if (activeTab === "aichat") {
+            setAiInputText(inputText);
+          } else {
+            setMessageText(inputText);
+          }
           setIsTranslationModalVisible(false);
         }}
       />

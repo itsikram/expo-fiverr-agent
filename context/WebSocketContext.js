@@ -2618,6 +2618,19 @@ export const WebSocketProvider = ({ children }) => {
           break;
         }
 
+        case "fetch_client_details_error": {
+          const username = String(data.username || "").trim();
+          const callback = fetchDetailsCallbacksRef.current[username];
+          if (callback) {
+            callback(
+              data.message ||
+                "The browser extension could not fetch client details from Fiverr.",
+            );
+            delete fetchDetailsCallbacksRef.current[username];
+          }
+          break;
+        }
+
         case "ack":
           // Handle error acks for fetch_client_details
           if (data.status === "error" && data.message) {

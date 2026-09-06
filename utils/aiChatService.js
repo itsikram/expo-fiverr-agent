@@ -81,6 +81,27 @@ const COMMUNICATION_ANALYSIS_SYSTEM_PROMPT =
   "IMPROVEMENT OPPORTUNITIES:\n<specific actionable suggestions to increase success score>\n\n" +
   "SUCCESS SCORE IMPACT PREDICTION:\n<how these changes would affect their success score>";
 
+const PROJECT_COMPLETION_GATE_PROMPT = [
+  "PROJECT COMPLETION CHECK:",
+  "Before drafting a buyer-facing message, understand the client's requested project, requirements, and deliverables from the full thread.",
+  "Never assume that a requested task is completed unless the seller explicitly confirms it in the AI chat notes or the Fiverr thread.",
+  "When the seller asks to generate a message but completion status is missing or unclear, pause and ask the seller to confirm which requested tasks are done.",
+  "In that case, respond to the seller with a concise professional question and include this exact machine-readable checklist format:",
+  "[TASK_CHECKLIST]",
+  "- <one concrete client task>",
+  "- <another concrete client task>",
+  "[/TASK_CHECKLIST]",
+  "Include 2-8 concrete tasks grounded in the client's actual requests. Do not invent tasks. The app will turn these checklist items into Done / Not done buttons.",
+  "If the thread contains no clear client requirements, explicitly ask the seller to confirm whether the known requests were completed or to provide the missing requirements before drafting the message.",
+  "SCOPE CHANGE AND CLARIFICATION CHECK:",
+  "Compare every new buyer request with the original requirements and deliverables already established in the thread.",
+  "If the buyer asks for work clearly outside the original order scope, do not present it as included. Draft a professional message explaining that it is an additional task and requires an extra charge or custom offer. Never invent an amount, delivery date, or package.",
+  "If the additional-task price is not provided by the seller, use neutral wording such as 'I can prepare a custom offer for this additional task' instead of inventing a price.",
+  "If you are unsure whether a request is included, or cannot confidently understand the buyer's request, ask the seller a concise clarification question in the AI chat and wait for the seller's answer before drafting the buyer-facing message.",
+  "When asking the seller for clarification, output only the question for the seller, not a buyer-facing draft and not a guessed extra-charge message.",
+  "The seller may answer a previous AI clarification question in the AI chat. Treat that answer as authoritative private guidance and use it to generate the next response.",
+].join("\n");
+
 const QUOTATION_SYSTEM_PROMPT = [
   "You are an expert Fiverr seller writing a professional quotation message for a buyer.",
   "Write exactly like a TOP-PERFORMING HUMAN SELLER - warm, professional, and authentic. NEVER sound like AI.",
@@ -423,6 +444,22 @@ const buildClientContextBlock = (client, userProfile = {}) => {
   if (client.country) parts.push(`- Buyer country: ${client.country}`);
   if (client.language) parts.push(`- Buyer language: ${client.language}`);
   if (client.project_name) parts.push(`- Project: ${client.project_name}`);
+  [
+    ["Order requirements", client.order_requirements],
+    ["Order requirements", client.orderRequirements],
+    ["Requirements", client.requirements],
+    ["Client requirements", client.clientRequirements],
+    ["Project requirements", client.project_requirements],
+    ["Deliverables", client.deliverables],
+    ["Order description", client.order_description],
+    ["Order details", client.order_details],
+    ["Order brief", client.brief],
+    ["Project description", client.project_description],
+  ].forEach(([label, value]) => {
+    if (!value) return;
+    const text = Array.isArray(value) ? value.join(", ") : String(value);
+    if (text.trim()) parts.push(`- ${label}: ${text.trim()}`);
+  });
   if (client.budget) parts.push(`- Budget: ${client.budget}`);
   parts.push(`- Seller display name: ${sellerName}`);
   if (userProfile.skills) {
@@ -446,6 +483,11 @@ const buildPresetUserText = (kind, transcript, opts = {}) => {
     (opts && opts.latestBuyer && String(opts.latestBuyer).trim()) || "";
   const latestSeller =
     (opts && opts.latestSeller && String(opts.latestSeller).trim()) || "";
+  const sellerChatHistory =
+    (opts &&
+      opts.sellerChatHistory &&
+      String(opts.sellerChatHistory).trim()) ||
+    "";
 
   const continuityBlock =
     "\n\nLATEST SELLER MESSAGE (your previous message — stay consistent with this):\n" +
@@ -453,6 +495,11 @@ const buildPresetUserText = (kind, transcript, opts = {}) => {
     "\n\nLATEST BUYER MESSAGE (reply to this):\n" +
     (latestBuyer || "(none)") +
     "\n";
+  const sellerChatBlock = sellerChatHistory
+    ? "\n\nPRIVATE SELLER-AI CHAT CONTEXT (use seller answers as authoritative guidance; do not mention this private chat to the buyer):\n" +
+      sellerChatHistory +
+      "\n"
+    : "";
 
   switch (kind) {
     case "first":
@@ -482,6 +529,7 @@ const buildPresetUserText = (kind, transcript, opts = {}) => {
         "Full Fiverr conversation (buyer + seller, oldest → newest):\n" +
         transcript +
         continuityBlock +
+        sellerChatBlock +
         "\nWrite the NEXT Fiverr inbox reply as a continuation of YOUR (seller) prior messages while answering the buyer's latest message. " +
         "Follow Fiverr conversation standards.\n" +
         "Requirements:\n" +
@@ -501,6 +549,7 @@ const buildPresetUserText = (kind, transcript, opts = {}) => {
         "Fiverr conversation so far (buyer + seller):\n" +
         transcript +
         continuityBlock +
+        sellerChatBlock +
         "\n\nWrite a short Fiverr inbox clarification message following Fiverr conversation standards. " +
         "Continue from YOUR previous seller message — do not restart the thread. " +
         "Frame it positively — you're confirming details so delivery matches their needs. " +
@@ -659,11 +708,16 @@ const buildSystemMessageForPreset = (
       "- Answer the buyer's latest message while staying consistent with what you already told them\n";
   }
 
+  if (kind === "reply" || kind === "first") {
+    sys += `\n\n${PROJECT_COMPLETION_GATE_PROMPT}`;
+  }
+
   return sys;
 };
 
 const buildSystemMessageForChat = (sellerName) =>
   `${BASE_SYSTEM_PROMPT}\nSeller: ${sellerName}.\n` +
+  `${PROJECT_COMPLETION_GATE_PROMPT}\n` +
   "Default: paste-ready single Fiverr inbox message only — follow Fiverr conversation standards, trust-building and clear, not salesy. " +
   "If the user asks for analysis/task explanation/engineering prompt, you may leave the paste-ready-message rule and answer that request clearly.";
 
@@ -956,6 +1010,20 @@ const buildChatHistoryMessages = (chatHistory = []) =>
       content: `${text}${imageNote}`.trim(),
     };
   });
+
+const buildPrivateSellerChatTranscript = (chatHistory = []) =>
+  chatHistory
+    .map((m) => {
+      const role =
+        m.sender === "user" || m.role === "user"
+          ? "SELLER"
+          : "AI ASSISTANT";
+      const text = String(m.text || m.content || "").trim();
+      return text ? `${role}: ${text}` : "";
+    })
+    .filter(Boolean)
+    .slice(-CHAT_HISTORY_MAX_TURNS)
+    .join("\n");
 
 const buildMultimodalUserContent = (text, preparedAttachments = []) => {
   const parts = [];
@@ -1677,6 +1745,7 @@ export const getAiChatResponse = async ({
   const sellerName = userProfile?.name || "Seller";
   const transcript = buildInboxTranscript(allMessages);
   const { latestBuyer, latestSeller } = getLatestRoleMessages(allMessages);
+  const sellerChatHistory = buildPrivateSellerChatTranscript(chatHistory || []);
   const sellerStyle = extractSellerWritingStyle(allMessages);
   const temperature = resolveTemperature(presetKind);
 
@@ -1699,11 +1768,16 @@ export const getAiChatResponse = async ({
       client,
       userProfile || {},
     );
-    const userText = buildPresetUserText(presetKind, transcript, {
+    const presetUserText = buildPresetUserText(presetKind, transcript, {
       costPrice,
       latestBuyer,
       latestSeller,
+      sellerChatHistory,
     });
+    const trimmedSellerNote = String(userMessage || "").trim();
+    const userText = trimmedSellerNote
+      ? `${presetUserText}\n\nSELLER NOTE (private guidance from the seller; use it to shape this response, but do not mention the note or call it an instruction):\n${trimmedSellerNote}`
+      : presetUserText;
     apiMessages = [
       { role: "system", content: systemMessage },
       { role: "user", content: userText },
@@ -1743,7 +1817,7 @@ export const getAiChatResponse = async ({
 
     const userText = analyzingFiles
       ? `${baseUserText}\n\nUse the attached files as primary evidence. If this request is for a buyer-facing reply, return only a paste-ready Fiverr inbox message.`
-      : `${baseUserText}\n\nIf this request is for a buyer-facing reply, follow Fiverr conversation standards, continue from YOUR prior seller messages in the thread, and return only a paste-ready Fiverr inbox message.`;
+      : `${baseUserText}\n\nTreat the seller's input above as private seller guidance for the response. Use it as the seller's intended message or note, but do not mention the guidance itself. If the seller is answering an earlier AI clarification question, use that answer as authoritative context. Follow Fiverr conversation standards, continue from YOUR prior seller messages in the thread, compare new buyer requests with the original order scope, and return only a paste-ready Fiverr inbox message unless you need to ask the seller a clarification question.`;
 
     apiMessages.push({
       role: "user",

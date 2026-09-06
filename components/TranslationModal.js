@@ -80,6 +80,7 @@ const TranslationModal = ({
   const [inputFocused, setInputFocused] = useState(false);
   const [recognitionCount, setRecognitionCount] = useState(0);
 
+  const inputTextRef = useRef(initialText);
   const autoTranslateTimerRef = useRef(null);
   const autoTranslateInputDebounceRef = useRef(null);
   const recordingRef = useRef(null);
@@ -104,10 +105,12 @@ const TranslationModal = ({
 
   useEffect(() => {
     if (visible && initialText) {
+      inputTextRef.current = initialText;
       setInputText(initialText);
       setLastTranslationText(initialText);
     }
     if (!visible) {
+      inputTextRef.current = '';
       setInputText('');
       setTranslatedText('');
       setVoiceStatus('');
@@ -287,7 +290,7 @@ const TranslationModal = ({
         join('');
 
         // Only update if the input text hasn't changed during translation
-        const currentInput = inputText.trim();
+        const currentInput = inputTextRef.current.trim();
         if (currentInput === text.trim()) {
           setTranslatedText(translated);
         }
@@ -312,12 +315,12 @@ const TranslationModal = ({
   const appendTranscription = (text, onDone) => {
     if (!text || !text.trim()) return;
     const newPhrase = text.trim();
-    setInputText((prev) => {
-      const current = prev.trim();
-      const newText = !current ? newPhrase : current.endsWith(newPhrase) ? prev : current + ' ' + newPhrase;
-      if (onDone && newText !== prev) onDone(newText);
-      return newText;
-    });
+    const current = inputTextRef.current.trim();
+    const newText = !current ? newPhrase : current.endsWith(newPhrase) ? inputTextRef.current : `${current} ${newPhrase}`;
+    if (newText === inputTextRef.current) return;
+    inputTextRef.current = newText;
+    setInputText(newText);
+    if (onDone) onDone(newText);
     setRecognitionCount((c) => c + 1);
   };
 
@@ -867,10 +870,10 @@ const TranslationModal = ({
                   null}
                 </View>
 
-                {/* Input Text - hidden in voiceOnly mode */}
-                {!voiceOnly &&
                 <View style={styles.section}>
-                  <Text style={styles.label}>Your Message:</Text>
+                  <Text style={styles.label}>
+                    {voiceOnly ? 'Recognized Voice Text:' : 'Your Message:'}
+                  </Text>
                   <View
                     style={[
                     styles.textInputContainer,
@@ -884,14 +887,16 @@ const TranslationModal = ({
                       placeholder="Type your message here or use voice input..."
                       placeholderTextColor={colors.text.secondary}
                       value={inputText}
-                      onChangeText={setInputText}
+                      onChangeText={(text) => {
+                        inputTextRef.current = text;
+                        setInputText(text);
+                      }}
                       onFocus={() => setInputFocused(true)}
                       onBlur={() => setInputFocused(false)}
                       editable={!isListening} />
                     
                   </View>
                 </View>
-                }
 
                 {/* Translate Button */}
                 <TouchableOpacity
@@ -949,7 +954,7 @@ const TranslationModal = ({
                     disabled={!inputText.trim()}>
                     
                     <Ionicons name="send" size={18} color={colors.text.white} />
-                    <Text style={styles.actionButtonText}>Send text</Text>
+                    <Text style={styles.actionButtonText}>Use text</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -962,7 +967,7 @@ const TranslationModal = ({
                     disabled={!translatedText.trim()}>
                     
                     <Ionicons name="send" size={18} color={colors.text.white} />
-                    <Text style={styles.actionButtonText}>Send translation</Text>
+                    <Text style={styles.actionButtonText}>Use translation</Text>
                   </TouchableOpacity>
                 </View>
 

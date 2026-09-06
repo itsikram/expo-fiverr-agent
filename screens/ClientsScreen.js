@@ -86,6 +86,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   const [translationInitialText, setTranslationInitialText] = useState("");
   const [translationModalVoiceOnly, setTranslationModalVoiceOnly] =
     useState(false);
+  const [voiceDraftText, setVoiceDraftText] = useState("");
   const [isRefetching, setIsRefetching] = useState(false);
   const [isNewClientModalVisible, setIsNewClientModalVisible] = useState(false);
   const [hasInitialDataLoaded, setHasInitialDataLoaded] = useState(false);
@@ -815,8 +816,23 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         .trim()
         .toLowerCase();
       const currentAccess = activeUsersPerClient.current.get(normalized);
+      const currentUserIdentities = new Set(
+        [username, email]
+          .map((value) => String(value || "").trim().toLowerCase())
+          .filter(Boolean),
+      );
+      const accessUserIdentities = new Set(
+        [currentAccess?.userId, currentAccess?.userName]
+          .map((value) => String(value || "").trim().toLowerCase())
+          .filter(Boolean),
+      );
+      const isSameUser =
+        currentAccess &&
+        Array.from(currentUserIdentities).some((identity) =>
+          accessUserIdentities.has(identity),
+        );
 
-      if (currentAccess && currentAccess.userId !== username) {
+      if (currentAccess && !isSameUser) {
         // Another user is accessing this client, show modal
         setAccessConflictModal({
           clientId,
@@ -828,8 +844,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
 
       // Register this user's access
       activeUsersPerClient.current.set(normalized, {
-        userName: username,
-        userId: email,
+        userName: username || email,
+        userId: username || email,
         timestamp: Date.now(),
       });
 
@@ -1169,9 +1185,13 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     setIsTranslationModalVisible(true);
   };
 
-  const handleTranslationTextReady = (translatedText) => {};
+  const handleTranslationTextReady = (translatedText) => {
+    setVoiceDraftText(translatedText);
+  };
 
-  const handleUseInputText = (inputText) => {};
+  const handleUseInputText = (inputText) => {
+    setVoiceDraftText(inputText);
+  };
 
   // Connection status indicators
   const getConnectionStatusColor = () => {
@@ -1312,6 +1332,8 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
                   )
               }
               isMessageInputMinimized={isMessageInputMinimized}
+              externalMessageText={voiceDraftText}
+              onExternalMessageTextApplied={() => setVoiceDraftText("")}
             />
           ) : isAdminRole ? (
             <LinearGradient
