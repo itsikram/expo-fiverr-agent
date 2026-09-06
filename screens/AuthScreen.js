@@ -16,10 +16,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
 
-const AuthScreen = ({ onAuthenticated }) => {
+const AuthScreen = ({ onAuthenticated, resetLinkParams }) => {
   const { login, register, authError } = useAuth();
   const [isLoginMode, setIsLoginMode] = useState(true);
-  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(Boolean(resetLinkParams));
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -59,6 +59,8 @@ const AuthScreen = ({ onAuthenticated }) => {
     return (
       <ResetPasswordScreen
         onBack={() => setShowResetPassword(false)}
+        initialEmail={resetLinkParams?.email}
+        initialToken={resetLinkParams?.token}
       />
     );
   }

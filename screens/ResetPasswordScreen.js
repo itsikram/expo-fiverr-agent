@@ -15,10 +15,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 import { requestPasswordReset, resetPassword } from '../utils/authService';
 
-const ResetPasswordScreen = ({ onBack }) => {
-  const [step, setStep] = useState('email'); // 'email' or 'reset'
-  const [email, setEmail] = useState('');
-  const [token, setToken] = useState('');
+const ResetPasswordScreen = ({ onBack, initialEmail = '', initialToken = '' }) => {
+  const hasResetLink = Boolean(initialEmail && initialToken);
+  const [step, setStep] = useState(hasResetLink ? 'reset' : 'email'); // 'email' or 'reset'
+  const [email, setEmail] = useState(initialEmail);
+  const [token, setToken] = useState(initialToken);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);

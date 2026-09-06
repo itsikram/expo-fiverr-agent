@@ -16,6 +16,27 @@ import { colors } from "./constants/theme";
 import { SERVER_CONFIG } from "./config/server";
 import notificationService from "./utils/notificationService";
 
+const getPasswordResetLinkParams = () => {
+  if (typeof window === "undefined" || !window.location) {
+    return null;
+  }
+
+  const path = window.location.pathname.replace(/\/+$/, "");
+  if (path !== "/reset-password") {
+    return null;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("token")?.trim();
+  const email = params.get("email")?.trim();
+
+  if (!token || !email) {
+    return null;
+  }
+
+  return { token, email };
+};
+
 function AppContent({
   currentScreen,
   onNavigateToSettings,
@@ -109,6 +130,7 @@ function AppContent({
 function AppWrapper() {
   const { isAuthenticated, isAuthReady } = useAuth();
   const [currentScreen, setCurrentScreen] = useState("clients"); // 'clients' or 'settings'
+  const resetLinkParams = getPasswordResetLinkParams();
 
   // Load server settings on mount
   useEffect(() => {
@@ -134,8 +156,8 @@ function AppWrapper() {
 
   }
 
-  if (!isAuthenticated) {
-    return <AuthScreen />;
+  if (resetLinkParams || !isAuthenticated) {
+    return <AuthScreen resetLinkParams={resetLinkParams} />;
   }
 
   return (
