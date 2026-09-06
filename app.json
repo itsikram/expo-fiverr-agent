@@ -6,11 +6,6 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
-    "splash": {
-      "image": "./assets/images/logo.png",
-      "backgroundColor": "#ffffff",
-      "resizeMode": "contain"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -22,7 +17,9 @@
         "NSSpeechRecognitionUsageDescription": "Allow $(PRODUCT_NAME) to use speech recognition.",
         "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to use the microphone.",
         "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to attach photos to AI chat.",
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -42,13 +39,7 @@
         "android.permission.USE_FULL_SCREEN_INTENT",
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_EXTERNAL_STORAGE"
-      ],
-      "notification": {
-        "icon": "./assets/icon.png",
-        "color": "#FF231F7C",
-        "sound": "default",
-        "defaultChannelId": "messages"
-      }
+      ]
     },
     "web": {
       "favicon": "./assets/icon.png"
@@ -71,7 +62,18 @@
           ],
           "mode": "production"
         }
-      ]
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/logo.png",
+          "backgroundColor": "#ffffff",
+          "resizeMode": "contain"
+        }
+      ],
+      "expo-image",
+      "expo-status-bar",
+      "expo-font"
     ],
     "extra": {
       "eas": {

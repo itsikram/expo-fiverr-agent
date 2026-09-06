@@ -22,15 +22,13 @@ const getPasswordResetLinkParams = () => {
   }
 
   const path = window.location.pathname.replace(/\/+$/, "");
-  if (path !== "/reset-password") {
-    return null;
-  }
-
   const params = new URLSearchParams(window.location.search);
   const token = params.get("token")?.trim();
   const email = params.get("email")?.trim();
+  const isResetPath = path === "/reset-password";
+  const isRootResetLink = path === "" && params.get("reset") === "1";
 
-  if (!token || !email) {
+  if ((!isResetPath && !isRootResetLink) || !token || !email) {
     return null;
   }
 
