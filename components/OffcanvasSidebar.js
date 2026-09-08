@@ -250,6 +250,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: SIDEBAR_WIDTH,
+    maxWidth: '30vw',
     zIndex: 1000,
   },
   sidebarInner: {

@@ -197,7 +197,8 @@ const AIChatTab = ({
   externalInputText = '',
   onExternalInputTextApplied,
 }) => {
-  const { cancelOptimisticMessage } = useWebSocket();
+  const { cancelOptimisticMessage, sellerProfile, selectedSellerProfile } =
+    useWebSocket();
   const { messageHorizontalPadding } = useResponsiveLayout();
   const [chatMessages, setChatMessages] = useState([]);
   const [inputText, setInputText] = useState("");
@@ -307,6 +308,8 @@ const AIChatTab = ({
           // Format settings to match userProfile structure
           const profile = {
             name: settings.name || "",
+            profileName: settings.profileName || "",
+            username: settings.username || "",
             skills: settings.skills || "",
             aboutMe: settings.aboutMe || "",
           };
@@ -320,6 +323,21 @@ const AIChatTab = ({
     };
     loadUserProfile();
   }, []);
+
+  useEffect(() => {
+    const extensionProfile = selectedSellerProfile || sellerProfile;
+    if (!extensionProfile) return;
+
+    setUserProfile((current) => ({
+      ...current,
+      profileName:
+        extensionProfile.profileName ||
+        extensionProfile.username ||
+        current.profileName ||
+        "",
+      username: extensionProfile.username || current.username || "",
+    }));
+  }, [selectedSellerProfile, sellerProfile]);
 
   // Load chat history when client changes
   useEffect(() => {
@@ -487,7 +505,11 @@ const AIChatTab = ({
     try {
       // Build context from recent messages (last 10 messages for better context)
       const recentMessages = messages.slice(-10);
-      const sellerName = userProfile.name || "Md";
+      const sellerName =
+        userProfile.profileName ||
+        userProfile.username ||
+        userProfile.name ||
+        "the seller";
       const conversationText = recentMessages
         .map((m, idx) => {
           const sender =

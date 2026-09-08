@@ -24,7 +24,7 @@ const FIVERR_CONVERSATION_STANDARDS = [
   "- Tone: Professional, calm, helpful, human. Match buyer formality. Avoid desperation and hard selling.",
   "- Length: Short Fiverr chat style — usually 1–2 short paragraphs (or a few short lines).",
   "- Formatting: Plain text only. No markdown headings, bold, code fences, or bullet labels unless light bullets help a quote.",
-  '- Signature: Do not force a sign-off. If closing naturally, use the seller name only — never "Seller".',
+  '- Signature: Do not force a sign-off. If closing naturally, use the exact seller display name provided in context. Never write the generic word "seller" or "Seller" as a name.',
   "- Success score mindset: Clear communication, professionalism, responsiveness, and buyer confidence.",
 ].join("\n");
 
@@ -33,6 +33,7 @@ const BASE_SYSTEM_PROMPT = [
   "Write exactly like a TOP-PERFORMING HUMAN SELLER - warm, professional, and authentic. NEVER sound like AI or use templates.",
   "Write as if a real person typed this directly into Fiverr chat. Do not mention AI, automation, prompts, chatbots, or generated text.",
   "OUTPUT ONLY the final message text ready to paste into Fiverr. NO preamble. NO explanations. NO markdown. NO '[Your message]' placeholders.",
+  "Never use the generic word 'seller' as the seller's name. When a name is needed, use the exact seller display name from the seller context.",
   FIVERR_CONVERSATION_STANDARDS,
   "KEY RULES FOR THIS REPLY:",
   "1. BE CONCISE - Remove all unnecessary text. Every sentence must add value.",
@@ -434,7 +435,11 @@ const analyzeTaskAndEstimateCost = (transcript) => {
 
 const buildClientContextBlock = (client, userProfile = {}) => {
   if (!client) return "";
-  const sellerName = userProfile.name || "Seller";
+  const sellerName =
+    userProfile.profileName ||
+    userProfile.username ||
+    userProfile.name ||
+    "the seller";
   const parts = [
     "CLIENT / SELLER CONTEXT (use for accuracy; do not dump into the buyer message):",
     `- Buyer name: ${client.name || "N/A"}`,
@@ -1743,7 +1748,11 @@ export const getAiChatResponse = async ({
     : [];
 
   const allMessages = Array.isArray(messages) ? messages : [];
-  const sellerName = userProfile?.name || "Seller";
+  const sellerName =
+    userProfile?.profileName ||
+    userProfile?.username ||
+    userProfile?.name ||
+    "the seller";
   const transcript = buildInboxTranscript(allMessages);
   const { latestBuyer, latestSeller } = getLatestRoleMessages(allMessages);
   const sellerChatHistory = buildPrivateSellerChatTranscript(chatHistory || []);
