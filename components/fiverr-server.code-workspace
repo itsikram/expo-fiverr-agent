@@ -1,0 +1,14 @@
+{
+  "folders": [
+	{
+		"path": "../../fiverr-server"
+	},
+	{
+		"path": "../../Connect/expo-connect-app"
+	},
+	{
+		"path": ".."
+	}
+],
+  "settings": {}
+}

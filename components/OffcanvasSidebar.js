@@ -7,20 +7,26 @@ import {
   Animated,
   Text,
   PanResponder,
+  useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, typography, layout } from '../constants/theme';
+import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
-const SIDEBAR_WIDTH = layout.sidebarWidth;
-const SWIPE_THRESHOLD = SIDEBAR_WIDTH * 0.35;
 const EDGE_STRIP_WIDTH = 20;
 
 const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefetching = false, enableSwipeOpen = false }) => {
-  const slideAnim = React.useRef(new Animated.Value(-SIDEBAR_WIDTH)).current;
+  const { width: viewportWidth } = useWindowDimensions();
+  const sidebarWidth = viewportWidth < 768 ? viewportWidth * 0.9 : viewportWidth * 0.3;
+  const swipeThreshold = sidebarWidth * 0.35;
+  const slideAnim = React.useRef(new Animated.Value(-sidebarWidth)).current;
   const overlayOpacity = React.useRef(new Animated.Value(0)).current;
   const rotateAnim = React.useRef(new Animated.Value(0)).current;
   const [modalVisible, setModalVisible] = React.useState(false);
   const dragOffset = React.useRef(0);
+
+  useEffect(() => {
+    slideAnim.setValue(isOpen ? 0 : -sidebarWidth);
+  }, [sidebarWidth]);
 
   useEffect(() => {
     if (isOpen) {
@@ -41,7 +47,7 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
     } else {
       Animated.parallel([
         Animated.timing(slideAnim, {
-          toValue: -SIDEBAR_WIDTH,
+          toValue: -sidebarWidth,
           duration: 300,
           useNativeDriver: true,
         }),
@@ -87,14 +93,14 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
       if (!isOpen) return;
       const dx = Math.min(0, g.dx);
       slideAnim.setValue(dx);
-      overlayOpacity.setValue(1 + dx / SIDEBAR_WIDTH);
+      overlayOpacity.setValue(1 + dx / sidebarWidth);
     },
     onPanResponderRelease: (_, g) => {
       if (!isOpen) return;
-      const shouldClose = g.dx < -SWIPE_THRESHOLD || (g.vx < 0 && Math.abs(g.vx) > 0.3);
+      const shouldClose = g.dx < -swipeThreshold || (g.vx < 0 && Math.abs(g.vx) > 0.3);
       if (shouldClose) {
         Animated.parallel([
-          Animated.timing(slideAnim, { toValue: -SIDEBAR_WIDTH, duration: 250, useNativeDriver: true }),
+          Animated.timing(slideAnim, { toValue: -sidebarWidth, duration: 250, useNativeDriver: true }),
           Animated.timing(overlayOpacity, { toValue: 0, duration: 250, useNativeDriver: true }),
         ]).start(() => {
           setModalVisible(false);
@@ -107,7 +113,7 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
         ]).start();
       }
     },
-  }), [isOpen, onClose, enableSwipeOpen]);
+  }), [isOpen, onClose, enableSwipeOpen, sidebarWidth, swipeThreshold]);
 
   // Pan: open by dragging from left edge when closed
   const panResponderOpen = React.useMemo(() => PanResponder.create({
@@ -116,12 +122,12 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
     onPanResponderMove: (_, g) => {
       if (isOpen) return;
       const dx = Math.max(0, g.dx);
-      slideAnim.setValue(-SIDEBAR_WIDTH + dx);
-      overlayOpacity.setValue(Math.min(1, dx / SIDEBAR_WIDTH));
+      slideAnim.setValue(-sidebarWidth + dx);
+      overlayOpacity.setValue(Math.min(1, dx / sidebarWidth));
     },
     onPanResponderRelease: (_, g) => {
       if (isOpen) return;
-      const shouldOpen = g.dx > SWIPE_THRESHOLD || (g.vx > 0 && g.vx > 0.3);
+      const shouldOpen = g.dx > swipeThreshold || (g.vx > 0 && g.vx > 0.3);
       if (shouldOpen && onOpen) {
         onOpen();
         Animated.parallel([
@@ -130,12 +136,12 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
         ]).start();
       } else {
         Animated.parallel([
-          Animated.timing(slideAnim, { toValue: -SIDEBAR_WIDTH, duration: 200, useNativeDriver: true }),
+          Animated.timing(slideAnim, { toValue: -sidebarWidth, duration: 200, useNativeDriver: true }),
           Animated.timing(overlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
         ]).start();
       }
     },
-  }), [isOpen, onOpen]);
+  }), [isOpen, onOpen, sidebarWidth, swipeThreshold]);
 
   // Modal only when sidebar is open or closing — so Android doesn't block BottomBar taps when closed
   const isModalVisible = isOpen || modalVisible;
@@ -177,6 +183,7 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
         <Animated.View
           style={[
             styles.sidebar,
+            { width: sidebarWidth },
             { transform: [{ translateX: slideAnim }] },
           ]}
           {...(isOpen ? panResponderClose.panHandlers : {})}
@@ -249,8 +256,6 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    width: SIDEBAR_WIDTH,
-    maxWidth: '30vw',
     zIndex: 1000,
   },
   sidebarInner: {
