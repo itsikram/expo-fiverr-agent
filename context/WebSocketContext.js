@@ -20,6 +20,7 @@ import {
   loadSettings,
 } from "../utils/storage";
 import { startAutoReplyWatcher } from "../utils/autoReplyService";
+import { normalizeAutoReplyModel } from "../config/ai";
 import {
   loadProfileReloadSettings,
   TAB_RELOAD_SETTINGS_EVENT,
@@ -2942,9 +2943,7 @@ export const WebSocketProvider = ({ children }) => {
               process.env.EXPO_PUBLIC_GEMINI_API_KEY ||
               "",
             model:
-              settings.aiModel ||
-              process.env.EXPO_PUBLIC_GEMINI_MODEL ||
-              "gemini-3.5-flash",
+              normalizeAutoReplyModel(settings.aiModel),
             userProfile: {
               name: settings.name || "",
               skills: settings.skills || "",

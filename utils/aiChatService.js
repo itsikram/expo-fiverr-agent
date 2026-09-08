@@ -1440,7 +1440,8 @@ const isGeminiUrl = (value) =>
 const UNSUPPORTED_GEMINI_MODELS = new Set(RETIRED_GEMINI_MODELS);
 
 const normalizeGeminiModel = (model) => {
-  const trimmed = typeof model === "string" ? model.trim() : "";
+  const trimmed =
+    typeof model === "string" ? model.trim().replace(/^models\//, "") : "";
   if (
     !trimmed ||
     isOpenAiModel(trimmed) ||

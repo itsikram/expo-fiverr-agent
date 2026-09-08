@@ -171,6 +171,14 @@ const QUICK_ACTIONS = [
     styleKey: "generateOfferButton",
   },
   {
+    id: "offer",
+    presetKind: "offer",
+    label: "Custom Offer",
+    subtitle: "Generate custom offer description per agreement",
+    icon: "gift",
+    styleKey: "customOfferButton",
+  },
+  {
     id: "generateImage",
     presetKind: null,
     mode: "image",

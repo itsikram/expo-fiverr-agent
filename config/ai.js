@@ -11,6 +11,7 @@ export const RETIRED_GEMINI_MODELS = [
   'gemini-2.0-flash',
   'gemini-2.0-flash-lite',
   'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
   'gemini-2.5-pro',
 ];
 
@@ -24,14 +25,14 @@ export const AI_CONFIG = {
     process.env.EXPO_PUBLIC_GEMINI_MODEL ||
     process.env.EXPO_PUBLIC_AI_MODEL ||
     process.env.EXPO_PUBLIC_OPENAI_MODEL ||
-    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
   // Flash / Flash-Lite models are the ones Google still offers on the free tier.
   // Pro models are paid-only, and 2.5-flash is closed to new API keys.
-  DEFAULT_MODEL: 'gemini-3.5-flash',
+  DEFAULT_MODEL: 'gemini-3.5-flash-lite',
   GEMINI_FALLBACK_MODELS: [
+    'gemini-3.5-flash-lite',
     'gemini-3.5-flash',
     'gemini-3.6-flash',
-    'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
     'gemini-3-flash-preview',
     'gemini-2.5-flash-lite',
@@ -70,4 +71,16 @@ export const USER_PROFILE = {
   skills: ['WordPress', 'Python'],
   experience: 'Five years of experience in WordPress and Python development',
   specialization: 'WordPress and Python Development',
+};
+
+export const normalizeAutoReplyModel = (model) => {
+  const configuredModel = String(
+    model || process.env.EXPO_PUBLIC_GEMINI_MODEL || AI_CONFIG.DEFAULT_MODEL,
+  ).trim().replace(/^models\//, '');
+
+  if (!configuredModel || RETIRED_GEMINI_MODELS.includes(configuredModel)) {
+    return AI_CONFIG.DEFAULT_MODEL;
+  }
+
+  return configuredModel.replace(/^models\//, '');
 };
