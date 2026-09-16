@@ -167,6 +167,7 @@ const ClientList = ({
   onSelectProfile,
   isLoading = false,
   showProfileSelector = true,
+  horizontal = false,
 }) => {
   const [searchText, setSearchText] = useState("");
 
@@ -229,7 +230,7 @@ const ClientList = ({
           item.conversationId === selectedClientId ||
           item.id === selectedClientId));
 
-    return (
+    const itemContent = (
       <ClientListItem
         client={item}
         isSelected={isSelected}
@@ -237,10 +238,16 @@ const ClientList = ({
         onDelete={() => onDeleteClient(rowId)}
       />
     );
+
+    return horizontal ? (
+      <View style={styles.horizontalItem}>{itemContent}</View>
+    ) : (
+      itemContent
+    );
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, horizontal && styles.horizontalContainer]}>
       {showProfileSelector ? (
         <View style={styles.profileSection}>
           <ProfileSelector
@@ -292,12 +299,15 @@ const ClientList = ({
           data={filteredClients}
           renderItem={renderClient}
           keyExtractor={(item, index) => getClientListKey(item, index)}
+          horizontal={horizontal}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[
             styles.listContent,
+            horizontal && styles.horizontalListContent,
             filteredClients.length === 0 && styles.listContentEmpty,
           ]}
-          showsVerticalScrollIndicator={false}
+          showsHorizontalScrollIndicator={false}
+          showsVerticalScrollIndicator={!horizontal}
           ListHeaderComponent={
             isLoading ? (
               <View style={styles.loadingBanner}>
@@ -325,6 +335,19 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     paddingTop: Platform.OS === "web" ? spacing.sm : spacing.lg,
     backgroundColor: colors.background.sidebar,
+  },
+  horizontalContainer: {
+    flex: 0,
+    width: "100%",
+    padding: spacing.sm,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  horizontalItem: {
+    width: 210,
+    marginRight: spacing.sm,
   },
   profileSection: {
     marginBottom: spacing.md,
@@ -362,6 +385,11 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: spacing.xl,
+  },
+  horizontalListContent: {
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
   },
   listContentEmpty: {
     flexGrow: 1,

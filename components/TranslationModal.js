@@ -11,8 +11,13 @@ import {
   Alert,
   Platform } from
 'react-native';
-import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+} from 'expo-audio';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
@@ -83,6 +88,7 @@ const TranslationModal = ({
   const inputTextRef = useRef(initialText);
   const autoTranslateTimerRef = useRef(null);
   const autoTranslateInputDebounceRef = useRef(null);
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recordingRef = useRef(null);
   const chunkIntervalRef = useRef(null);
   const translationInProgressRef = useRef(false);
@@ -100,7 +106,6 @@ const TranslationModal = ({
   const mediaStreamRef = useRef(null);
   const audioContextRef = useRef(null);
   const scriptProcessorRef = useRef(null);
-  const [permissionResponse, requestPermission] = Audio.usePermissions();
   const deepgramApiKey = (process.env.EXPO_PUBLIC_DEEPGRAM_API_KEY || '').trim();
 
   useEffect(() => {
@@ -188,7 +193,7 @@ const TranslationModal = ({
     };
   }, [isListening, inputText, lastTranslationText]);
 
-  // Transcribe audio file with Deepgram (works in Expo Go via expo-av + this API)
+  // Transcribe audio file with Deepgram (works in Expo Go via expo-audio + this API)
   const transcribeWithDeepgram = async (audioUri, contentType = 'audio/m4a', apiKey) => {
     const key = (apiKey || deepgramApiKey || '').trim();
     if (!key) {
@@ -200,13 +205,17 @@ const TranslationModal = ({
       const res = await fetch(audioUri);
       body = await res.arrayBuffer();
     } else {
-      // Native: expo-av usually returns file:// URI; try fetch first (RN may support file://), then FileSystem
+      // Native: expo-audio returns a file:// URI; try fetch first, then FileSystem.
       try {
         if (typeof fetch === 'function') {
           const res = await fetch(audioUri, { method: 'GET' });
           if (res.ok) body = await res.arrayBuffer();
         }
-      } catch (_) {}
+      } catch (error) {
+        if (voiceSessionActiveRef.current) {
+          setVoiceStatus(`⚠️ Audio meter error: ${error?.message || 'unable to read microphone status'}`);
+        }
+      }
       if (body === undefined) {
         try {
           const base64 = await FileSystem.readAsStringAsync(audioUri, {
@@ -438,9 +447,9 @@ const TranslationModal = ({
     let uri = null;
     try {
       setVoiceStatus('🎤 Processing your phrase...');
-      await recording.stopAndUnloadAsync();
+      await recording.stop();
       recordingRef.current = null;
-      uri = recording.getURI();
+      uri = recording.uri;
     } catch (e) {
 
       processingChunkRef.current = false;
@@ -474,7 +483,11 @@ const TranslationModal = ({
           });
         }
       }).
-      catch(() => {});
+      catch((error) => {
+        if (voiceSessionActiveRef.current) {
+          setVoiceStatus(`⚠️ Transcription error: ${error?.message || 'Deepgram request failed'}`);
+        }
+      });
     }
   };
 
@@ -483,7 +496,7 @@ const TranslationModal = ({
     const rec = recordingRef.current;
     if (!rec) return;
     try {
-      const status = await rec.getStatusAsync();
+      const status = rec.getStatus();
       const metering = status?.metering;
       if (metering === undefined || metering === null) {
         meteringUndefinedCountRef.current = (meteringUndefinedCountRef.current || 0) + 1;
@@ -521,18 +534,16 @@ const TranslationModal = ({
     recordingPreparingRef.current = true;
     try {
       recordingRef.current = null;
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false
+      await setAudioModeAsync({
+        allowsRecording: true,
+        playsInSilentMode: true,
+        interruptionMode: 'doNotMix',
+        shouldRouteThroughEarpiece: false,
+        shouldPlayInBackground: false,
       });
-      const { recording } = await Audio.Recording.createAsync({
-        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        isMeteringEnabled: true
-      });
-      recordingRef.current = recording;
+      await audioRecorder.prepareToRecordAsync({ isMeteringEnabled: true });
+      audioRecorder.record();
+      recordingRef.current = audioRecorder;
       recordingStartTimeRef.current = Date.now();
       setVoiceStatus('🎤 Listening... (speak, then pause for next phrase)');
     } finally {
@@ -569,15 +580,13 @@ const TranslationModal = ({
       }
       voiceSessionActiveRef.current = true;
       recordingRef.current = null;
-      if (permissionResponse?.status !== 'granted') {
-        setVoiceStatus('Requesting microphone permission...');
-        const { status } = await requestPermission();
-        if (status !== 'granted') {
-          Alert.alert('Microphone access is required for voice input.');
-          setIsListening(false);
-          voiceSessionActiveRef.current = false;
-          return;
-        }
+      setVoiceStatus('Requesting microphone permission...');
+      const { status } = await requestRecordingPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Microphone access is required for voice input.');
+        setIsListening(false);
+        voiceSessionActiveRef.current = false;
+        return;
       }
       meteringUnavailableRef.current = false;
       hadSpeechInChunkRef.current = false;
@@ -628,8 +637,8 @@ const TranslationModal = ({
     try {
       const rec = recordingRef.current;
       if (rec) {
-        await rec.stopAndUnloadAsync();
-        const uri = rec.getURI();
+        await rec.stop();
+        const uri = rec.uri;
         if (uri) {
           setVoiceStatus('⏳ Transcribing last chunk...');
           const contentType = 'audio/m4a';

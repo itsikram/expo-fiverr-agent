@@ -45,6 +45,7 @@
       "favicon": "./assets/icon.png"
     },
     "plugins": [
+      "expo-audio",
       "expo-speech-recognition",
       [
         "expo-image-picker",

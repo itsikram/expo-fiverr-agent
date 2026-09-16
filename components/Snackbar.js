@@ -1,9 +1,10 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity, Platform } from 'react-native';
+import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/theme';
 
-const USE_NATIVE_DRIVER = Platform.OS !== 'web';
+// Expo Go does not expose the legacy RCTAnimation native module on all runtimes.
+const USE_NATIVE_DRIVER = false;
 
 const Snackbar = ({ visible, message, onDismiss, duration = 3000, type = 'info' }) => {
   const slideAnim = useRef(new Animated.Value(-100)).current;

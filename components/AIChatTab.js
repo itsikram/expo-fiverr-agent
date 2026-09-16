@@ -24,6 +24,7 @@ import { getAiChatResponse } from "../utils/aiChatService";
 import {
   attachmentsToMessageImages,
   MAX_AI_ATTACHMENTS,
+  pickAiChatFiles,
   pickAiChatImages,
   pickAiChatPdfs,
 } from "../utils/aiAttachments";
@@ -76,9 +77,13 @@ const INPUT_MIN_HEIGHT = INPUT_LINE_HEIGHT;
 const INPUT_MAX_HEIGHT = INPUT_LINE_HEIGHT * 10;
 const INPUT_ROW_VERTICAL_PADDING = 10;
 const INPUT_ROW_MIN_HEIGHT = INPUT_MIN_HEIGHT + INPUT_ROW_VERTICAL_PADDING * 2;
+const CLIENT_SEND_STATUS_MIN_MS = 5000;
 
 const PRESET_LABELS = {
   reply: "Generate next message",
+  followup: "Generate follow-up message",
+  delivery: "Generate delivery message",
+  budget: "Generate budget question",
   first: "Generate first message",
   cost: "Generate pricing message",
   quote: "Generate quotation",
@@ -95,7 +100,11 @@ const OPTIONS_TYPE_TO_PRESET = {
   "first-message": "first",
   "next-message": "reply",
   "professional-response": "reply",
-  "follow-up": "reply",
+  "follow-up": "followup",
+  "task-update": "delivery",
+  "budget-persuade": "budget",
+  "delivery-message": "delivery",
+  "budget-message": "budget",
   "generate-offer": "quote",
   "explain-task": "task",
   clarification: "clarify",
@@ -113,6 +122,30 @@ const QUICK_ACTIONS = [
     subtitle: "Continue from your last message and answer the buyer",
     icon: "chatbubble-ellipses",
     styleKey: "nextMessageButton",
+  },
+  {
+    id: "followup",
+    presetKind: "followup",
+    label: "Follow-up Message",
+    subtitle: "Reconnect naturally without sounding pushy",
+    icon: "time",
+    styleKey: "followUpButton",
+  },
+  {
+    id: "delivery",
+    presetKind: "delivery",
+    label: "Delivery Message",
+    subtitle: "Present completed work clearly and professionally",
+    icon: "checkmark-done",
+    styleKey: "deliveryButton",
+  },
+  {
+    id: "budget",
+    presetKind: "budget",
+    label: "Ask About Budget",
+    subtitle: "Ask the buyer's budget naturally and professionally",
+    icon: "cash-outline",
+    styleKey: "budgetButton",
   },
   {
     id: "quote",
@@ -940,17 +973,37 @@ Example (return exactly this format, no other text):
   };
 
   const handlePickImages = async () => {
-    const picked = await pickAiChatImages(pendingAttachments.length);
-    appendAttachments(picked);
+    try {
+      const picked = await pickAiChatImages(pendingAttachments.length);
+      appendAttachments(picked);
+    } catch (error) {
+      Alert.alert("Attachment error", error.message || "Unable to select images.");
+    }
   };
 
   const handlePickPdfs = async () => {
-    const picked = await pickAiChatPdfs(pendingAttachments.length);
-    appendAttachments(picked);
+    try {
+      const picked = await pickAiChatPdfs(pendingAttachments.length);
+      appendAttachments(picked);
+    } catch (error) {
+      Alert.alert("Attachment error", error.message || "Unable to select PDF files.");
+    }
   };
 
-  const handleAttachPress = () => {
+  const handleAttachPress = async () => {
     if (isLoading) return;
+    if (Platform.OS === "web") {
+      try {
+        const picked = await pickAiChatFiles(pendingAttachments.length);
+        appendAttachments(picked);
+      } catch (error) {
+        Alert.alert(
+          "Attachment error",
+          error.message || "Unable to select an attachment.",
+        );
+      }
+      return;
+    }
     if (Platform.OS === "ios") {
       Alert.alert("Attach to AI chat", "Choose a file type", [
         { text: "Photo", onPress: handlePickImages },
@@ -1254,7 +1307,7 @@ Example (return exactly this format, no other text):
           key={action.id}
           style={[
             styles.quickActionButton,
-            styles[action.styleKey],
+            styles.nextMessageButton,
             selectedPresetKind === action.presetKind &&
               styles.quickActionButtonSelected,
           ]}
@@ -1287,7 +1340,7 @@ Example (return exactly this format, no other text):
           key={`compact-${action.id}`}
           style={[
             styles.compactGeneratorChip,
-            styles[action.styleKey],
+            styles.nextMessageButton,
             selectedPresetKind === action.presetKind &&
               styles.compactGeneratorChipSelected,
           ]}
@@ -1430,7 +1483,13 @@ Example (return exactly this format, no other text):
         cancelOptimisticMessage(trimmedMessage, conversationId);
       }
     } finally {
-      // Clear sending UI as soon as the send request finishes.
+      const elapsed = Date.now() - startTime;
+      const remaining = CLIENT_SEND_STATUS_MIN_MS - elapsed;
+      if (remaining > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remaining));
+      }
+
+      // Keep the sending state visible long enough for the user to see it.
       if (sendingStartTimeRef.current === startTime) {
         setSendingToClient(false);
         setSendingMessageText(null);
@@ -1731,22 +1790,22 @@ Example (return exactly this format, no other text):
     setOptionsModalInputText("");
   };
 
-  const handleClearChatHistory = () => {
+  const handleDeleteChat = () => {
     if (chatMessages.length === 0) {
-      Alert.alert("Info", "AI chat context is already empty");
+      Alert.alert("Info", "There is no chat to delete");
       return;
     }
 
     Alert.alert(
-      "Clear AI Chat Context",
-      "Clear all AI chat messages for this client? The Fiverr conversation stays unchanged.",
+      "Delete AI chat",
+      "Delete all AI chat messages for this client? The Fiverr conversation stays unchanged.",
       [
         {
           text: "Cancel",
           style: "cancel",
         },
         {
-          text: "Clear",
+          text: "Delete",
           style: "destructive",
           onPress: async () => {
             try {
@@ -1772,13 +1831,19 @@ Example (return exactly this format, no other text):
 
               // Clear from storage
               const cleared = await clearAIChatHistory(clientId);
+              if (!cleared) {
+                throw new Error("Unable to delete the chat from storage.");
+              }
 
               // Keep the flag set until the delete has completed so no in-flight
               // load or save can repopulate the cleared conversation.
               isClearingRef.current = false;
             } catch (error) {
-              // State is already cleared, just reset the flag
               isClearingRef.current = false;
+              Alert.alert(
+                "Delete failed",
+                error.message || "Unable to delete the chat. Please try again.",
+              );
             }
           },
         },
@@ -1966,7 +2031,7 @@ Example (return exactly this format, no other text):
                           styles.stopActionButtonText,
                         ]}
                       >
-                        Stop
+                        Sending...
                       </Text>
                     </TouchableOpacity>
                   ) : (
@@ -2036,12 +2101,12 @@ Example (return exactly this format, no other text):
         <Text style={styles.chatHeaderTitle}>AI Assistant</Text>
         <TouchableOpacity
           style={[
-            styles.clearContextButton,
-            chatMessages.length === 0 && styles.clearContextButtonDisabled,
+            styles.deleteChatButton,
+            chatMessages.length === 0 && styles.deleteChatButtonDisabled,
           ]}
-          onPress={handleClearChatHistory}
+          onPress={handleDeleteChat}
           disabled={chatMessages.length === 0}
-          accessibilityLabel="Clear AI chat context"
+          accessibilityLabel="Delete AI chat"
         >
           <Ionicons
             name="trash-outline"
@@ -2055,12 +2120,12 @@ Example (return exactly this format, no other text):
 
           <Text
             style={[
-              styles.clearContextButtonText,
+              styles.deleteChatButtonText,
               chatMessages.length === 0 &&
-                styles.clearContextButtonTextDisabled,
+                styles.deleteChatButtonTextDisabled,
             ]}
           >
-            Clear context
+            Delete chat
           </Text>
         </TouchableOpacity>
       </View>
@@ -2540,7 +2605,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.semibold,
     color: colors.text.secondary,
   },
-  clearContextButton: {
+  deleteChatButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs / 2,
@@ -2551,15 +2616,15 @@ const styles = StyleSheet.create({
     borderColor: colors.border.light,
     backgroundColor: colors.background.card,
   },
-  clearContextButtonDisabled: {
+  deleteChatButtonDisabled: {
     opacity: 0.55,
   },
-  clearContextButtonText: {
+  deleteChatButtonText: {
     fontSize: typography.sizes.xs,
     fontWeight: typography.weights.medium,
     color: colors.accent.error || "#dc3545",
   },
-  clearContextButtonTextDisabled: {
+  deleteChatButtonTextDisabled: {
     color: colors.text.muted,
   },
   messagesScroll: {
@@ -2723,6 +2788,15 @@ const styles = StyleSheet.create({
   },
   nextMessageButton: {
     backgroundColor: colors.accent.primary,
+  },
+  followUpButton: {
+    backgroundColor: "#2563eb",
+  },
+  deliveryButton: {
+    backgroundColor: colors.accent.success,
+  },
+  budgetButton: {
+    backgroundColor: "#9333ea",
   },
   explainTaskButton: {
     backgroundColor: colors.accent.info || "#3b82f6",

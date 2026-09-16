@@ -13,10 +13,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
 const EDGE_STRIP_WIDTH = 20;
+const USE_NATIVE_DRIVER = false;
 
 const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefetching = false, enableSwipeOpen = false }) => {
   const { width: viewportWidth } = useWindowDimensions();
-  const sidebarWidth = viewportWidth < 768 ? viewportWidth * 0.9 : viewportWidth * 0.3;
+  const sidebarWidth = Math.min(
+    viewportWidth < 768 ? viewportWidth * 0.9 : viewportWidth * 0.3,
+    500,
+  );
   const swipeThreshold = sidebarWidth * 0.35;
   const slideAnim = React.useRef(new Animated.Value(-sidebarWidth)).current;
   const overlayOpacity = React.useRef(new Animated.Value(0)).current;
@@ -36,12 +40,12 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
         Animated.timing(slideAnim, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: USE_NATIVE_DRIVER,
         }),
         Animated.timing(overlayOpacity, {
           toValue: 1,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: USE_NATIVE_DRIVER,
         }),
       ]).start();
     } else {
@@ -49,12 +53,12 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
         Animated.timing(slideAnim, {
           toValue: -sidebarWidth,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: USE_NATIVE_DRIVER,
         }),
         Animated.timing(overlayOpacity, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: USE_NATIVE_DRIVER,
         }),
       ]).start(() => {
         setModalVisible(false);
@@ -69,7 +73,7 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
         Animated.timing(rotateAnim, {
           toValue: 1,
           duration: 1000,
-          useNativeDriver: true,
+          useNativeDriver: USE_NATIVE_DRIVER,
         })
       );
       spinAnimation.start();
@@ -100,16 +104,16 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
       const shouldClose = g.dx < -swipeThreshold || (g.vx < 0 && Math.abs(g.vx) > 0.3);
       if (shouldClose) {
         Animated.parallel([
-          Animated.timing(slideAnim, { toValue: -sidebarWidth, duration: 250, useNativeDriver: true }),
-          Animated.timing(overlayOpacity, { toValue: 0, duration: 250, useNativeDriver: true }),
+          Animated.timing(slideAnim, { toValue: -sidebarWidth, duration: 250, useNativeDriver: USE_NATIVE_DRIVER }),
+          Animated.timing(overlayOpacity, { toValue: 0, duration: 250, useNativeDriver: USE_NATIVE_DRIVER }),
         ]).start(() => {
           setModalVisible(false);
           onClose?.();
         });
       } else {
         Animated.parallel([
-          Animated.timing(slideAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
-          Animated.timing(overlayOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+          Animated.timing(slideAnim, { toValue: 0, duration: 200, useNativeDriver: USE_NATIVE_DRIVER }),
+          Animated.timing(overlayOpacity, { toValue: 1, duration: 200, useNativeDriver: USE_NATIVE_DRIVER }),
         ]).start();
       }
     },
@@ -131,13 +135,13 @@ const OffcanvasSidebar = ({ isOpen, onClose, onOpen, children, onRefetch, isRefe
       if (shouldOpen && onOpen) {
         onOpen();
         Animated.parallel([
-          Animated.timing(slideAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
-          Animated.timing(overlayOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+          Animated.timing(slideAnim, { toValue: 0, duration: 250, useNativeDriver: USE_NATIVE_DRIVER }),
+          Animated.timing(overlayOpacity, { toValue: 1, duration: 250, useNativeDriver: USE_NATIVE_DRIVER }),
         ]).start();
       } else {
         Animated.parallel([
-          Animated.timing(slideAnim, { toValue: -sidebarWidth, duration: 200, useNativeDriver: true }),
-          Animated.timing(overlayOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+          Animated.timing(slideAnim, { toValue: -sidebarWidth, duration: 200, useNativeDriver: USE_NATIVE_DRIVER }),
+          Animated.timing(overlayOpacity, { toValue: 0, duration: 200, useNativeDriver: USE_NATIVE_DRIVER }),
         ]).start();
       }
     },

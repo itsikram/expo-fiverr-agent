@@ -80,7 +80,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   const { username, email, token, role, logout } = useAuth();
 
   const [selectedClientId, setSelectedClientId] = useState(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Open sidebar by default
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isTranslationModalVisible, setIsTranslationModalVisible] =
     useState(false);
   const [translationInitialText, setTranslationInitialText] = useState("");
@@ -1013,9 +1013,9 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     const conversationKey = client ? getClientConversationId(client) : null;
 
     setSelectedClientId(clientId);
-    if (!isDesktopWeb) {
-      setIsSidebarOpen(false);
-    }
+    // Close the client picker after selection. The off-canvas sidebar will
+    // animate left, while desktop can reopen it from the menu toggle.
+    setIsSidebarOpen(false);
 
     if (conversationKey) {
       setSelectedConversationId(conversationKey);
@@ -1246,7 +1246,22 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
   };
 
   const extensionStatus = getExtensionStatus();
+  const showClientNavigation = Platform.OS === "web";
 
+  const topClientList = (
+    <ClientList
+      sellerProfiles={sellerProfiles}
+      selectedSellerProfile={selectedSellerProfile}
+      onSelectProfile={setSelectedSellerProfile}
+      clients={visibleClients}
+      selectedClientId={selectedClientId}
+      onSelectClient={handleSelectClient}
+      onDeleteClient={handleDeleteClient}
+      isLoading={isLoadingClients}
+      showProfileSelector={isAdminRole}
+      horizontal
+    />
+  );
   const sidebarClientList = (
     <ClientList
       sellerProfiles={sellerProfiles}
@@ -1265,46 +1280,18 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     <View
       style={[styles.container, Platform.OS === "web" && styles.containerWeb]}
     >
-      <View style={[styles.content, isDesktopWeb && styles.contentDesktop]}>
-        {isDesktopWeb ? (
-          isSidebarOpen ? (
-            <View style={styles.desktopSidebar}>
-              {sidebarClientList}
-              <View style={styles.desktopSidebarFooter}>
-                <TouchableOpacity
-                  style={[
-                    styles.desktopRefetchButton,
-                    isRefetching && styles.desktopRefetchButtonDisabled,
-                  ]}
-                  onPress={handleRefetch}
-                  activeOpacity={0.7}
-                  disabled={isRefetching}
-                >
-                  <Ionicons
-                    name="refresh"
-                    size={18}
-                    color={colors.text.secondary}
-                  />
-
-                  <Text style={styles.desktopRefetchButtonText}>
-                    {isRefetching ? "Fetching..." : "Refetch clients"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : null
-        ) : (
-          <OffcanvasSidebar
-            isOpen={isSidebarOpen}
-            onClose={() => setIsSidebarOpen(false)}
-            onOpen={() => setIsSidebarOpen(true)}
-            enableSwipeOpen
-            onRefetch={handleRefetch}
-            isRefetching={isRefetching}
-          >
-            {sidebarClientList}
-          </OffcanvasSidebar>
-        )}
+      {showClientNavigation ? topClientList : null}
+      <OffcanvasSidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        onOpen={() => setIsSidebarOpen(true)}
+        enableSwipeOpen
+        onRefetch={handleRefetch}
+        isRefetching={isRefetching}
+      >
+        {sidebarClientList}
+      </OffcanvasSidebar>
+      <View style={styles.content}>
 
         {/* Main Content */}
         <View
@@ -1341,12 +1328,14 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
               style={styles.emptyState}
             >
               <View style={styles.emptyContent}>
-                <ProfileSelector
-                  sellerProfiles={sellerProfiles}
-                  selectedSellerProfile={selectedSellerProfile}
-                  onSelectProfile={setSelectedSellerProfile}
-                  variant="card"
-                />
+                {showClientNavigation ? (
+                  <ProfileSelector
+                    sellerProfiles={sellerProfiles}
+                    selectedSellerProfile={selectedSellerProfile}
+                    onSelectProfile={setSelectedSellerProfile}
+                    variant="card"
+                  />
+                ) : null}
 
                 <Text style={styles.emptyIcon}>👥</Text>
                 <Text style={styles.emptyTitle}>
@@ -1382,8 +1371,17 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
                 </Text>
               </View>
 
-              {(!isAssignmentsLoaded || isLoadingClients) &&
-              visibleClients.length === 0 ? (
+              {!showClientNavigation ? (
+                <View style={styles.assignedClientsEmpty}>
+                  <Text style={styles.emptyIcon}>👥</Text>
+                  <Text style={styles.emptyTitle}>Client details</Text>
+                  <Text style={styles.emptyText}>
+                    Select a client from the web dashboard to view messages and
+                    details here.
+                  </Text>
+                </View>
+              ) : (!isAssignmentsLoaded || isLoadingClients) &&
+                visibleClients.length === 0 ? (
                 <View style={styles.assignedClientsLoading}>
                   <ActivityIndicator
                     size="large"

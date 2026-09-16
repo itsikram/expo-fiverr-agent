@@ -1,5 +1,5 @@
 import * as Notifications from 'expo-notifications';
-import { Audio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { AppState, Platform } from 'react-native';
 import {
   NOTIFICATION_CHANNELS,
@@ -256,9 +256,9 @@ class NotificationService {
         return;
       }
 
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true
+      await setAudioModeAsync({
+        playsInSilentMode: true,
+        shouldPlayInBackground: false,
       });
 
       if (!this.notificationSound) {
@@ -270,16 +270,15 @@ class NotificationService {
         }
 
         if (soundSource) {
-          const { sound } = await Audio.Sound.createAsync(soundSource);
-          this.notificationSound = sound;
+          this.notificationSound = createAudioPlayer(soundSource);
         }
       }
 
       if (this.notificationSound) {
         try {
-          await this.notificationSound.setPositionAsync(0);
+          await this.notificationSound.seekTo(0);
         } catch (_) {}
-        await this.notificationSound.playAsync();
+        this.notificationSound.play();
       }
     } catch (error) {
 

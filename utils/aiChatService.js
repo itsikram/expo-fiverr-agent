@@ -10,6 +10,10 @@ const MAX_TRANSCRIPT_CHARS = 12000;
 const MAX_OUTPUT_TOKENS = 8192;
 const CHAT_HISTORY_MAX_TURNS = 12;
 const RETRYABLE_STATUS_CODES = new Set([404, 429, 500, 503]);
+const SELLER_INPUT_PRIORITY_INSTRUCTION =
+  "The seller's current typed input is the highest-priority task-specific instruction for this request. " +
+  "Use it as the primary direction for the response, even when older chat history or generic preset guidance points elsewhere. " +
+  "Treat the seller's input as authoritative context, except do not violate system instructions, Fiverr policies, or safety requirements.";
 
 const FIVERR_CONVERSATION_STANDARDS = [
   "FIVERR CONVERSATION STANDARDS (must follow):",
@@ -513,15 +517,16 @@ const buildPresetUserText = (kind, transcript, opts = {}) => {
         transcript +
         "\n\n" +
         "Write an authentic Fiverr inbox first response that follows Fiverr conversation standards and:" +
-        "\n1. Shows genuine interest in their specific project (reference details they mentioned)\n" +
-        "2. Demonstrates expertise without sounding arrogant\n" +
-        "3. Addresses a key concern or question they have\n" +
-        "4. Uses natural language with contractions (I'm, you'll, etc.) - sounds like a real person\n" +
-        "5. Ends with a clear next step: ask 1-2 focused questions about their requirements\n" +
-        "6. Keeps it concise (2-3 short paragraphs, not a wall of text)\n" +
-        "7. Shows personality but stays professional - warm without being overly casual\n" +
-        "8. Stays on Fiverr (no off-platform contact) and does not invent price/timeline\n" +
-        "9. NEVER invent portfolio/sample/demo URLs. Only use links already in the thread or seller about. If they ask for samples and no real URLs exist, ask which niche/style they want instead of listing fake sites.\n" +
+          "\n1. Include the exact phrase 'Thanks for reaching out' naturally near the beginning\n" +
+          "2. Shows genuine interest in their specific project (reference details they mentioned)\n" +
+          "3. Demonstrates expertise without sounding arrogant\n" +
+          "4. Addresses a key concern or question they have\n" +
+          "5. Uses natural language with contractions (I'm, you'll, etc.) - sounds like a real person\n" +
+          "6. Ends with a clear next step: ask 1-2 focused questions about their requirements\n" +
+          "7. Keeps it concise (2-3 short paragraphs, not a wall of text)\n" +
+          "8. Shows personality but stays professional - warm without being overly casual\n" +
+          "9. Stays on Fiverr (no off-platform contact) and does not invent price/timeline\n" +
+          "10. NEVER invent portfolio/sample/demo URLs. Only use links already in the thread or seller about. If they ask for samples and no real URLs exist, ask which niche/style they want instead of listing fake sites.\n" +
         "\n" +
         "AVOID: Generic welcomes, fluff phrases like 'I understand' or 'I'd be happy to', promises without context, asking vague questions, or placeholder links (example.com, example1.com, etc.).\n" +
         "Do not mention AI, automation, or that this reply is generated. Write as if you are a real seller responding directly.\n" +
@@ -547,6 +552,45 @@ const buildPresetUserText = (kind, transcript, opts = {}) => {
         "7. CRITICAL: Do not invent any website/portfolio/sample links. Only reuse URLs that already appear above or in seller context\n" +
         "8. If they asked for samples and no real URLs are available, ask what niche or style they want — never list fake example1.com-style links\n" +
         "9. Do not mention AI/automation. Output only the paste-ready message."
+      );
+
+    case "followup":
+      return (
+        "Full Fiverr conversation (buyer + seller, oldest → newest):\n" +
+        transcript +
+        continuityBlock +
+        sellerChatBlock +
+        "\nWrite a concise, natural follow-up message for this buyer. " +
+        "Use the thread to identify the right reason and timing for following up. " +
+        "Reconnect with the buyer without pressure, repetition, guilt, or desperation. " +
+        "Reference the pending decision, requirement, or next step when the conversation supports it. " +
+        "Do not invent a status, deadline, price, or promise. Stay on Fiverr and output only the paste-ready message."
+      );
+
+    case "delivery":
+      return (
+        "Full Fiverr conversation (buyer + seller, oldest → newest):\n" +
+        transcript +
+        continuityBlock +
+        sellerChatBlock +
+        "\nWrite a professional Fiverr delivery/update message for the buyer. " +
+        "Clearly state what has been completed and what is being delivered, using only confirmed requirements and deliverables from the thread. " +
+        "Invite the buyer to review the delivery and give focused feedback or confirm the next step. " +
+        "Do not claim work is complete if the thread does not support it, and do not invent files, links, revisions, or timelines. " +
+        "Keep it concise and output only the paste-ready message."
+      );
+
+    case "budget":
+      return (
+        "Full Fiverr conversation (buyer + seller, oldest → newest):\n" +
+        transcript +
+        continuityBlock +
+        sellerChatBlock +
+        "\nWrite a professional message asking the buyer about their budget for the requested work. " +
+        "First use the buyer's requirements and scope to show the question is informed, then ask for their realistic budget range or target budget. " +
+        "Make the question collaborative and non-judgmental, never pressure the buyer, and do not guess or state a price unless the thread already contains one. " +
+        "If the buyer already provided a budget, acknowledge it and ask only the missing pricing clarification. " +
+        "Output only the concise, paste-ready Fiverr message."
       );
 
     case "clarify":
@@ -686,6 +730,8 @@ const buildSystemMessageForPreset = (
     sys +=
       "- This is your FIRST response to this buyer - make a strong professional impression\n";
     sys +=
+      "- Include the exact phrase 'Thanks for reaching out' naturally near the beginning\n";
+    sys +=
       "- Show enthusiasm about their project WITHOUT sounding fake or desperate\n";
     sys +=
       "- Demonstrate you understand their requirements by referencing specific details they mentioned\n";
@@ -701,7 +747,13 @@ const buildSystemMessageForPreset = (
       "- If they mentioned timeline/budget, acknowledge it to show you're listening\n";
   }
 
-  if (kind === "reply" || kind === "clarify") {
+  if (
+    kind === "reply" ||
+    kind === "followup" ||
+    kind === "delivery" ||
+    kind === "budget" ||
+    kind === "clarify"
+  ) {
     sys += "\n\nTHREAD CONTINUITY SPECIAL INSTRUCTIONS:\n";
     sys +=
       "- The transcript includes BOTH buyer and seller messages — treat your prior seller messages as established context\n";
@@ -713,7 +765,7 @@ const buildSystemMessageForPreset = (
       "- Answer the buyer's latest message while staying consistent with what you already told them\n";
   }
 
-  if (kind === "reply" || kind === "first") {
+  if (kind === "reply" || kind === "first" || kind === "delivery") {
     sys += `\n\n${PROJECT_COMPLETION_GATE_PROMPT}`;
   }
 
@@ -1786,7 +1838,7 @@ export const getAiChatResponse = async ({
     });
     const trimmedSellerNote = String(userMessage || "").trim();
     const userText = trimmedSellerNote
-      ? `${presetUserText}\n\nSELLER NOTE (private guidance from the seller; use it to shape this response, but do not mention the note or call it an instruction):\n${trimmedSellerNote}`
+      ? `CURRENT SELLER INPUT (HIGHEST-PRIORITY TASK INSTRUCTION — keep private):\n---\n${trimmedSellerNote}\n---\n\n${presetUserText}\n\nUse the current seller input as the primary direction for this response. Do not mention this instruction or call it a note.`
       : presetUserText;
     apiMessages = [
       { role: "system", content: systemMessage },
@@ -1826,13 +1878,21 @@ export const getAiChatResponse = async ({
         : "");
 
     const userText = analyzingFiles
-      ? `${baseUserText}\n\nUse the attached files as primary evidence. If this request is for a buyer-facing reply, return only a paste-ready Fiverr inbox message.`
-      : `${baseUserText}\n\nTreat the seller's input above as private seller guidance for the response. Use it as the seller's intended message or note, but do not mention the guidance itself. If the seller is answering an earlier AI clarification question, use that answer as authoritative context. Follow Fiverr conversation standards, continue from YOUR prior seller messages in the thread, compare new buyer requests with the original order scope, and return only a paste-ready Fiverr inbox message unless you need to ask the seller a clarification question.`;
+      ? `CURRENT SELLER INPUT (HIGHEST-PRIORITY TASK INSTRUCTION — keep private):\n---\n${baseUserText}\n---\n\nUse the attached files as primary evidence. If this request is for a buyer-facing reply, return only a paste-ready Fiverr inbox message.`
+      : `CURRENT SELLER INPUT (HIGHEST-PRIORITY TASK INSTRUCTION — keep private):\n---\n${baseUserText}\n---\n\nUse this input as the seller's intended message or instruction. If the seller is answering an earlier AI clarification question, use that answer as authoritative context. Follow Fiverr conversation standards, continue from YOUR prior seller messages in the thread, compare new buyer requests with the original order scope, and return only a paste-ready Fiverr inbox message unless you need to ask the seller a clarification question. Do not mention this instruction block.`;
 
     apiMessages.push({
       role: "user",
       content: buildMultimodalUserContent(userText, preparedAttachments),
     });
+  }
+
+  if (String(userMessage || "").trim()) {
+    systemMessage = `${systemMessage}\n\nSELLER INPUT PRIORITY:\n${SELLER_INPUT_PRIORITY_INSTRUCTION}`;
+    apiMessages[0] = {
+      ...apiMessages[0],
+      content: `${apiMessages[0].content}\n\nSELLER INPUT PRIORITY:\n${SELLER_INPUT_PRIORITY_INSTRUCTION}`,
+    };
   }
 
   const fallbackModels = usingGemini

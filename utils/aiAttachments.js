@@ -170,6 +170,45 @@ export const pickAiChatPdfs = async (existingCount = 0) => {
   return attachments;
 };
 
+export const pickAiChatFiles = async (existingCount = 0) => {
+  const remaining = MAX_AI_ATTACHMENTS - existingCount;
+  if (remaining <= 0) {
+    ensureRoom(existingCount, 1);
+    return [];
+  }
+
+  const result = await DocumentPicker.getDocumentAsync({
+    type: ['image/*', 'application/pdf'],
+    multiple: remaining > 1,
+    copyToCacheDirectory: true,
+  });
+
+  if (result.canceled || !Array.isArray(result.assets)) return [];
+
+  const attachments = [];
+  for (const asset of result.assets.slice(0, remaining)) {
+    if (!asset?.uri) continue;
+    const name = asset.name || `attachment-${attachments.length + 1}`;
+    const mimeType = asset.mimeType || guessMimeType(name);
+    const kind = mimeType === 'application/pdf' ? 'pdf' : 'image';
+    if (rejectIfTooLarge(asset.size, name)) continue;
+    attachments.push(
+      normalizeAttachment({
+        uri: asset.uri,
+        name,
+        mimeType,
+        size: asset.size,
+        kind,
+      }),
+    );
+  }
+
+  if (!ensureRoom(existingCount, attachments.length)) {
+    return attachments.slice(0, remaining);
+  }
+  return attachments;
+};
+
 const arrayBufferToBase64 = (buffer) => {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 0x8000;
