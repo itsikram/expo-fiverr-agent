@@ -1701,7 +1701,9 @@ Example (return exactly this format, no other text):
 
     const presetKind = OPTIONS_TYPE_TO_PRESET[type];
     if (presetKind) {
-      setOptionsModalInputText(PRESET_LABELS[presetKind] || presetKind);
+      // Keep the field empty so an optional seller note is never confused with
+      // the preset label, and an empty field still means "generate normally".
+      setOptionsModalInputText("");
       return;
     }
 
@@ -1738,7 +1740,8 @@ Example (return exactly this format, no other text):
 
   // Handle sending message from options modal
   const handleOptionsModalSend = async () => {
-    if (!optionsModalInputText.trim() || optionsModalLoading) {
+    const sellerInput = optionsModalInputText.trim();
+    if ((!sellerInput && !selectedMessageType) || optionsModalLoading) {
       return;
     }
 
@@ -1757,7 +1760,9 @@ Example (return exactly this format, no other text):
       const { text: aiText } = normalizeAiResult(
         await getAiChatResponse({
           presetKind: presetKind || undefined,
-          userMessage: presetKind ? undefined : optionsModalInputText,
+          // A typed note is always sent, even when a preset is selected. The
+          // AI service marks it as the highest-priority human instruction.
+          userMessage: sellerInput || undefined,
           client,
           messages: allFiverrMessages,
           chatHistory: historyForApi,
@@ -2524,13 +2529,15 @@ Example (return exactly this format, no other text):
                       style={[
                         styles.optionsModalActionButton,
                         styles.optionsModalGenerateButton,
-                        (!optionsModalInputText.trim() ||
+                        (!optionsModalInputText.trim() &&
+                          !selectedMessageType ||
                           optionsModalLoading) &&
                           styles.optionsModalActionButtonDisabled,
                       ]}
                       onPress={handleOptionsModalSend}
                       disabled={
-                        !optionsModalInputText.trim() || optionsModalLoading
+                        (!optionsModalInputText.trim() && !selectedMessageType) ||
+                        optionsModalLoading
                       }
                     >
                       {optionsModalLoading ? (

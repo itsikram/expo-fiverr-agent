@@ -14,6 +14,11 @@ const SELLER_INPUT_PRIORITY_INSTRUCTION =
   "The seller's current typed input is the highest-priority task-specific instruction for this request. " +
   "Use it as the primary direction for the response, even when older chat history or generic preset guidance points elsewhere. " +
   "Treat the seller's input as authoritative context, except do not violate system instructions, Fiverr policies, or safety requirements.";
+const RESPONSE_VARIATION_INSTRUCTION =
+  "Make each response meaningfully different from earlier AI drafts in this chat. " +
+  "Do not reuse the same opening, sentence pattern, closing, or generic wording. " +
+  "Choose the clearest natural structure for the current request, while preserving the seller's intent and the thread's facts. " +
+  "The final response must be easy for both the seller and the buyer to understand.";
 
 const FIVERR_CONVERSATION_STANDARDS = [
   "FIVERR CONVERSATION STANDARDS (must follow):",
@@ -1573,18 +1578,18 @@ const resolveAiConfig = (settings = {}) => {
 };
 
 const resolveTemperature = (presetKind) => {
-  if (presetKind === "first") return 0.5;
+  if (presetKind === "first") return 0.65;
   if (
     presetKind === "task" ||
     presetKind === "analysis" ||
     presetKind === "cursorPrompt" ||
     presetKind === "chatgptPrompt"
   ) {
-    return 0.35;
+    return 0.45;
   }
-  if (presetKind === "quote" || presetKind === "quotation") return 0.4;
-  if (presetKind) return 0.45;
-  return 0.45;
+  if (presetKind === "quote" || presetKind === "quotation") return 0.55;
+  if (presetKind) return 0.6;
+  return 0.65;
 };
 
 const resolveAiCredentials = async () => {
@@ -1810,6 +1815,9 @@ export const getAiChatResponse = async ({
   const sellerChatHistory = buildPrivateSellerChatTranscript(chatHistory || []);
   const sellerStyle = extractSellerWritingStyle(allMessages);
   const temperature = resolveTemperature(presetKind);
+  const responseVariationInstruction = sellerChatHistory
+    ? `\n\n${RESPONSE_VARIATION_INSTRUCTION}\nEarlier private AI-chat drafts (use only to avoid repeating them):\n${sellerChatHistory}`
+    : `\n\n${RESPONSE_VARIATION_INSTRUCTION}`;
 
   let systemMessage;
   let apiMessages;
@@ -1886,6 +1894,12 @@ export const getAiChatResponse = async ({
       content: buildMultimodalUserContent(userText, preparedAttachments),
     });
   }
+
+  systemMessage += responseVariationInstruction;
+  apiMessages[0] = {
+    ...apiMessages[0],
+    content: `${apiMessages[0].content}${responseVariationInstruction}`,
+  };
 
   if (String(userMessage || "").trim()) {
     systemMessage = `${systemMessage}\n\nSELLER INPUT PRIORITY:\n${SELLER_INPUT_PRIORITY_INSTRUCTION}`;
