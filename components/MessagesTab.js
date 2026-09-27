@@ -115,7 +115,13 @@ const MessagesTab = ({
     message.id ||
     message._id ||
     `${message.text || message.content || ""}|${message.sender || "client"}|${message.time || message.timestamp || index}`;
-  const { cancelOptimisticMessage, messages: messagesByKey = {} } =
+  const {
+    cancelOptimisticMessage,
+    retrySendMessage,
+    isConnected,
+    extensionConnectionStatus,
+    messages: messagesByKey = {},
+  } =
     useWebSocket();
   const { token, role } = useAuth();
   const isAdmin = role === "admin";
@@ -584,55 +590,51 @@ const MessagesTab = ({
   };
 
   const handleSend = async () => {
-    if (!messageText.trim() || isSending) {
+    const textToSend = messageText.trim();
+    if (!textToSend) {
       return;
     }
 
-    const textToSend = messageText.trim();
-    const startTime = Date.now();
-    setIsSending(true);
-    sendingStartTimeRef.current = startTime;
-    setSendingMessages((prev) => [
-      ...prev,
-      { text: textToSend, sentAt: startTime },
-    ]);
-    showMessageStatus("sending", "Sending message...", 60000);
+    // Chat-app behaviour: clear the composer right away and let the bubble
+    // track delivery, so several messages can be sent back to back.
+    setMessageText("");
+    showMessageStatus("sending", "Sending to Fiverr…", 120000);
 
-    if (onSend) {
-      try {
-        // Wait for send to complete (supports both sync and async returns)
-        const result = await Promise.resolve(onSend());
-        const success = result !== false;
-
-        if (!success) {
-          if (client && cancelOptimisticMessage) {
-            const conversationId = getClientConversationId(client);
-            if (conversationId) {
-              cancelOptimisticMessage(textToSend, conversationId);
-            }
-          }
-          clearSendingState(textToSend);
-          showMessageStatus("error", "Failed to send message", 4000);
-        } else {
-          showMessageStatus("sent", "Message sent successfully", 2500);
-          // Keep isSending true briefly to prevent client switching
-          setTimeout(() => {
-            clearSendingState(textToSend);
-          }, 100);
-        }
-      } catch (error) {
-        if (client && cancelOptimisticMessage) {
-          const conversationId = getClientConversationId(client);
-          if (conversationId) {
-            cancelOptimisticMessage(textToSend, conversationId);
-          }
-        }
-        clearSendingState(textToSend);
-        showMessageStatus("error", "Failed to send message", 4000);
-      }
-    } else {
-      clearSendingState(textToSend);
+    if (!onSend) {
       showMessageStatus("error", "Send failed", 3000);
+      return;
+    }
+
+    try {
+      const result = await Promise.resolve(onSend(textToSend));
+      const success = result === true || (result && result.success === true);
+      if (success) {
+        showMessageStatus("sent", "Delivered to Fiverr", 2500);
+      } else {
+        showMessageStatus(
+          "error",
+          (result && (result.message || result.error)) ||
+            "Failed to send message — tap the red bubble to retry",
+          6000,
+        );
+      }
+    } catch (error) {
+      showMessageStatus(
+        "error",
+        error?.message || "Failed to send message — tap the red bubble to retry",
+        6000,
+      );
+    }
+  };
+
+  const handleRetry = async (message) => {
+    if (!retrySendMessage) return;
+    showMessageStatus("sending", "Retrying…", 120000);
+    const result = await retrySendMessage(message);
+    if (result && result.success) {
+      showMessageStatus("sent", "Delivered to Fiverr", 2500);
+    } else if (result) {
+      showMessageStatus("error", result.error || "Retry failed", 6000);
     }
   };
 
@@ -792,6 +794,7 @@ const MessagesTab = ({
                     showAdminActions={isAdmin}
                     onEdit={handleAdminEdit}
                     onDelete={handleAdminDelete}
+                    onRetry={handleRetry}
                   />
                 );
               })}
@@ -877,6 +880,26 @@ const MessagesTab = ({
           </View>
         </View>
       )}
+      {!isInputMinimized && (!isConnected || extensionConnectionStatus === "disconnected") ? (
+        <View
+          style={[
+            styles.connectionBanner,
+            !isConnected ? styles.connectionBannerOffline : styles.connectionBannerWarn,
+          ]}
+          accessibilityRole="alert"
+        >
+          <Ionicons
+            name={!isConnected ? "cloud-offline-outline" : "extension-puzzle-outline"}
+            size={14}
+            color={!isConnected ? colors.accent.error : colors.accent.warning}
+          />
+          <Text style={styles.connectionBannerText}>
+            {!isConnected
+              ? "You're offline. Messages will be sent when the connection is back."
+              : "Chrome extension is offline. Messages are queued and sent once Fiverr is open in Chrome."}
+          </Text>
+        </View>
+      ) : null}
       {!isInputMinimized ? (
         <View
           style={[
@@ -985,6 +1008,31 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
+  },
+  connectionBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    marginHorizontal: spacing.md,
+    marginBottom: spacing.xs,
+    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+  },
+  connectionBannerOffline: {
+    backgroundColor: colors.accent.errorMuted,
+    borderColor: "rgba(239, 68, 68, 0.35)",
+  },
+  connectionBannerWarn: {
+    backgroundColor: "rgba(245, 158, 11, 0.12)",
+    borderColor: "rgba(245, 158, 11, 0.35)",
+  },
+  connectionBannerText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.text.secondary,
   },
   statusIndicator: {
     paddingVertical: spacing.sm,

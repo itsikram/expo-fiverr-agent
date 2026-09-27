@@ -367,67 +367,47 @@ const ClientDetailsScreen = ({
     </View>
   );
 
-  const handleSendMessage = async () => {
-    if (!messageText.trim()) {
-      return false;
+  const handleSendMessage = async (textOverride) => {
+    const text = String(
+      typeof textOverride === "string" ? textOverride : messageText,
+    ).trim();
+    if (!text) {
+      return { success: false, message: "Message is empty" };
     }
 
     const conversationId = getClientConversationId(client);
     if (!conversationId) {
-      return false;
+      return { success: false, message: "No client selected" };
     }
 
-    if (onSendMessage) {
-      try {
-        // Notify parent that message sending has started
-        if (onSendingStateChange) {
-          onSendingStateChange(true);
-        }
+    if (!onSendMessage) {
+      return { success: false, message: "Send handler not available" };
+    }
 
-        // Call with awaitConfirmation option to wait for extension confirmation
-        const result = await onSendMessage(messageText, conversationId, {
-          awaitConfirmation: true,
-        });
-
-        if (result && result.success) {
-          // Clear the input after successful send
-          setMessageText("");
-          // Notify parent that message sending is complete
-          if (onSendingStateChange) {
-            onSendingStateChange(false);
-          }
-          return {
-            success: true,
-            message: "Message sent successfully to Fiverr",
-          };
-        }
-        // Notify parent that send failed with detailed error
-        if (onSendingStateChange) {
-          onSendingStateChange(false);
-        }
-        const errorMessage =
-          result?.error || "Failed to send message to Fiverr";
+    try {
+      // Resolves once the extension reports whether Fiverr accepted it. The
+      // bubble itself shows progress, so the user can keep working meanwhile.
+      const result = await onSendMessage(text, conversationId, {
+        awaitConfirmation: true,
+      });
+      if (result && result.success) {
         return {
-          success: false,
-          message: errorMessage,
-          details: result,
-        };
-      } catch (error) {
-        // Notify parent that send failed
-        if (onSendingStateChange) {
-          onSendingStateChange(false);
-        }
-        return {
-          success: false,
-          message: error?.message || "Failed to send message",
-          details: error,
+          success: true,
+          message: "Delivered to Fiverr",
         };
       }
+      return {
+        success: false,
+        message: result?.error || "Failed to send message to Fiverr",
+        details: result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error?.message || "Failed to send message",
+        details: error,
+      };
     }
-    return {
-      success: false,
-      message: "Send handler not available",
-    };
   };
 
   const handleFetchMessages = () => {

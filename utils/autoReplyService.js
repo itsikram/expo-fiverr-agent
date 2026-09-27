@@ -4,7 +4,12 @@
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { loadSettings } from "./storage";
-import { getAiChatResponse, sanitizeReplyUrls, obfuscateSensitiveTerms } from "./aiChatService";
+import {
+  getAiChatResponse,
+  sanitizeReplyUrls,
+  obfuscateSensitiveTerms,
+  isSellerDirectedDraft } from
+"./aiChatService";
 
 // v2: the v1 key holds entries from the old (unstable) fingerprint format, which
 // permanently blocked re-replies. Starting a new key clears that dead state.
@@ -504,7 +509,9 @@ export const generateAutoReplyText = async ({
   userProfile
 }) => {
   const result = await getAiChatResponse({
-    presetKind: "reply",
+    // "autoReply" omits the seller-facing completion checklist: nobody is
+    // around to answer it, and it must never be posted to the buyer.
+    presetKind: "autoReply",
     mode: "reply",
     client,
     messages,
@@ -533,6 +540,11 @@ export const generateAutoReplyText = async ({
   );
   if (!cleaned) {
     throw new Error("AI returned an empty auto-reply.");
+  }
+  if (isSellerDirectedDraft(cleaned)) {
+    throw new Error(
+      "AI produced a note for the seller instead of a buyer reply; not sending it."
+    );
   }
   return cleaned;
 };

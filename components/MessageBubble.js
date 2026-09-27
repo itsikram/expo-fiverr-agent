@@ -75,8 +75,10 @@ const MessageBubble = ({
   isSending = false,
   showAdminActions = false,
   onEdit,
-  onDelete
+  onDelete,
+  onRetry
 }) => {
+  const deliveryStatus = isFromMe ? message.deliveryStatus || null : null;
   const attachments = dedupeMessageImages(
     Array.isArray(message.images) ? message.images : []
   );
@@ -186,7 +188,24 @@ const MessageBubble = ({
     null}
 
       <View style={styles.timeContainer}>
-        {isSending ?
+        {deliveryStatus === "failed" ?
+      <TouchableOpacity
+        onPress={onRetry ? () => onRetry(message) : undefined}
+        disabled={!onRetry}
+        style={styles.statusRow}
+        accessibilityRole="button"
+        accessibilityLabel="Message failed. Tap to retry">
+            <Ionicons name="alert-circle" size={13} color="#FFE3E3" />
+            <Text style={styles.failedText} numberOfLines={2}>
+              {onRetry ? "Not sent · Tap to retry" : "Not sent"}
+            </Text>
+          </TouchableOpacity> :
+      deliveryStatus === "queued" ?
+      <View style={styles.statusRow}>
+            <Ionicons name="cloud-offline-outline" size={12} color="rgba(255,255,255,0.8)" />
+            <Text style={styles.sendingTextSent}>Waiting for extension…</Text>
+          </View> :
+      isSending || deliveryStatus === "sending" ?
       <>
             <ActivityIndicator
           size="small"
@@ -194,26 +213,45 @@ const MessageBubble = ({
           style={styles.sendingIndicator} />
         
             <Text style={isFromMe ? styles.sendingTextSent : styles.sendingText}>
-              Sending...
+              Sending to Fiverr…
             </Text>
           </> :
       message.time ?
-      <Text style={isFromMe ? styles.timeRight : styles.timeLeft}>
-            {formatTime(message.time)}
-          </Text> :
+      <View style={styles.statusRow}>
+            <Text style={isFromMe ? styles.timeRight : styles.timeLeft}>
+              {formatTime(message.time)}
+            </Text>
+            {deliveryStatus === "sent" ?
+        <Ionicons name="checkmark-done" size={13} color="rgba(255,255,255,0.85)" /> :
+        null}
+          </View> :
+      deliveryStatus === "sent" ?
+      <View style={styles.statusRow}>
+            <Ionicons name="checkmark-done" size={13} color="rgba(255,255,255,0.85)" />
+            <Text style={styles.sendingTextSent}>Delivered to Fiverr</Text>
+          </View> :
       null}
       </View>
+      {deliveryStatus === "failed" && message.deliveryError ?
+    <Text style={styles.failedDetail} numberOfLines={3}>
+          {message.deliveryError}
+        </Text> :
+    null}
     </>;
 
 
-  const bubbleStyle = isFromMe ? styles.bubbleRight : styles.bubbleLeft;
+  const bubbleStyle = [
+  isFromMe ? styles.bubbleRight : styles.bubbleLeft,
+  deliveryStatus === "failed" && styles.bubbleFailed,
+  (deliveryStatus === "queued" || deliveryStatus === "sending" || isSending) &&
+  styles.bubblePending];
 
   return (
     <View
       style={[styles.row, isFromMe ? styles.rowRight : styles.rowLeft]}
       {...hoverProps}>
       
-      <View style={[bubbleStyle, bubbleWidthStyle, isCompact && styles.bubbleCompact]}>
+      <View style={[...bubbleStyle, bubbleWidthStyle, isCompact && styles.bubbleCompact]}>
         {renderAdminActions}
         {renderBody()}
       </View>
@@ -249,6 +287,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.elevated,
     borderWidth: 1,
     borderColor: colors.border.light
+  },
+  bubbleFailed: {
+    backgroundColor: colors.accent.error
+  },
+  bubblePending: {
+    opacity: 0.85
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4
+  },
+  failedText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#FFE3E3",
+    textDecorationLine: "underline"
+  },
+  failedDetail: {
+    marginTop: 4,
+    fontSize: 11,
+    lineHeight: 15,
+    color: "rgba(255,255,255,0.85)"
   },
   bubbleCompact: {
     maxWidth: "100%"

@@ -21,6 +21,7 @@ import MessageBubble from "./MessageBubble";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
 import { useResponsiveLayout } from "../hooks/useResponsiveLayout";
 import { getAiChatResponse } from "../utils/aiChatService";
+import { showAlert } from "../utils/notify";
 import {
   attachmentsToMessageImages,
   MAX_AI_ATTACHMENTS,
@@ -246,6 +247,7 @@ const AIChatTab = ({
   const [previousClientId, setPreviousClientId] = useState(null); // Track previous client ID to avoid saving when switching clients
   const [userProfile, setUserProfile] = useState({}); // User profile from settings
   const [sendingToClient, setSendingToClient] = useState(false); // Track if message is being sent to client
+  const [lastClientSend, setLastClientSend] = useState(null); // { text, success, error, at }
   const [sendingMessageText, setSendingMessageText] = useState(null); // Track the message text being sent
   const sendingStartTimeRef = useRef(null); // Track when sending started for minimum display time
   const [aiSuggestedActions, setAiSuggestedActions] = useState([]); // AI-suggested action buttons based on last messages
@@ -1436,12 +1438,12 @@ Example (return exactly this format, no other text):
 
   const handleSendToClient = async (messageText) => {
     if (!onSendMessage) {
-      Alert.alert("Error", "Send message function is not available");
+      showAlert("Error", "Send message function is not available");
       return;
     }
 
     if (!messageText || !messageText.trim()) {
-      Alert.alert("Error", "Message is empty");
+      showAlert("Error", "Message is empty");
       return;
     }
 
@@ -1451,7 +1453,7 @@ Example (return exactly this format, no other text):
 
     const conversationId = getClientConversationId(client);
     if (!conversationId) {
-      Alert.alert("Error", "Cannot send message: no conversation ID");
+      showAlert("Error", "Cannot send message: no client conversation selected");
       return;
     }
 
@@ -1459,42 +1461,38 @@ Example (return exactly this format, no other text):
     const startTime = Date.now();
     setSendingToClient(true);
     setSendingMessageText(trimmedMessage);
+    setLastClientSend(null);
     sendingStartTimeRef.current = startTime; // Record start time
 
+    let outcome = null;
     try {
-      const success = onSendMessage(trimmedMessage, conversationId);
-      if (success) {
-        // Show success feedback
-        Alert.alert("Success", "Message sent to client");
-      } else {
-        Alert.alert(
-          "Error",
-          "Failed to send message. Please check your connection.",
-        );
-        // Cancel optimistic message if send failed
-        if (cancelOptimisticMessage) {
-          cancelOptimisticMessage(trimmedMessage, conversationId);
-        }
-      }
+      // Wait for the extension to confirm Fiverr accepted the message; a
+      // socket write alone does not mean the client received it.
+      const result = await onSendMessage(trimmedMessage, conversationId, {
+        awaitConfirmation: true,
+      });
+      outcome =
+        result === true || (result && result.success === true)
+          ? { success: true }
+          : {
+              success: false,
+              error:
+                (result && result.error) ||
+                "Not connected to the server. The message will be retried from the Messages tab.",
+            };
     } catch (error) {
-      Alert.alert("Error", "Failed to send message. Please try again.");
-      // Cancel optimistic message on error
-      if (cancelOptimisticMessage) {
-        cancelOptimisticMessage(trimmedMessage, conversationId);
-      }
+      outcome = { success: false, error: error?.message || String(error) };
     } finally {
-      const elapsed = Date.now() - startTime;
-      const remaining = CLIENT_SEND_STATUS_MIN_MS - elapsed;
-      if (remaining > 0) {
-        await new Promise((resolve) => setTimeout(resolve, remaining));
-      }
-
-      // Keep the sending state visible long enough for the user to see it.
       if (sendingStartTimeRef.current === startTime) {
         setSendingToClient(false);
         setSendingMessageText(null);
         sendingStartTimeRef.current = null;
+        setLastClientSend({ text: trimmedMessage, ...outcome, at: Date.now() });
       }
+    }
+
+    if (outcome && !outcome.success) {
+      showAlert("Message not sent", outcome.error);
     }
   };
 
@@ -2058,7 +2056,13 @@ Example (return exactly this format, no other text):
                           styles.sendActionButtonText,
                         ]}
                       >
-                        Send
+                        {lastClientSend &&
+                        lastClientSend.text ===
+                          String(message.text || message.content || "").trim()
+                          ? lastClientSend.success
+                            ? "Sent ✓"
+                            : "Retry send"
+                          : "Send to client"}
                       </Text>
                     </TouchableOpacity>
                   ))}

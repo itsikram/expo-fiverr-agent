@@ -59,6 +59,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     setNewClientData,
     sellerProfile,
     sellerProfiles,
+    extensionConnectionStatus,
     selectedSellerProfile,
     setSelectedSellerProfile,
     selectedConversationId,
@@ -1218,6 +1219,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
     }
 
     const anyOnline =
+      extensionConnectionStatus === "connected" ||
       sellerProfile?.online ||
       (Array.isArray(sellerProfiles) &&
         sellerProfiles.some((profile) => profile?.online));

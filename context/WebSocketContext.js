@@ -45,6 +45,8 @@ const WebSocketContext = createContext(null);
 // reports "no extension connected" immediately, so this only applies once an
 // extension has actually taken the command.
 const SEND_CONFIRMATION_TIMEOUT_MS = 120000;
+// How long a send may wait for the server/extension to come back online.
+const OUTBOX_MAX_WAIT_MS = 16 * 60 * 1000;
 
 export const useWebSocket = () => {
   const context = useContext(WebSocketContext);
@@ -523,6 +525,7 @@ export const WebSocketProvider = ({ children }) => {
   const clientListLoadTimeoutRef = useRef(null);
   const lastExtensionStatusAtRef = useRef(null);
   const extensionStatusTimeoutRef = useRef(null);
+  const lastExtensionConnectedRef = useRef(false);
   const [newClientData, setNewClientData] = useState(null); // New client data that doesn't exist in clients list
   const [sellerProfile, setSellerProfile] = useState(null); // { profileName, username, updated_at, online } - current from extension
   const [sellerProfiles, setSellerProfiles] = useState([]); // all unique profiles by username
@@ -536,7 +539,12 @@ export const WebSocketProvider = ({ children }) => {
   const { token, role, isAuthReady } = useAuth();
   const fetchDetailsCallbacksRef = useRef({}); // Track callbacks for fetch_details requests
   // Pending send confirmations keyed by lowercase conversation id.
+  // clientMessageId -> { resolve, timeoutId, conversationKey }
   const sendConfirmationsRef = useRef({});
+  // Sends made while the socket was down; flushed once the server confirms
+  // the next connection so a flaky network never silently drops a message.
+  const outboxRef = useRef([]);
+  const flushOutboxRef = useRef(null);
 
   const isAdminRole =
     typeof role === "string" &&
@@ -911,6 +919,9 @@ export const WebSocketProvider = ({ children }) => {
         pingIntervalRef.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "ping" }));
+            // Keep the extension indicator fresh; the health check below
+            // treats a stale answer as "disconnected".
+            ws.send(JSON.stringify({ type: "request_extension_status" }));
           }
         }, SERVER_CONFIG.PING_INTERVAL);
 
@@ -1309,32 +1320,59 @@ export const WebSocketProvider = ({ children }) => {
     [role, sendMessage, token],
   );
 
-  const addOptimisticMessage = useCallback((messageText, conversationId) => {
-    // Add message optimistically to local state before sending
-    if (!messageText || !messageText.trim() || !conversationId) {
-      return;
-    }
+  const addOptimisticMessage = useCallback(
+    (messageText, conversationId, extra = {}) => {
+      // Add message optimistically to local state before sending
+      if (!messageText || !messageText.trim() || !conversationId) {
+        return;
+      }
 
-    const now = new Date().toISOString();
-    const optimisticMessage = {
-      text: messageText.trim(),
-      sender: "me",
-      isFromMe: true,
-      time: now,
-      timestamp: now,
-      absoluteTimestamp: Date.now(),
-      conversationId: conversationId,
-      optimistic: true, // Flag to identify optimistic messages
-    };
-
-    setMessages((prev) => {
-      const existingMessages = prev[conversationId] || [];
-      return {
-        ...prev,
-        [conversationId]: [...existingMessages, optimisticMessage].sort(
-          (a, b) => getMessageTimestamp(a) - getMessageTimestamp(b),
-        ),
+      const now = new Date().toISOString();
+      const optimisticMessage = {
+        text: messageText.trim(),
+        sender: "me",
+        isFromMe: true,
+        time: now,
+        timestamp: now,
+        absoluteTimestamp: Date.now(),
+        conversationId: conversationId,
+        optimistic: true, // Flag to identify optimistic messages
+        ...extra,
       };
+
+      setMessages((prev) => {
+        const existingMessages = prev[conversationId] || [];
+        return {
+          ...prev,
+          [conversationId]: [...existingMessages, optimisticMessage].sort(
+            (a, b) => getMessageTimestamp(a) - getMessageTimestamp(b),
+          ),
+        };
+      });
+    },
+    [],
+  );
+
+  /**
+   * Patch the optimistic bubble for a send (sending / queued / sent / failed).
+   */
+  const updateOptimisticDelivery = useCallback((clientMessageId, patch) => {
+    if (!clientMessageId) return;
+    setMessages((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      Object.keys(next).forEach((key) => {
+        const list = next[key];
+        if (!Array.isArray(list)) return;
+        if (!list.some((msg) => msg?.clientMessageId === clientMessageId)) {
+          return;
+        }
+        changed = true;
+        next[key] = list.map((msg) =>
+          msg?.clientMessageId === clientMessageId ? { ...msg, ...patch } : msg,
+        );
+      });
+      return changed ? next : prev;
     });
   }, []);
 
@@ -1348,6 +1386,21 @@ export const WebSocketProvider = ({ children }) => {
       const existingMessages = prev[conversationId] || [];
       if (!existingMessages || existingMessages.length === 0) {
         return prev;
+      }
+
+      const cancelledIds = existingMessages
+        .filter(
+          (msg) =>
+            msg.optimistic &&
+            msg.clientMessageId &&
+            (msg.text === messageText.trim() ||
+              msg.content === messageText.trim()),
+        )
+        .map((msg) => msg.clientMessageId);
+      if (cancelledIds.length) {
+        outboxRef.current = outboxRef.current.filter(
+          (item) => !cancelledIds.includes(item.clientMessageId),
+        );
       }
 
       // Remove the optimistic message that matches the text
@@ -1372,20 +1425,141 @@ export const WebSocketProvider = ({ children }) => {
     return true;
   }, []);
 
+  const armSendTimeout = useCallback(
+    (clientMessageId, ms) => {
+      const entry = sendConfirmationsRef.current[clientMessageId];
+      if (!entry) return;
+      clearTimeout(entry.timeoutId);
+      entry.timeoutId = setTimeout(() => {
+        if (sendConfirmationsRef.current[clientMessageId] !== entry) return;
+        delete sendConfirmationsRef.current[clientMessageId];
+        const error =
+          "No confirmation from the Chrome extension. Make sure Fiverr is open in Chrome with the extension enabled, then retry.";
+        updateOptimisticDelivery(clientMessageId, {
+          deliveryStatus: "failed",
+          deliveryError: error,
+        });
+        entry.resolve({ success: false, error, clientMessageId });
+      }, ms);
+    },
+    [updateOptimisticDelivery],
+  );
+
+  const settleSend = useCallback(
+    (result = {}) => {
+      let clientMessageId = result.clientMessageId || null;
+      // Older extensions do not echo the id; fall back to the oldest pending
+      // send for the same conversation.
+      if (!clientMessageId) {
+        const key = String(result.conversationId || "").toLowerCase();
+        const match = Object.entries(sendConfirmationsRef.current).find(
+          ([, entry]) => entry.conversationKey === key,
+        );
+        if (match) clientMessageId = match[0];
+      }
+
+      const success = result.success === true;
+      const error = success ? null : result.error || "Send failed";
+      if (clientMessageId) {
+        updateOptimisticDelivery(clientMessageId, {
+          deliveryStatus: success ? "sent" : "failed",
+          deliveryError: error,
+        });
+      }
+
+      const entry = clientMessageId
+        ? sendConfirmationsRef.current[clientMessageId]
+        : null;
+      if (entry) {
+        clearTimeout(entry.timeoutId);
+        delete sendConfirmationsRef.current[clientMessageId];
+        entry.resolve({ success, error, clientMessageId });
+      }
+    },
+    [updateOptimisticDelivery],
+  );
+
+  const flushOutbox = useCallback(() => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) return;
+    const queued = outboxRef.current;
+    outboxRef.current = [];
+    queued.forEach((payload) => {
+      try {
+        wsRef.current.send(JSON.stringify(payload));
+        updateOptimisticDelivery(payload.clientMessageId, {
+          deliveryStatus: "sending",
+          deliveryError: null,
+        });
+        armSendTimeout(payload.clientMessageId, SEND_CONFIRMATION_TIMEOUT_MS);
+      } catch (_) {
+        outboxRef.current.push(payload);
+      }
+    });
+  }, [armSendTimeout, updateOptimisticDelivery]);
+
+  flushOutboxRef.current = flushOutbox;
+
+  const dispatchSendPayload = useCallback(
+    (payload) => {
+      const sent = sendMessage(payload);
+      if (sent) {
+        updateOptimisticDelivery(payload.clientMessageId, {
+          deliveryStatus: "sending",
+          deliveryError: null,
+        });
+        armSendTimeout(payload.clientMessageId, SEND_CONFIRMATION_TIMEOUT_MS);
+        return;
+      }
+      if (payload.autoReply) {
+        // A stale auto-reply sent minutes later could contradict the thread;
+        // let the auto-reply loop decide again once we are back online.
+        settleSend({
+          clientMessageId: payload.clientMessageId,
+          conversationId: payload.conversationId,
+          success: false,
+          error: "Not connected to the message server",
+        });
+        return;
+      }
+      // Offline: park it and wait for the socket to come back.
+      outboxRef.current = outboxRef.current.filter(
+        (item) => item.clientMessageId !== payload.clientMessageId,
+      );
+      outboxRef.current.push(payload);
+      updateOptimisticDelivery(payload.clientMessageId, {
+        deliveryStatus: "queued",
+        deliveryError: null,
+      });
+      armSendTimeout(payload.clientMessageId, OUTBOX_MAX_WAIT_MS);
+    },
+    [armSendTimeout, sendMessage, settleSend, updateOptimisticDelivery],
+  );
+
   const sendMessageToClient = useCallback(
     (messageText, conversationId, options = {}) => {
       // Send message to client via browser extension
-      if (!messageText || !messageText.trim()) {
-        return false;
+      if (!messageText || !messageText.trim() || !conversationId) {
+        return options.awaitConfirmation
+          ? Promise.resolve({ success: false, error: "Nothing to send" })
+          : false;
       }
 
       const normalizedMessage = String(messageText).trim();
+      const clientMessageId =
+        options.clientMessageId ||
+        `cm_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 
-      // Add message optimistically to show it immediately
-      addOptimisticMessage(normalizedMessage, conversationId);
+      if (!options.clientMessageId) {
+        // Add message optimistically to show it immediately
+        addOptimisticMessage(normalizedMessage, conversationId, {
+          clientMessageId,
+          deliveryStatus: "sending",
+        });
+      }
 
-      const queued = sendMessage({
+      const payload = {
         type: "send_message",
+        clientMessageId,
         message: normalizedMessage,
         text: normalizedMessage,
         body: normalizedMessage,
@@ -1394,55 +1568,66 @@ export const WebSocketProvider = ({ children }) => {
         // Lets the extension apply its own auto-reply kill-switch without
         // blocking messages the user sent by hand.
         autoReply: options.autoReply === true,
-      });
-
-      if (queued) {
-        trackUserActivity(token, role, {
-          activityType:
-            options.autoReply === true ? "auto_reply_sent" : "send_message",
-          action:
-            options.autoReply === true ? "Sent AI auto-reply" : "Sent message",
-          conversationId: conversationId,
-          username: conversationId,
-          metadata: {
-            autoReply: options.autoReply === true,
-            messageLength: normalizedMessage.length,
-            awaitConfirmation: options.awaitConfirmation === true,
-          },
-        });
-      }
-
-      if (!options.awaitConfirmation) {
-        return queued;
-      }
+      };
 
       // A socket write only proves the server got the command. Wait for the
       // extension to report whether Fiverr actually accepted the message.
-      if (!queued) {
-        return Promise.resolve({
-          success: false,
-          error: "Not connected to the message server",
-        });
-      }
-
-      const key = String(conversationId || "").toLowerCase();
-      return new Promise((resolve) => {
-        const timeoutId = setTimeout(() => {
-          if (sendConfirmationsRef.current[key] === entry) {
-            delete sendConfirmationsRef.current[key];
-          }
-          resolve({
+      const confirmation = new Promise((resolve) => {
+        const previous = sendConfirmationsRef.current[clientMessageId];
+        if (previous) {
+          clearTimeout(previous.timeoutId);
+          previous.resolve({
             success: false,
-            error:
-              "Timed out waiting for the browser extension to confirm the send. Check the extension's service worker console for the reason.",
+            error: "Superseded by a retry",
+            clientMessageId,
           });
-        }, SEND_CONFIRMATION_TIMEOUT_MS);
+        }
+        sendConfirmationsRef.current[clientMessageId] = {
+          resolve,
+          timeoutId: null,
+          conversationKey: String(conversationId).toLowerCase(),
+        };
+      });
 
-        const entry = { resolve, timeoutId };
-        sendConfirmationsRef.current[key] = entry;
+      dispatchSendPayload(payload);
+
+      trackUserActivity(token, role, {
+        activityType:
+          options.autoReply === true ? "auto_reply_sent" : "send_message",
+        action:
+          options.autoReply === true ? "Sent AI auto-reply" : "Sent message",
+        conversationId: conversationId,
+        username: conversationId,
+        metadata: {
+          autoReply: options.autoReply === true,
+          messageLength: normalizedMessage.length,
+          awaitConfirmation: options.awaitConfirmation === true,
+        },
+      });
+
+      if (!options.awaitConfirmation) {
+        return true;
+      }
+      return confirmation;
+    },
+    [addOptimisticMessage, dispatchSendPayload, role, token],
+  );
+
+  /**
+   * Retry a failed bubble. The same clientMessageId is reused so the server
+   * and extension can recognise a message that actually did go through.
+   */
+  const retrySendMessage = useCallback(
+    (message) => {
+      if (!message?.clientMessageId) return Promise.resolve(null);
+      const conversationId = message.conversationId;
+      const text = message.text || message.content || "";
+      return sendMessageToClient(text, conversationId, {
+        clientMessageId: message.clientMessageId,
+        awaitConfirmation: true,
       });
     },
-    [sendMessage, addOptimisticMessage],
+    [sendMessageToClient],
   );
 
   const deleteClient = useCallback(
@@ -1523,6 +1708,8 @@ export const WebSocketProvider = ({ children }) => {
       switch (type) {
         case "connected":
           sessionIdRef.current = data.session_id;
+          // Deliver anything typed while the connection was down.
+          setTimeout(() => flushOutboxRef.current?.(), 0);
           // Server will automatically send all stored data
           break;
 
@@ -2603,18 +2790,29 @@ export const WebSocketProvider = ({ children }) => {
         }
 
         case "send_message_result": {
-          const result = data.data || {};
-          const key = String(result.conversationId || "").toLowerCase();
+          settleSend(data.data || {});
+          break;
+        }
 
-          const pending = sendConfirmationsRef.current[key];
-          if (pending) {
-            clearTimeout(pending.timeoutId);
-            delete sendConfirmationsRef.current[key];
-            pending.resolve({
-              success: result.success === true,
-              error: result.error || null,
+        case "send_message_status": {
+          const status = data.data || {};
+          if (!status.clientMessageId) break;
+          if (status.status === "queued") {
+            updateOptimisticDelivery(status.clientMessageId, {
+              deliveryStatus: "queued",
+              deliveryError: null,
             });
-          } else {
+            // The server holds it until the extension reconnects.
+            armSendTimeout(status.clientMessageId, OUTBOX_MAX_WAIT_MS);
+          } else if (status.status === "forwarded") {
+            updateOptimisticDelivery(status.clientMessageId, {
+              deliveryStatus: "sending",
+              deliveryError: null,
+            });
+            armSendTimeout(
+              status.clientMessageId,
+              SEND_CONFIRMATION_TIMEOUT_MS,
+            );
           }
           break;
         }
@@ -2705,9 +2903,12 @@ export const WebSocketProvider = ({ children }) => {
           break;
 
         case "extension_status":
-          // Server reports extension is connected
+          // Server reports whether a live extension socket exists
           lastExtensionStatusAtRef.current = Date.now();
-          setExtensionConnectionStatus("connected");
+          lastExtensionConnectedRef.current = data.connected !== false;
+          setExtensionConnectionStatus(
+            data.connected === false ? "disconnected" : "connected",
+          );
           break;
 
         default:
@@ -2727,6 +2928,9 @@ export const WebSocketProvider = ({ children }) => {
       isAssignmentsLoaded,
       shouldNotifyNewClient,
       setCurrentActivatedFiverrUrl,
+      settleSend,
+      updateOptimisticDelivery,
+      armSendTimeout,
     ],
   );
 
@@ -2808,7 +3012,14 @@ export const WebSocketProvider = ({ children }) => {
       } else {
         const timeSinceLastUpdate = Date.now() - lastExtensionStatusAtRef.current;
         // Consider disconnected if no update in 15 seconds
-        if (timeSinceLastUpdate > 15000) {
+        const staleAfterMs = Math.max(
+          15000,
+          (Number(SERVER_CONFIG.PING_INTERVAL) || 0) * 2.5,
+        );
+        if (
+          timeSinceLastUpdate > staleAfterMs ||
+          !lastExtensionConnectedRef.current
+        ) {
           setExtensionConnectionStatus("disconnected");
         } else {
           setExtensionConnectionStatus("connected");
@@ -3128,6 +3339,7 @@ export const WebSocketProvider = ({ children }) => {
     fetchClientDetails,
     clickClientInFiverr,
     sendMessageToClient,
+    retrySendMessage,
     addOptimisticMessage,
     cancelOptimisticMessage,
     deleteClient,
