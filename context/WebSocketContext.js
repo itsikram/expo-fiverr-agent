@@ -2551,7 +2551,14 @@ export const WebSocketProvider = ({ children }) => {
 
             // Regular messages do not trigger sounds or push — new clients only.
             // For web, request permissions when needed and show unread message notifications.
-            if (typeof window !== "undefined" && "Notification" in window) {
+            // Never notify about a message the seller sent.
+            const isFromMe =
+              data.data?.isFromMe === true || data.data?.fromMe === true;
+            if (
+              !isFromMe &&
+              typeof window !== "undefined" &&
+              "Notification" in window
+            ) {
               showSmartMessageNotification({
                 clientName,
                 messageText,
@@ -2804,7 +2811,15 @@ export const WebSocketProvider = ({ children }) => {
             });
             // The server holds it until the extension reconnects.
             armSendTimeout(status.clientMessageId, OUTBOX_MAX_WAIT_MS);
-          } else if (status.status === "forwarded") {
+          } else if (
+            status.status === "forwarded" ||
+            status.status === "queued_in_extension" ||
+            status.status === "sending"
+          ) {
+            // "sending" repeats while the extension types a long message or
+            // waits behind another send; each beat re-arms the timeout.
+            // Ignore a late beat for a send that has already settled.
+            if (!sendConfirmationsRef.current[status.clientMessageId]) break;
             updateOptimisticDelivery(status.clientMessageId, {
               deliveryStatus: "sending",
               deliveryError: null,
