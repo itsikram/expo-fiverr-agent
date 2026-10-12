@@ -36,6 +36,7 @@ import {
   resetAutoReplyState,
 } from "../utils/autoReplyService";
 import AdminProfileSettings from "./AdminProfileSettings";
+import { sortClientsByLastMessage } from "../utils/clientOrder";
 
 const matchesNameUsernameEmail = (item, query) => {
   const fields = [
@@ -149,141 +150,6 @@ const normalizeAdminUserRecord = (user) => {
     username: user?.username || null,
     email: user?.email || null,
   };
-};
-
-const getTimeUnitPriority = (timeString) => {
-  if (!timeString) return { priority: 8, timestamp: 0 };
-
-  const now = Date.now();
-
-  // If it's already an ISO date string, parse it directly
-  if (
-    timeString.includes("T") ||
-    (timeString.includes("-") && timeString.length > 10)
-  ) {
-    const date = new Date(timeString);
-    if (!isNaN(date.getTime())) {
-      return { priority: 7, timestamp: date.getTime() };
-    }
-  }
-
-  // Try parsing as a standard date string (handles most date formats)
-  const dateAttempt = new Date(timeString);
-  if (!isNaN(dateAttempt.getTime())) {
-    return { priority: 7, timestamp: dateAttempt.getTime() };
-  }
-
-  // Parse relative time strings like "26 minutes", "2 hours", "2 months ago", etc.
-  const lowerTime = timeString.toLowerCase().trim();
-
-  // Handle "just now" or "now" - treat as minutes (most recent)
-  if (
-    lowerTime.includes("just now") ||
-    (lowerTime.includes("now") && !lowerTime.includes("ago"))
-  ) {
-    return { priority: 1, timestamp: now };
-  }
-
-  // Handle minutes (e.g., "46 minutes ago", "46m ago", "46 min ago")
-  const minutesMatch = lowerTime.match(/(\d+)\s*(?:minute|min|m)(?:\s+ago)?/);
-  if (minutesMatch) {
-    return {
-      priority: 1,
-      timestamp: now - parseInt(minutesMatch[1]) * 60 * 1000,
-    };
-  }
-
-  // Handle hours (e.g., "2 hours ago", "2h ago", "2 hr ago")
-  const hoursMatch = lowerTime.match(/(\d+)\s*(?:hour|hr|h)(?:\s+ago)?/);
-  if (hoursMatch) {
-    return {
-      priority: 2,
-      timestamp: now - parseInt(hoursMatch[1]) * 60 * 60 * 1000,
-    };
-  }
-
-  // Handle days (e.g., "3 days ago", "3d ago")
-  const daysMatch = lowerTime.match(/(\d+)\s*(?:day|d)(?:\s+ago)?/);
-  if (daysMatch) {
-    return {
-      priority: 3,
-      timestamp: now - parseInt(daysMatch[1]) * 24 * 60 * 60 * 1000,
-    };
-  }
-
-  // Handle weeks (e.g., "2 weeks ago", "2w ago")
-  const weeksMatch = lowerTime.match(/(\d+)\s*(?:week|wk|w)(?:\s+ago)?/);
-  if (weeksMatch) {
-    return {
-      priority: 4,
-      timestamp: now - parseInt(weeksMatch[1]) * 7 * 24 * 60 * 60 * 1000,
-    };
-  }
-
-  // Handle months (e.g., "2 months ago", "2mo ago", "2 month ago")
-  const monthsMatch = lowerTime.match(/(\d+)\s*(?:month|mo|mon)(?:\s+ago)?/);
-  if (monthsMatch) {
-    return {
-      priority: 5,
-      timestamp: now - parseInt(monthsMatch[1]) * 30 * 24 * 60 * 60 * 1000,
-    };
-  }
-
-  // Handle years (e.g., "1 year ago", "1y ago")
-  const yearsMatch = lowerTime.match(/(\d+)\s*(?:year|yr|y)(?:\s+ago)?/);
-  if (yearsMatch) {
-    return {
-      priority: 6,
-      timestamp: now - parseInt(yearsMatch[1]) * 365 * 24 * 60 * 60 * 1000,
-    };
-  }
-
-  // Handle "yesterday" - treat as days
-  if (lowerTime.includes("yesterday")) {
-    return { priority: 3, timestamp: now - 24 * 60 * 60 * 1000 };
-  }
-
-  // Handle "today" - treat as minutes (most recent)
-  if (lowerTime.includes("today")) {
-    return { priority: 1, timestamp: now };
-  }
-
-  // Try to parse date strings like "Mar 08" or "Mar 08, 2024"
-  const dateStringMatch = timeString.match(
-    /([A-Za-z]{3})\s+(\d{1,2})(?:,\s+(\d{4}))?/,
-  );
-  if (dateStringMatch) {
-    const monthNames = [
-      "Jan",
-      "Feb",
-      "Mar",
-      "Apr",
-      "May",
-      "Jun",
-      "Jul",
-      "Aug",
-      "Sep",
-      "Oct",
-      "Nov",
-      "Dec",
-    ];
-    const monthIndex = monthNames.findIndex(
-      (m) => m.toLowerCase() === dateStringMatch[1].toLowerCase(),
-    );
-    if (monthIndex !== -1) {
-      const day = parseInt(dateStringMatch[2]);
-      const year = dateStringMatch[3]
-        ? parseInt(dateStringMatch[3])
-        : new Date().getFullYear();
-      const date = new Date(year, monthIndex, day);
-      if (!isNaN(date.getTime())) {
-        return { priority: 7, timestamp: date.getTime() };
-      }
-    }
-  }
-
-  // If we can't parse it, return lowest priority
-  return { priority: 8, timestamp: 0 };
 };
 
 const formatLastMessageTime = (timestamp) => {
@@ -487,25 +353,8 @@ const AdminDashboard = ({ onClose }) => {
     const filtered = !query ? displayClients : displayClients.filter((client) =>
       matchesNameUsernameEmail(client, query),
     );
-    // Sort by time unit priority (minutes > hours > days > weeks > months), matching
-    // the ordering already applied upstream in ClientList
-    return [...filtered].sort((a, b) => {
-      const timeA = getTimeUnitPriority(a.last_message_timestamp);
-      const timeB = getTimeUnitPriority(b.last_message_timestamp);
-
-      if (timeA.priority !== timeB.priority) {
-        return timeA.priority - timeB.priority;
-      }
-
-      if (timeA.timestamp > 0 && timeB.timestamp > 0) {
-        return timeB.timestamp - timeA.timestamp; // Most recent first
-      }
-
-      if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
-      if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
-
-      return 0;
-    });
+    // Most recent last message first, matching ClientList.
+    return sortClientsByLastMessage(filtered);
   }, [displayClients, clientSearchQuery]);
 
 

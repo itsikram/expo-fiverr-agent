@@ -35,6 +35,10 @@ import {
   collapseDuplicateParagraphs,
   getCanonicalMessageId,
 } from "../utils/clientIdentity";
+import {
+  getClientLastMessageTime,
+  sortClientsByLastMessage,
+} from "../utils/clientOrder";
 
 const WebSocketContext = createContext(null);
 
@@ -1730,6 +1734,11 @@ export const WebSocketProvider = ({ children }) => {
 
           clearThrottle("clientList");
 
+          // Relative labels ("58 minutes") are measured from when the
+          // extension read the inbox, not from when this list arrived.
+          const listExtractedAt =
+            data.data?.timestamp || new Date().toISOString();
+
           // Transform client list to match app format
           const transformedClients = incomingClients.map((client, index) => {
             // Build the transformed client object, ensuring each row has a unique stable id
@@ -1771,6 +1780,8 @@ export const WebSocketProvider = ({ children }) => {
               client.presence || (isOnline ? "online" : "away");
             transformed.lastSeen = lastSeen;
             transformed.last_seen = lastSeen;
+            transformed.list_extracted_at =
+              client.list_extracted_at || listExtractedAt;
             // Ensure last_message_timestamp is set (spread might override with undefined)
             if (client.last_message_timestamp !== undefined) {
               transformed.last_message_timestamp =
@@ -1798,29 +1809,33 @@ export const WebSocketProvider = ({ children }) => {
                   effectiveAssignmentsLoaded,
                 );
 
-          // Sort extracted clients by time unit priority (minutes > hours > days > weeks > months)
-          const sortedClients = visibleClients.sort((a, b) => {
-            // Sort by time unit priority (minutes > hours > days > weeks > months)
-            const timeA = getTimeUnitPriority(a.last_message_timestamp);
-            const timeB = getTimeUnitPriority(b.last_message_timestamp);
-
-            // Sort by priority (lower number = higher priority)
-            if (timeA.priority !== timeB.priority) {
-              return timeA.priority - timeB.priority;
-            }
-
-            // If same priority, sort by timestamp (most recent first)
-            if (timeA.timestamp > 0 && timeB.timestamp > 0) {
-              return timeB.timestamp - timeA.timestamp; // Descending order (newest first)
-            }
-
-            // If only one has a valid timestamp, prioritize it
-            if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
-            if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
-
-            // If neither has a timestamp, maintain original order
-            return 0;
-          });
+          // Newest conversation first. Keep a newer message time this app
+          // already saw (e.g. a message after the list was extracted).
+          const previousByKey = new Map(
+            (clientsRef.current || []).map((client) => [
+              String(client.conversationId || client.username || "")
+                .trim()
+                .toLowerCase(),
+              client,
+            ]),
+          );
+          const sortedClients = sortClientsByLastMessage(
+            visibleClients.map((client) => {
+              const previous = previousByKey.get(
+                String(client.conversationId || client.username || "")
+                  .trim()
+                  .toLowerCase(),
+              );
+              if (
+                previous?.last_message_at &&
+                getClientLastMessageTime(previous) >
+                  getClientLastMessageTime(client)
+              ) {
+                return { ...client, last_message_at: previous.last_message_at };
+              }
+              return client;
+            }),
+          );
 
           setClients(sortedClients);
           endClientListLoad();
@@ -1909,6 +1924,8 @@ export const WebSocketProvider = ({ children }) => {
                       data.data.avatarUrl || data.data.avatar_url || "",
                     last_message_timestamp:
                       data.data.last_message_timestamp || "now",
+                    last_message_at: new Date().toISOString(),
+                    list_extracted_at: new Date().toISOString(),
                     ...data.data,
                   },
                   ...prevClients,
@@ -1957,30 +1974,7 @@ export const WebSocketProvider = ({ children }) => {
                 return client;
               });
 
-              // Re-sort clients by time unit priority (minutes > hours > days > weeks > months)
-              const sortedClients = updatedClients.sort((a, b) => {
-                const timeA = getTimeUnitPriority(a.last_message_timestamp);
-                const timeB = getTimeUnitPriority(b.last_message_timestamp);
-
-                // First, sort by priority (lower number = higher priority)
-                if (timeA.priority !== timeB.priority) {
-                  return timeA.priority - timeB.priority;
-                }
-
-                // If same priority, sort by timestamp (most recent first)
-                if (timeA.timestamp > 0 && timeB.timestamp > 0) {
-                  return timeB.timestamp - timeA.timestamp; // Descending order (newest first)
-                }
-
-                // If only one has a valid timestamp, prioritize it
-                if (timeA.timestamp > 0 && timeB.timestamp === 0) return -1;
-                if (timeB.timestamp > 0 && timeA.timestamp === 0) return 1;
-
-                // If neither has a timestamp, maintain original order
-                return 0;
-              });
-
-              return sortedClients;
+              return sortClientsByLastMessage(updatedClients);
             });
 
             // Clear any pending fetch callback for this username
@@ -2526,6 +2520,26 @@ export const WebSocketProvider = ({ children }) => {
             });
             triggerMessageExtraction(targetIdentifier, { force: true });
 
+            // A new message makes this the most recent conversation.
+            const messageAt = new Date().toISOString();
+            setClients((prevClients) => {
+              let changed = false;
+              const next = prevClients.map((client) => {
+                const keys = [client.conversationId, client.username, client.id]
+                  .map(normalizeClientLookupValue)
+                  .filter(Boolean);
+                if (
+                  !keys.includes(targetNorm) &&
+                  !(clientUsernameNorm && keys.includes(clientUsernameNorm))
+                ) {
+                  return client;
+                }
+                changed = true;
+                return { ...client, last_message_at: messageAt };
+              });
+              return changed ? sortClientsByLastMessage(next) : prevClients;
+            });
+
             // Show popup/alert for new message
             const clientUsername =
               data.data?.clientUsername || data.data?.username || "Unknown";
@@ -2648,6 +2662,8 @@ export const WebSocketProvider = ({ children }) => {
                     clientData.avatarUrl || clientData.avatar_url || "",
                   isNewClient: true,
                   last_message_timestamp: "now",
+                  last_message_at: new Date().toISOString(),
+                  list_extracted_at: new Date().toISOString(),
                   ...clientData,
                 };
 
