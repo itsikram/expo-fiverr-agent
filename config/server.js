@@ -12,7 +12,7 @@ import { Platform } from 'react-native';
  * Native apps can override via the Settings screen (stored in local storage).
  */
 export const PRODUCTION_SERVER_URL =
-'https://fiverr-agent-server.onrender.com';
+'https://47m9q3auwh.c38.airoapp.ai';
 
 const getBuildTimeServerUrl = () =>
 process.env.EXPO_PUBLIC_SERVER_URL || process.env.SERVER_URL || null;

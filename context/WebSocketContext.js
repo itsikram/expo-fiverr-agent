@@ -1714,6 +1714,21 @@ export const WebSocketProvider = ({ children }) => {
           sessionIdRef.current = data.session_id;
           // Deliver anything typed while the connection was down.
           setTimeout(() => flushOutboxRef.current?.(), 0);
+          // Sends that finished while we were disconnected: ask the server
+          // for their outcome instead of waiting for them to time out.
+          {
+            const pendingIds = Object.keys(sendConfirmationsRef.current || {});
+            if (pendingIds.length && wsRef.current?.readyState === WebSocket.OPEN) {
+              try {
+                wsRef.current.send(
+                  JSON.stringify({
+                    type: "request_send_results",
+                    clientMessageIds: pendingIds,
+                  }),
+                );
+              } catch (_) {}
+            }
+          }
           // Server will automatically send all stored data
           break;
 
@@ -2909,6 +2924,7 @@ export const WebSocketProvider = ({ children }) => {
             window.dispatchEvent(
               new CustomEvent("fiverr-reload-status-update", {
                 detail: {
+                  ...data,
                   type: "reload_status_update",
                   status: data.status || "idle",
                   nextReloadAt: data.nextReloadAt || null,

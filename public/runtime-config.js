@@ -1,3 +1,3 @@
 window.__RUNTIME_CONFIG__ = window.__RUNTIME_CONFIG__ || {
-  serverUrl: "https://fiverr-agent-server.onrender.com",
+  serverUrl: "https://47m9q3auwh.c38.airoapp.ai",
 };

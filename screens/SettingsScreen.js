@@ -246,7 +246,7 @@ const SettingsScreen = ({ onBack }) => {
                 Server address (full URL with protocol and port). Used for
                 WebSocket connection.
                 {"\n"}Examples: http://192.168.0.102:8765 or
-                https://fiverr-agent-server.onrender.com
+                https://47m9q3auwh.c38.airoapp.ai
               </Text>
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Server address</Text>

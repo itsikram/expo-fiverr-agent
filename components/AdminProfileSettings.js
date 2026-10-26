@@ -30,6 +30,32 @@ import {
   saveProfileReloadSettings,
 } from "../utils/tabReloadService";
 
+// "https://www.fiverr.com/users/me/manage_gigs?x=1" -> "/manage_gigs?x=1"
+const formatReloadPage = (url) => {
+  if (!url) return "—";
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/^\/users\/[^/]+/, "") || "/";
+    return `${path}${parsed.search}`;
+  } catch (_error) {
+    return String(url);
+  }
+};
+
+const formatReloadTime = (timestamp) => {
+  const date = timestamp ? new Date(timestamp) : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+};
+
+const RELOAD_STATUS_LABELS = {
+  armed: "Waiting for next reload",
+  executing: "Opening page…",
+  disabled: "Auto reload is off",
+  paused: "Extension paused",
+  idle: "Idle",
+};
+
 const ProfileReloadCard = ({
   title,
   subtitle,
@@ -182,6 +208,8 @@ const AdminProfileSettings = ({ onBack }) => {
   const [reloadStatus, setReloadStatus] = useState("idle");
   const [extensionStatus, setExtensionStatus] = useState("checking");
   const [lastReloadStatusAt, setLastReloadStatusAt] = useState(null);
+  const [reloadHistory, setReloadHistory] = useState([]);
+  const [currentReloadUrl, setCurrentReloadUrl] = useState(null);
   const [dailyStats, setDailyStats] = useState({});
   const [statsFilter, setStatsFilter] = useState("today");
   const extensionStatusTimeoutRef = useRef(null);
@@ -243,8 +271,14 @@ const AdminProfileSettings = ({ onBack }) => {
         setLastReloadStatusAt(Date.now());
         setExtensionStatus("connected");
         setReloadStatus(data.status || "idle");
-        if (data.nextReloadAt) {
-          setNextReloadTime(new Date(data.nextReloadAt));
+        setNextReloadTime(
+          data.nextReloadAt && data.status !== "executing"
+            ? new Date(data.nextReloadAt)
+            : null,
+        );
+        setCurrentReloadUrl(data.status === "executing" ? data.currentUrl || null : null);
+        if (Array.isArray(data.history)) {
+          setReloadHistory(data.history);
         }
       }
     };
@@ -683,6 +717,75 @@ const AdminProfileSettings = ({ onBack }) => {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Reload details</Text>
+          <Text style={styles.sectionHint}>
+            Live status of the auto reload on the activated Fiverr tab and the
+            seller pages it opened most recently.
+          </Text>
+
+          <View style={styles.reloadDetailCard}>
+            <View style={styles.reloadDetailRow}>
+              <Text style={styles.reloadDetailLabel}>Status</Text>
+              <Text style={styles.reloadDetailValue}>
+                {extensionStatus === "connected"
+                  ? RELOAD_STATUS_LABELS[reloadStatus] || reloadStatus
+                  : "Extension not connected"}
+              </Text>
+            </View>
+            {currentReloadUrl ? (
+              <View style={styles.reloadDetailRow}>
+                <Text style={styles.reloadDetailLabel}>Opening</Text>
+                <Text style={styles.reloadDetailValue} numberOfLines={1}>
+                  {formatReloadPage(currentReloadUrl)}
+                </Text>
+              </View>
+            ) : null}
+            {nextReloadTime ? (
+              <View style={styles.reloadDetailRow}>
+                <Text style={styles.reloadDetailLabel}>Next reload</Text>
+                <Text style={styles.reloadDetailValue}>
+                  {formatTimeRemaining(nextReloadTime)} ({formatReloadTime(nextReloadTime)})
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          {reloadHistory.length === 0 ? (
+            <Text style={styles.sectionHint}>No reloads reported yet.</Text>
+          ) : (
+            <View style={styles.reloadHistoryList}>
+              {reloadHistory.map((event, index) => {
+                const failed = event.status === "failed";
+                return (
+                  <View
+                    key={`${event.timestamp || index}-${index}`}
+                    style={styles.reloadHistoryItem}
+                  >
+                    <Ionicons
+                      name={failed ? "close-circle" : "checkmark-circle"}
+                      size={16}
+                      color={failed ? "#F44336" : "#4CAF50"}
+                    />
+                    <View style={styles.reloadHistoryBody}>
+                      <Text style={styles.reloadHistoryPage} numberOfLines={1}>
+                        {formatReloadPage(event.url)}
+                      </Text>
+                      <Text style={styles.reloadHistoryMeta} numberOfLines={2}>
+                        {formatReloadTime(event.timestamp)}
+                        {event.durationMs
+                          ? ` · ${(event.durationMs / 1000).toFixed(1)}s`
+                          : ""}
+                        {failed && event.error ? ` · ${event.error}` : ""}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Global defaults</Text>
           <Text style={styles.sectionHint}>
             Used for any profile without its own override. Turn on the switch
@@ -1089,6 +1192,57 @@ const styles = StyleSheet.create({
   reloadStatusActive: {
     color: colors.accent.primary,
     fontWeight: "600",
+  },
+  reloadDetailCard: {
+    backgroundColor: colors.background.secondary,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  reloadDetailRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  reloadDetailLabel: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+  },
+  reloadDetailValue: {
+    flexShrink: 1,
+    fontSize: typography.sizes.sm,
+    fontWeight: "600",
+    color: colors.text.primary,
+    textAlign: "right",
+  },
+  reloadHistoryList: {
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    overflow: "hidden",
+  },
+  reloadHistoryItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  reloadHistoryBody: {
+    flex: 1,
+  },
+  reloadHistoryPage: {
+    fontSize: typography.sizes.sm,
+    fontWeight: "600",
+    color: colors.text.primary,
+  },
+  reloadHistoryMeta: {
+    fontSize: typography.sizes.xs,
+    color: colors.text.secondary,
   },
 });
 
