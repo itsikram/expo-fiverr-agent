@@ -14,20 +14,12 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
-import { getWebsiteLabel } from "../utils/portfolioService";
+import {
+  getWebsiteLabel,
+  PORTFOLIO_CATEGORIES,
+} from "../utils/portfolioService";
 
-export const PORTFOLIO_CATEGORIES = [
-  "Website",
-  "E-commerce",
-  "Web App",
-  "WordPress",
-  "Landing Page",
-  "Mobile App",
-  "Design",
-  "SEO",
-  "Bug Fix",
-  "Other",
-];
+export { PORTFOLIO_CATEGORIES };
 
 const EMPTY_FORM = {
   title: "",
@@ -93,19 +85,51 @@ const PortfolioItemForm = ({
   suggestedWebsites = [],
   onClose,
   onSave,
+  onAiFill,
 }) => {
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isAiFilling, setIsAiFilling] = useState(false);
+  const [aiNote, setAiNote] = useState("");
   const isEditing = Boolean(item?._id);
 
   useEffect(() => {
     if (visible) {
       setForm(toFormValues(item || {}));
       setError("");
+      setAiNote("");
       setIsSaving(false);
+      setIsAiFilling(false);
     }
   }, [visible, item]);
+
+  // Fill empty fields from the AI's reading of the conversation; keep
+  // anything the seller already typed.
+  const handleAiFill = async () => {
+    setError("");
+    setAiNote("");
+    setIsAiFilling(true);
+    try {
+      const extracted = toFormValues(await onAiFill());
+      setForm((current) => {
+        const next = { ...current };
+        for (const key of Object.keys(EMPTY_FORM)) {
+          const value = extracted[key];
+          if (typeof value === "boolean") continue;
+          if (value !== "" && value !== null && value !== undefined && !String(current[key] ?? "").trim()) {
+            next[key] = value;
+          }
+        }
+        return next;
+      });
+      setAiNote("Filled from the conversation. Review before saving.");
+    } catch (fillError) {
+      setError(fillError?.message || "AI could not read the conversation.");
+    } finally {
+      setIsAiFilling(false);
+    }
+  };
 
   const update = (key) => (value) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -167,6 +191,28 @@ const PortfolioItemForm = ({
             contentContainerStyle={styles.bodyContent}
             keyboardShouldPersistTaps="handled"
           >
+            {onAiFill ? (
+              <View style={styles.aiRow}>
+                <TouchableOpacity
+                  style={[styles.aiButton, isAiFilling && styles.disabled]}
+                  onPress={handleAiFill}
+                  disabled={isAiFilling}
+                >
+                  {isAiFilling ? (
+                    <ActivityIndicator size="small" color={colors.accent.secondary} />
+                  ) : (
+                    <Ionicons name="sparkles-outline" size={16} color={colors.accent.secondary} />
+                  )}
+                  <Text style={styles.aiButtonText}>
+                    {isAiFilling ? "Reading conversation..." : "Fill with AI"}
+                  </Text>
+                </TouchableOpacity>
+                <Text style={styles.hint}>
+                  {aiNote || "AI extracts the website, task, skills and review from the chat."}
+                </Text>
+              </View>
+            ) : null}
+
             <Field label="Project title *">
               <TextInput
                 style={styles.input}
@@ -455,6 +501,30 @@ const styles = StyleSheet.create({
   textAreaSmall: {
     minHeight: 64,
     textAlignVertical: "top",
+  },
+  aiRow: {
+    marginBottom: spacing.lg,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.3)",
+    backgroundColor: colors.accent.primaryMuted,
+  },
+  aiButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.accent.primary,
+    backgroundColor: colors.background.card,
+  },
+  aiButtonText: {
+    color: colors.accent.secondary,
+    fontWeight: typography.weights.semibold,
   },
   suggestions: {
     marginTop: spacing.sm,

@@ -21,6 +21,10 @@ import {
   clearCachedAppData,
 } from "../utils/storage";
 import { startAutoReplyWatcher } from "../utils/autoReplyService";
+import {
+  startPortfolioWatcher,
+  wakePortfolioWatcher,
+} from "../utils/portfolioAutomation";
 import { normalizeAutoReplyModel } from "../config/ai";
 import {
   loadProfileReloadSettings,
@@ -3157,6 +3161,27 @@ export const WebSocketProvider = ({ children }) => {
   useEffect(() => {
     triggerMessageExtractionRef.current = triggerMessageExtraction;
   }, [triggerMessageExtraction]);
+
+  const authTokenRef = useRef(token);
+  useEffect(() => {
+    authTokenRef.current = token;
+    if (token) wakePortfolioWatcher();
+  }, [token]);
+
+  // Add completed orders to the portfolio (AI extracts the details).
+  useEffect(() => {
+    const stop = startPortfolioWatcher({
+      getState: () => ({
+        token: authTokenRef.current,
+        clients: clientsRef.current,
+        messages: messagesRef.current,
+      }),
+    });
+    return stop;
+  }, []);
+  useEffect(() => {
+    wakePortfolioWatcher();
+  }, [messages]);
 
   useEffect(() => {
     const stop = startAutoReplyWatcher({

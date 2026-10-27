@@ -26,6 +26,7 @@ import {
   detectClientWebsites,
 } from "../utils/portfolioService";
 import { showAlert } from "../utils/notify";
+import { extractPortfolioDetails } from "../utils/portfolioAutomation";
 import { getClientConversationId } from "../utils/clientIdentity";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
 
@@ -848,6 +849,9 @@ const ClientDetailsScreen = ({
         suggestedWebsites={portfolioSuggestions}
         onClose={() => setIsPortfolioFormVisible(false)}
         onSave={handleSavePortfolioItem}
+        onAiFill={() =>
+          extractPortfolioDetails({ client: mergedClient || client, messages })
+        }
       />
 
       {/* Translation Modal */}

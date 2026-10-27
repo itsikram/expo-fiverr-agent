@@ -1,5 +1,18 @@
 import { serverRequest } from "./adminService";
 
+export const PORTFOLIO_CATEGORIES = [
+  "Website",
+  "E-commerce",
+  "Web App",
+  "WordPress",
+  "Landing Page",
+  "Mobile App",
+  "Design",
+  "SEO",
+  "Bug Fix",
+  "Other",
+];
+
 export const listPortfolio = async (token) => {
   const data = await serverRequest("/portfolio", { token });
   return Array.isArray(data?.items) ? data.items : [];

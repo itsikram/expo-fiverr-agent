@@ -65,6 +65,12 @@ const PortfolioCard = ({ item, onEdit, onDelete, onToggleFeatured, style }) => {
               <Text style={styles.featuredText}>Featured</Text>
             </View>
           ) : null}
+          {isOwnerView && item.autoAdded ? (
+            <View style={styles.autoBadge}>
+              <Ionicons name="sparkles" size={10} color={colors.accent.secondary} />
+              <Text style={styles.autoText}>Auto-added · review</Text>
+            </View>
+          ) : null}
           {isOwnerView ? (
             <View style={styles.visibilityBadge}>
               <Ionicons
@@ -216,6 +222,20 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xs,
     color: colors.accent.warning,
     fontWeight: typography.weights.semibold,
+  },
+  autoBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.4)",
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 1,
+  },
+  autoText: {
+    fontSize: typography.sizes.xs,
+    color: colors.accent.secondary,
   },
   visibilityBadge: {
     flexDirection: "row",

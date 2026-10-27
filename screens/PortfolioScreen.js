@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  Switch,
   useWindowDimensions,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
@@ -27,6 +28,12 @@ import {
 } from "../utils/portfolioService";
 import { getClientConversationId } from "../utils/clientIdentity";
 import { showAlert, showConfirm } from "../utils/notify";
+import {
+  PORTFOLIO_UPDATED_EVENT,
+  isPortfolioAutomationEnabled,
+  runPortfolioAutomation,
+  setPortfolioAutomationEnabled,
+} from "../utils/portfolioAutomation";
 
 const isWeb = Platform.OS === "web";
 
@@ -132,7 +139,7 @@ const ClientPicker = ({ visible, clients, savedUsernames, onPick, onClose }) => 
 
 const PortfolioScreen = ({ onBack }) => {
   const { token, username } = useAuth();
-  const { clients = [] } = useWebSocket();
+  const { clients = [], messages: conversationMessages = {} } = useWebSocket();
   const { width } = useWindowDimensions();
   const [items, setItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -143,6 +150,8 @@ const PortfolioScreen = ({ onBack }) => {
   const [isFormVisible, setIsFormVisible] = useState(false);
   const [isPickerVisible, setIsPickerVisible] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [autoAddEnabled, setAutoAddEnabled] = useState(true);
+  const [isScanning, setIsScanning] = useState(false);
 
   const columns = width >= 1100 ? 3 : width >= 720 ? 2 : 1;
   const publicUrl = isWeb ? getPublicPortfolioUrl(username) : null;
@@ -163,6 +172,48 @@ const PortfolioScreen = ({ onBack }) => {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    isPortfolioAutomationEnabled().then(setAutoAddEnabled);
+  }, []);
+
+  // Refresh when the background watcher adds a completed order.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.addEventListener) return undefined;
+    const handleUpdate = () => load();
+    window.addEventListener(PORTFOLIO_UPDATED_EVENT, handleUpdate);
+    return () => window.removeEventListener(PORTFOLIO_UPDATED_EVENT, handleUpdate);
+  }, [load]);
+
+  const handleToggleAutoAdd = async (enabled) => {
+    setAutoAddEnabled(enabled);
+    await setPortfolioAutomationEnabled(enabled);
+  };
+
+  const handleScanNow = async () => {
+    setIsScanning(true);
+    try {
+      const added = await runPortfolioAutomation({
+        token,
+        clients,
+        messages: conversationMessages,
+        maxAiCalls: 5,
+      });
+      if (added.length > 0) {
+        await load();
+      }
+      showAlert(
+        added.length > 0 ? "Portfolio updated" : "No new completed orders",
+        added.length > 0
+          ? `Added ${added.length} completed order${added.length === 1 ? "" : "s"}. Review and publish them when ready.`
+          : "Open a client's conversation to load it, then scan again.",
+      );
+    } catch (error) {
+      showAlert("Scan failed", error?.message || "Please try again.");
+    } finally {
+      setIsScanning(false);
+    }
+  };
 
   const categories = useMemo(
     () => [...new Set(items.map((item) => item.category).filter(Boolean))].sort(),
@@ -217,7 +268,11 @@ const PortfolioScreen = ({ onBack }) => {
 
   const handleSave = async (values) => {
     if (editingItem?._id) {
-      const saved = await updatePortfolioItem(token, editingItem._id, values);
+      // Saving an auto-added project marks it as reviewed.
+      const saved = await updatePortfolioItem(token, editingItem._id, {
+        ...values,
+        autoAdded: false,
+      });
       setItems((current) => current.map((item) => (item._id === saved._id ? saved : item)));
     } else {
       const saved = await createPortfolioItem(token, values);
@@ -316,6 +371,43 @@ const PortfolioScreen = ({ onBack }) => {
           <Stat icon="globe-outline" value={stats.websites} label="Websites" />
           <Stat icon="people-outline" value={stats.clients} label="Clients" />
           <Stat icon="star-outline" value={stats.rating} label="Avg. rating" />
+        </View>
+
+        <View style={styles.autoBox}>
+          <View style={styles.autoText}>
+            <View style={styles.autoTitleRow}>
+              <Ionicons name="sparkles-outline" size={16} color={colors.accent.secondary} />
+              <Text style={styles.shareTitle}>Auto-add completed orders</Text>
+            </View>
+            <Text style={styles.shareHint}>
+              When an order is completed, AI reads the conversation and saves the website,
+              task, skills and review here as a private project for you to review.
+            </Text>
+          </View>
+          <View style={styles.autoControls}>
+            <TouchableOpacity
+              style={[styles.secondaryButton, isScanning && styles.disabled]}
+              onPress={handleScanNow}
+              disabled={isScanning}
+            >
+              {isScanning ? (
+                <ActivityIndicator size="small" color={colors.text.primary} />
+              ) : (
+                <Ionicons name="scan-outline" size={16} color={colors.text.primary} />
+              )}
+              <Text style={styles.secondaryButtonText}>
+                {isScanning ? "Scanning..." : "Scan now"}
+              </Text>
+            </TouchableOpacity>
+            <Switch
+              value={autoAddEnabled}
+              onValueChange={handleToggleAutoAdd}
+              trackColor={{ false: colors.border.dark, true: colors.accent.primary }}
+              thumbColor={colors.text.white}
+              activeThumbColor={colors.text.white}
+              accessibilityLabel="Auto-add completed orders"
+            />
+          </View>
         </View>
 
         {publicUrl ? (
@@ -578,6 +670,37 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     padding: spacing.lg,
     marginBottom: spacing.lg,
+  },
+  autoBox: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.md,
+    backgroundColor: colors.background.card,
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  autoText: {
+    flexShrink: 1,
+    flexBasis: 320,
+    flexGrow: 1,
+  },
+  autoTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  autoControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  disabled: {
+    opacity: 0.6,
   },
   shareText: {
     flexShrink: 1,
