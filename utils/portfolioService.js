@@ -45,12 +45,13 @@ export const deletePortfolioItem = async (token, id) =>
 export const getPublicPortfolio = async (username) =>
   serverRequest(`/portfolio/public/${encodeURIComponent(username)}`);
 
-// Shareable page served by the web app (see App.js).
+// Shareable page served by the web app (see App.js). A query string on the
+// root page works on static hosts that 404 unknown paths.
 export const getPublicPortfolioUrl = (username) => {
   if (!username || typeof window === "undefined" || !window.location) {
     return null;
   }
-  return `${window.location.origin}/portfolio/${encodeURIComponent(username)}`;
+  return `${window.location.origin}/?portfolio=${encodeURIComponent(username)}`;
 };
 
 const NON_PROJECT_HOSTS =

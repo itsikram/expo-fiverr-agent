@@ -37,10 +37,17 @@ const getPasswordResetLinkParams = () => {
   return { token, email };
 };
 
-// Public portfolio share link: /portfolio/<username>
+// Public portfolio share link: /?portfolio=<username> (works on any static
+// host) or /portfolio/<username> (needs a rewrite to index.html).
 const getPublicPortfolioUsername = () => {
   if (typeof window === "undefined" || !window.location) {
     return null;
+  }
+  const fromQuery = new URLSearchParams(window.location.search)
+    .get("portfolio")
+    ?.trim();
+  if (fromQuery) {
+    return fromQuery;
   }
   const match = window.location.pathname.match(/^\/portfolio\/([^/]+)\/?$/);
   if (!match) {
