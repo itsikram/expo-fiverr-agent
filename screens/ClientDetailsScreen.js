@@ -18,6 +18,7 @@ import AIChatTab from "../components/AIChatTab";
 import MessagesTab from "../components/MessagesTab";
 import { useWebSocket } from "../context/WebSocketContext";
 import { exportClientMessagesPdf } from "../utils/pdfExport";
+import { exportClientMessagesJson } from "../utils/jsonExport";
 import { getClientConversationId } from "../utils/clientIdentity";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
 
@@ -219,9 +220,24 @@ const ClientDetailsScreen = ({
                 style={styles.headerActionButton}
                 onPress={handleExportMessages}
                 activeOpacity={0.7}
+                accessibilityLabel="Export messages as PDF"
               >
                 <Ionicons
                   name="download-outline"
+                  size={18}
+                  color={colors.text.secondary}
+                />
+              </TouchableOpacity>
+            )}
+            {Platform.OS === "web" && (
+              <TouchableOpacity
+                style={styles.headerActionButton}
+                onPress={handleExportMessagesJson}
+                activeOpacity={0.7}
+                accessibilityLabel="Export messages as JSON"
+              >
+                <Ionicons
+                  name="code-download-outline"
                   size={18}
                   color={colors.text.secondary}
                 />
@@ -317,9 +333,24 @@ const ClientDetailsScreen = ({
                 style={styles.headerActionButton}
                 onPress={handleExportMessages}
                 activeOpacity={0.7}
+                accessibilityLabel="Export messages as PDF"
               >
                 <Ionicons
                   name="download-outline"
+                  size={18}
+                  color={colors.text.secondary}
+                />
+              </TouchableOpacity>
+            )}
+            {Platform.OS === "web" && (
+              <TouchableOpacity
+                style={styles.headerActionButton}
+                onPress={handleExportMessagesJson}
+                activeOpacity={0.7}
+                accessibilityLabel="Export messages as JSON"
+              >
+                <Ionicons
+                  name="code-download-outline"
                   size={18}
                   color={colors.text.secondary}
                 />
@@ -587,6 +618,21 @@ const ClientDetailsScreen = ({
       Alert.alert(
         "Export failed",
         error?.message || "Unable to export messages to PDF.",
+      );
+    }
+  };
+
+  const handleExportMessagesJson = async () => {
+    try {
+      await exportClientMessagesJson(client, messages);
+      Alert.alert(
+        "Export complete",
+        "The JSON file download should begin shortly.",
+      );
+    } catch (error) {
+      Alert.alert(
+        "Export failed",
+        error?.message || "Unable to export messages to JSON.",
       );
     }
   };
