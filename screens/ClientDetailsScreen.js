@@ -19,6 +19,13 @@ import MessagesTab from "../components/MessagesTab";
 import { useWebSocket } from "../context/WebSocketContext";
 import { exportClientMessagesPdf } from "../utils/pdfExport";
 import { exportClientMessagesJson } from "../utils/jsonExport";
+import PortfolioItemForm from "../components/PortfolioItemForm";
+import { useAuth } from "../context/AuthContext";
+import {
+  createPortfolioItem,
+  detectClientWebsites,
+} from "../utils/portfolioService";
+import { showAlert } from "../utils/notify";
 import { getClientConversationId } from "../utils/clientIdentity";
 import { colors, spacing, borderRadius, typography } from "../constants/theme";
 
@@ -132,6 +139,10 @@ const ClientDetailsScreen = ({
   const [isLoadingAllMessages, setIsLoadingAllMessages] = useState(false);
   const [isFetchingDetails, setIsFetchingDetails] = useState(false);
   const [isHeaderMinimized, setIsHeaderMinimized] = useState(false);
+  const [isPortfolioFormVisible, setIsPortfolioFormVisible] = useState(false);
+  const [portfolioDraft, setPortfolioDraft] = useState(null);
+  const [portfolioSuggestions, setPortfolioSuggestions] = useState([]);
+  const { token } = useAuth();
   const fetchTimeoutRef = useRef(null);
   const fetchInitialDataRef = useRef(null);
 
@@ -215,6 +226,18 @@ const ClientDetailsScreen = ({
       return (
         <View style={styles.headerMinimized}>
           <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.headerActionButton}
+              onPress={openPortfolioForm}
+              activeOpacity={0.7}
+              accessibilityLabel="Add to portfolio"
+            >
+              <Ionicons
+                name="briefcase-outline"
+                size={18}
+                color={colors.text.secondary}
+              />
+            </TouchableOpacity>
             {Platform.OS === "web" && (
               <TouchableOpacity
                 style={styles.headerActionButton}
@@ -328,6 +351,18 @@ const ClientDetailsScreen = ({
             )}
           </View>
           <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.headerActionButton}
+              onPress={openPortfolioForm}
+              activeOpacity={0.7}
+              accessibilityLabel="Add to portfolio"
+            >
+              <Ionicons
+                name="briefcase-outline"
+                size={18}
+                color={colors.text.secondary}
+              />
+            </TouchableOpacity>
             {Platform.OS === "web" && (
               <TouchableOpacity
                 style={styles.headerActionButton}
@@ -637,6 +672,30 @@ const ClientDetailsScreen = ({
     }
   };
 
+  // Snapshot the draft on open so incoming messages don't reset the form.
+  const openPortfolioForm = () => {
+    const source = mergedClient || client || {};
+    const websites = detectClientWebsites(messages);
+    setPortfolioSuggestions(websites);
+    setPortfolioDraft({
+      clientName: source.name || source.username || "",
+      clientUsername: source.username || "",
+      clientId: getClientConversationId(source) || source.id || "",
+      clientCountry: typeof source.country === "string" ? source.country : "",
+      websiteUrl: websites[0] || "",
+    });
+    setIsPortfolioFormVisible(true);
+  };
+
+  const handleSavePortfolioItem = async (values) => {
+    await createPortfolioItem(token, values);
+    setIsPortfolioFormVisible(false);
+    showAlert(
+      "Saved to portfolio",
+      "Open Portfolio from the bottom bar to view or share it.",
+    );
+  };
+
   const renderMessagesTab = () => (
     <MessagesTab
       messages={messages}
@@ -782,6 +841,14 @@ const ClientDetailsScreen = ({
         {renderTabs()}
         <View style={styles.tabPane}>{renderTabContent()}</View>
       </View>
+
+      <PortfolioItemForm
+        visible={isPortfolioFormVisible}
+        item={portfolioDraft}
+        suggestedWebsites={portfolioSuggestions}
+        onClose={() => setIsPortfolioFormVisible(false)}
+        onSave={handleSavePortfolioItem}
+      />
 
       {/* Translation Modal */}
       <TranslationModal

@@ -32,6 +32,7 @@ import { SERVER_CONFIG } from "../config/server";
 import { useWebSocket } from "../context/WebSocketContext";
 import { useAuth } from "../context/AuthContext";
 import AdminDashboard from "../components/AdminDashboard";
+import { showAlert, showConfirm } from "../utils/notify";
 
 const SettingsScreen = ({ onBack }) => {
   const {
@@ -41,6 +42,7 @@ const SettingsScreen = ({ onBack }) => {
     connect,
     disconnect,
     currentActivatedFiverrUrl,
+    clearCachedData,
   } = useWebSocket();
   const { username, email, logout, isAuthenticated, role } = useAuth();
   const [name, setName] = useState("");
@@ -54,6 +56,7 @@ const SettingsScreen = ({ onBack }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [isApiKeyMasked, setIsApiKeyMasked] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [isClearingCache, setIsClearingCache] = useState(false);
   const [aiAutoReplyEnabled, setAiAutoReplyEnabled] = useState(false);
   const [aiAutoReplyMinutes, setAiAutoReplyMinutes] = useState(
     String(AUTO_REPLY_DEFAULT_DELAY_MINUTES),
@@ -200,6 +203,30 @@ const SettingsScreen = ({ onBack }) => {
       Alert.alert("Error", "Failed to save settings. Please try again.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleClearCache = async () => {
+    const confirmed = await showConfirm(
+      "Clear cache?",
+      "Cached clients and messages on this device will be removed and reloaded from the server. You stay signed in and your settings are kept.",
+      "Clear cache",
+    );
+    if (!confirmed) return;
+
+    setIsClearingCache(true);
+    try {
+      await clearCachedData();
+      if (Platform.OS === "web" && typeof window !== "undefined") {
+        // Reload so the latest app version and fresh data are loaded.
+        window.location.reload();
+        return;
+      }
+      showAlert("Cache cleared", "Fresh data is being loaded from the server.");
+    } catch (error) {
+      showAlert("Clear cache failed", error?.message || "Please try again.");
+    } finally {
+      setIsClearingCache(false);
     }
   };
 
@@ -694,6 +721,44 @@ const SettingsScreen = ({ onBack }) => {
                 </Text>
               )}
             </View>
+          </View>
+
+          {/* Storage & Cache Section */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Storage & Cache</Text>
+            <Text style={styles.sectionDescription}>
+              Clear cached clients and messages if the app shows stale or wrong
+              data. Your sign-in, settings and AI chat history are kept.
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                isClearingCache && styles.actionButtonDisabled,
+              ]}
+              onPress={handleClearCache}
+              disabled={isClearingCache}
+            >
+              <LinearGradient
+                colors={[colors.accent.warning, "#d97706"]}
+                style={styles.actionButtonGradient}
+              >
+                <Ionicons
+                  name="trash-bin-outline"
+                  size={20}
+                  color={colors.text.white}
+                  style={styles.actionButtonIcon}
+                />
+                <Text style={styles.actionButtonText}>
+                  {isClearingCache ? "Clearing..." : "Clear Cache"}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
+            <Text style={styles.hint}>
+              {Platform.OS === "web"
+                ? "The page reloads after clearing."
+                : "Data reloads from the server after clearing."}
+            </Text>
           </View>
 
           {/* Save Button */}

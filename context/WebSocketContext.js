@@ -18,6 +18,7 @@ import {
   saveLastSync,
   clearAIChatHistory,
   loadSettings,
+  clearCachedAppData,
 } from "../utils/storage";
 import { startAutoReplyWatcher } from "../utils/autoReplyService";
 import { normalizeAutoReplyModel } from "../config/ai";
@@ -3351,6 +3352,15 @@ export const WebSocketProvider = ({ children }) => {
     };
   }, [isConnected, sendMessage, selectedSellerProfile, selectedConversationId]);
 
+  // Drop locally cached client data, then fetch fresh data from the server.
+  const clearCachedData = useCallback(async () => {
+    await clearCachedAppData();
+    setClientData({});
+    if (isConnected) {
+      requestAllData();
+    }
+  }, [isConnected, requestAllData]);
+
   const value = {
     isConnected,
     connectionStatus,
@@ -3391,6 +3401,7 @@ export const WebSocketProvider = ({ children }) => {
     cancelOptimisticMessage,
     deleteClient,
     loadAssignments,
+    clearCachedData,
   };
 
   return (

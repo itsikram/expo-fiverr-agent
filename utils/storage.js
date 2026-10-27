@@ -374,3 +374,30 @@ export const clearAllStorage = async () => {
     return false;
   }
 };
+/**
+ * Clear cached client/message data and the browser's HTTP caches.
+ * Keeps sign-in, settings, AI chat history and auto-reply records.
+ */
+export const clearCachedAppData = async () => {
+  await storageMultiRemove([
+  STORAGE_KEYS.CLIENTS,
+  STORAGE_KEYS.MESSAGES,
+  STORAGE_KEYS.CLIENT_DATA,
+  STORAGE_KEYS.LAST_SYNC]
+  );
+
+  if (typeof caches !== 'undefined' && typeof caches.keys === 'function') {
+    try {
+      const names = await caches.keys();
+      await Promise.all(names.map((name) => caches.delete(name)));
+    } catch (e) {}
+  }
+
+  if (typeof window !== 'undefined' && window.sessionStorage) {
+    try {
+      window.sessionStorage.clear();
+    } catch (e) {}
+  }
+
+  return true;
+};

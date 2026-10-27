@@ -154,3 +154,5 @@ export const listAdminActivities = async (
   const query = searchParams.toString();
   return request(`/admin/activities${query ? `?${query}` : ""}`, { token });
 };
+
+export { request as serverRequest };

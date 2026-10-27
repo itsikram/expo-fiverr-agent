@@ -36,6 +36,7 @@ const BottomBar = ({
   isRefetching,
   showRefetch,
   onNavigateToSettings,
+  onNavigateToPortfolio,
   onOpenVoiceModal,
   serverStatusColor,
   extensionStatusColor,
@@ -46,7 +47,7 @@ const BottomBar = ({
   onOpenAdminDashboard,
 }) => {
   const renderIconButton = (icon, onPress, options = {}) => {
-    const { disabled, loading, variant = "default" } = options;
+    const { disabled, loading, variant = "default", label } = options;
     return (
       <TouchableOpacity
         style={[
@@ -58,6 +59,7 @@ const BottomBar = ({
         onPress={onPress}
         activeOpacity={0.7}
         disabled={disabled || loading}
+        accessibilityLabel={label}
       >
         {loading ? (
           <ActivityIndicator size="small" color={colors.text.secondary} />
@@ -106,7 +108,14 @@ const BottomBar = ({
                 disabled: isRefetching,
               })
             : null}
-          {renderIconButton("settings-outline", onNavigateToSettings)}
+          {onNavigateToPortfolio
+            ? renderIconButton("briefcase-outline", onNavigateToPortfolio, {
+                label: "Portfolio",
+              })
+            : null}
+          {renderIconButton("settings-outline", onNavigateToSettings, {
+            label: "Settings",
+          })}
           {onOpenAdminDashboard
             ? renderIconButton("shield-checkmark-outline", onOpenAdminDashboard)
             : null}

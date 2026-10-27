@@ -11,6 +11,8 @@ import { WebSocketProvider, useWebSocket } from "./context/WebSocketContext";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import ClientsScreen from "./screens/ClientsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
+import PortfolioScreen from "./screens/PortfolioScreen";
+import PublicPortfolioScreen from "./screens/PublicPortfolioScreen";
 import AuthScreen from "./screens/AuthScreen";
 import { colors } from "./constants/theme";
 import { SERVER_CONFIG } from "./config/server";
@@ -35,10 +37,27 @@ const getPasswordResetLinkParams = () => {
   return { token, email };
 };
 
+// Public portfolio share link: /portfolio/<username>
+const getPublicPortfolioUsername = () => {
+  if (typeof window === "undefined" || !window.location) {
+    return null;
+  }
+  const match = window.location.pathname.match(/^\/portfolio\/([^/]+)\/?$/);
+  if (!match) {
+    return null;
+  }
+  try {
+    return decodeURIComponent(match[1]).trim() || null;
+  } catch (e) {
+    return null;
+  }
+};
+
 function AppContent({
   currentScreen,
   onNavigateToSettings,
-  onNavigateToClients
+  onNavigateToClients,
+  onNavigateToPortfolio
 }) {
   const appState = useRef(AppState.currentState);
 
@@ -117,7 +136,11 @@ function AppContent({
     <View style={styles.container}>
       <StatusBar style="light" />
       {currentScreen === "clients" ?
-      <ClientsScreen onNavigateToSettings={onNavigateToSettings} /> :
+      <ClientsScreen
+        onNavigateToSettings={onNavigateToSettings}
+        onNavigateToPortfolio={onNavigateToPortfolio} /> :
+      currentScreen === "portfolio" ?
+      <PortfolioScreen onBack={onNavigateToClients} /> :
 
       <SettingsScreen onBack={onNavigateToClients} />
       }
@@ -127,8 +150,9 @@ function AppContent({
 
 function AppWrapper() {
   const { isAuthenticated, isAuthReady } = useAuth();
-  const [currentScreen, setCurrentScreen] = useState("clients"); // 'clients' or 'settings'
+  const [currentScreen, setCurrentScreen] = useState("clients"); // 'clients', 'settings' or 'portfolio'
   const resetLinkParams = getPasswordResetLinkParams();
+  const publicPortfolioUsername = getPublicPortfolioUsername();
 
   // Load server settings on mount
   useEffect(() => {
@@ -144,6 +168,14 @@ function AppWrapper() {
   const handleNavigateToClients = () => {
     setCurrentScreen("clients");
   };
+
+  const handleNavigateToPortfolio = () => {
+    setCurrentScreen("portfolio");
+  };
+
+  if (publicPortfolioUsername) {
+    return <PublicPortfolioScreen username={publicPortfolioUsername} />;
+  }
 
   if (!isAuthReady) {
     return (
@@ -162,7 +194,8 @@ function AppWrapper() {
     <AppContent
       currentScreen={currentScreen}
       onNavigateToSettings={handleNavigateToSettings}
-      onNavigateToClients={handleNavigateToClients} />);
+      onNavigateToClients={handleNavigateToClients}
+      onNavigateToPortfolio={handleNavigateToPortfolio} />);
 
 
 }

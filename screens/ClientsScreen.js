@@ -46,7 +46,7 @@ import {
   layout,
 } from "../constants/theme";
 
-const ClientsScreen = ({ onNavigateToSettings }) => {
+const ClientsScreen = ({ onNavigateToSettings, onNavigateToPortfolio }) => {
   const { width: windowWidth } = useWindowDimensions();
   const isDesktopWeb = Platform.OS === "web" && windowWidth >= 768;
   const {
@@ -1446,6 +1446,7 @@ const ClientsScreen = ({ onNavigateToSettings }) => {
         isRefetching={isRefetching}
         showRefetch={!!displaySelectedClient}
         onNavigateToSettings={onNavigateToSettings}
+        onNavigateToPortfolio={onNavigateToPortfolio}
         onOpenAdminDashboard={
           role === "admin" ? handleOpenAdminDashboard : null
         }
