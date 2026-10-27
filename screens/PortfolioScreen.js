@@ -31,9 +31,16 @@ import { showAlert, showConfirm } from "../utils/notify";
 import {
   PORTFOLIO_UPDATED_EVENT,
   isPortfolioAutomationEnabled,
-  runPortfolioAutomation,
   setPortfolioAutomationEnabled,
 } from "../utils/portfolioAutomation";
+import {
+  DEFAULT_SCHEDULE,
+  PORTFOLIO_SCAN_EVENT,
+  isPortfolioScanRunning,
+  loadPortfolioSchedule,
+  parseScheduleTime,
+  savePortfolioSchedule,
+} from "../utils/portfolioSchedule";
 
 const isWeb = Platform.OS === "web";
 
@@ -139,7 +146,7 @@ const ClientPicker = ({ visible, clients, savedUsernames, onPick, onClose }) => 
 
 const PortfolioScreen = ({ onBack }) => {
   const { token, username } = useAuth();
-  const { clients = [], messages: conversationMessages = {} } = useWebSocket();
+  const { clients = [], runPortfolioScan } = useWebSocket();
   const { width } = useWindowDimensions();
   const [items, setItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -151,7 +158,10 @@ const PortfolioScreen = ({ onBack }) => {
   const [isPickerVisible, setIsPickerVisible] = useState(false);
   const [copied, setCopied] = useState(false);
   const [autoAddEnabled, setAutoAddEnabled] = useState(true);
-  const [isScanning, setIsScanning] = useState(false);
+  const [isScanning, setIsScanning] = useState(isPortfolioScanRunning());
+  const [scanProgress, setScanProgress] = useState(null);
+  const [schedule, setSchedule] = useState(DEFAULT_SCHEDULE);
+  const [scheduleTime, setScheduleTime] = useState(DEFAULT_SCHEDULE.time);
 
   const columns = width >= 1100 ? 3 : width >= 720 ? 2 : 1;
   const publicUrl = isWeb ? getPublicPortfolioUrl(username) : null;
@@ -190,30 +200,78 @@ const PortfolioScreen = ({ onBack }) => {
     await setPortfolioAutomationEnabled(enabled);
   };
 
+  useEffect(() => {
+    loadPortfolioSchedule().then((saved) => {
+      setSchedule(saved);
+      setScheduleTime(saved.time);
+    });
+  }, []);
+
+  // Progress for both manual and scheduled scans.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.addEventListener) return undefined;
+    const handleProgress = (event) => {
+      const detail = event?.detail || {};
+      setIsScanning(Boolean(detail.running));
+      setScanProgress(detail.running ? detail : null);
+      if (!detail.running) {
+        loadPortfolioSchedule().then(setSchedule);
+      }
+    };
+    window.addEventListener(PORTFOLIO_SCAN_EVENT, handleProgress);
+    return () => window.removeEventListener(PORTFOLIO_SCAN_EVENT, handleProgress);
+  }, []);
+
+  const updateSchedule = async (updates) => {
+    setSchedule(await savePortfolioSchedule(updates));
+  };
+
+  const handleScheduleTimeBlur = () => {
+    const parsed = parseScheduleTime(scheduleTime);
+    if (!parsed) {
+      setScheduleTime(schedule.time);
+      showAlert("Invalid time", "Use 24-hour HH:MM, for example 21:00.");
+      return;
+    }
+    const normalized = `${String(parsed.hours).padStart(2, "0")}:${String(parsed.minutes).padStart(2, "0")}`;
+    setScheduleTime(normalized);
+    // A new time may still be ahead today, so allow today's run again.
+    updateSchedule({ time: normalized, lastRunDate: "" });
+  };
+
   const handleScanNow = async () => {
     setIsScanning(true);
     try {
-      const added = await runPortfolioAutomation({
-        token,
-        clients,
-        messages: conversationMessages,
-        maxAiCalls: 5,
-      });
-      if (added.length > 0) {
-        await load();
+      const summary = await runPortfolioScan({ reason: "manual" });
+      if (summary.error) {
+        showAlert("Scan stopped", summary.error);
+      } else {
+        showAlert(
+          summary.added > 0 ? "Portfolio updated" : "No new completed orders",
+          `Checked ${summary.checked} conversation${summary.checked === 1 ? "" : "s"}` +
+            (summary.added > 0
+              ? ` and added ${summary.added} completed order${summary.added === 1 ? "" : "s"}. Review and publish them when ready.`
+              : "."),
+        );
       }
-      showAlert(
-        added.length > 0 ? "Portfolio updated" : "No new completed orders",
-        added.length > 0
-          ? `Added ${added.length} completed order${added.length === 1 ? "" : "s"}. Review and publish them when ready.`
-          : "Open a client's conversation to load it, then scan again.",
-      );
+      await load();
     } catch (error) {
       showAlert("Scan failed", error?.message || "Please try again.");
     } finally {
       setIsScanning(false);
+      setScanProgress(null);
     }
   };
+
+  const lastRun = schedule.lastRun;
+  const lastRunText = lastRun?.finishedAt
+    ? `Last scan ${new Date(lastRun.finishedAt).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })}: ${lastRun.checked} checked, ${lastRun.added} added${lastRun.error ? ` (${lastRun.error})` : ""}`
+    : "No scan yet.";
 
   const categories = useMemo(
     () => [...new Set(items.map((item) => item.category).filter(Boolean))].sort(),
@@ -396,7 +454,11 @@ const PortfolioScreen = ({ onBack }) => {
                 <Ionicons name="scan-outline" size={16} color={colors.text.primary} />
               )}
               <Text style={styles.secondaryButtonText}>
-                {isScanning ? "Scanning..." : "Scan now"}
+                {isScanning
+                  ? scanProgress?.total
+                    ? `Checking ${scanProgress.current}/${scanProgress.total}...`
+                    : "Scanning..."
+                  : "Scan now"}
               </Text>
             </TouchableOpacity>
             <Switch
@@ -407,6 +469,36 @@ const PortfolioScreen = ({ onBack }) => {
               activeThumbColor={colors.text.white}
               accessibilityLabel="Auto-add completed orders"
             />
+          </View>
+          <View style={styles.scheduleRow}>
+            <View style={styles.scheduleLabel}>
+              <Ionicons name="time-outline" size={16} color={colors.text.secondary} />
+              <Text style={styles.scheduleText}>Load conversations and check daily at</Text>
+              <TextInput
+                style={styles.timeInput}
+                value={scheduleTime}
+                onChangeText={setScheduleTime}
+                onBlur={handleScheduleTimeBlur}
+                onSubmitEditing={handleScheduleTimeBlur}
+                placeholder="21:00"
+                placeholderTextColor={colors.text.muted}
+                maxLength={5}
+                accessibilityLabel="Daily scan time"
+              />
+              <Switch
+                value={schedule.enabled}
+                onValueChange={(enabled) => updateSchedule({ enabled })}
+                trackColor={{ false: colors.border.dark, true: colors.accent.primary }}
+                thumbColor={colors.text.white}
+                activeThumbColor={colors.text.white}
+                accessibilityLabel="Daily scan"
+              />
+            </View>
+            <Text style={styles.scheduleHint}>
+              {isScanning && scanProgress?.client
+                ? `Loading ${scanProgress.client} (${scanProgress.current}/${scanProgress.total}), ${scanProgress.added || 0} added so far.`
+                : `${lastRunText} Checks the ${schedule.maxConversations} most recent conversations from the last ${schedule.lookbackDays} days. Keep the app open with the extension connected; if it's closed at that time, the scan runs when you next open it that day.`}
+            </Text>
           </View>
         </View>
 
@@ -693,6 +785,39 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+  },
+  scheduleRow: {
+    flexBasis: "100%",
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border.light,
+    gap: spacing.xs,
+  },
+  scheduleLabel: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  scheduleText: {
+    color: colors.text.primary,
+    fontSize: typography.sizes.base,
+  },
+  timeInput: {
+    width: 72,
+    textAlign: "center",
+    backgroundColor: colors.background.input,
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+    borderRadius: borderRadius.md,
+    paddingVertical: 6,
+    color: colors.text.primary,
+    fontSize: typography.sizes.base,
+  },
+  scheduleHint: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+    lineHeight: 18,
   },
   autoControls: {
     flexDirection: "row",

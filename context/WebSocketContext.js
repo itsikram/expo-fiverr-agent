@@ -5,6 +5,7 @@ import React, {
   useEffect,
   useRef,
   useCallback,
+  useMemo,
 } from "react";
 import { Platform, AppState } from "react-native";
 import { SERVER_CONFIG } from "../config/server";
@@ -25,6 +26,10 @@ import {
   startPortfolioWatcher,
   wakePortfolioWatcher,
 } from "../utils/portfolioAutomation";
+import {
+  startPortfolioScheduler,
+  runPortfolioScan as runPortfolioScanNow,
+} from "../utils/portfolioSchedule";
 import { normalizeAutoReplyModel } from "../config/ai";
 import {
   loadProfileReloadSettings,
@@ -3183,6 +3188,33 @@ export const WebSocketProvider = ({ children }) => {
     wakePortfolioWatcher();
   }, [messages]);
 
+  const extensionStatusRef = useRef(extensionConnectionStatus);
+  useEffect(() => {
+    extensionStatusRef.current = extensionConnectionStatus;
+  }, [extensionConnectionStatus]);
+
+  // Daily scan: load recent conversations and add completed orders.
+  const portfolioScanDeps = useMemo(
+    () => ({
+      getState: () => ({
+        token: authTokenRef.current,
+        clients: clientsRef.current,
+        messages: messagesRef.current,
+        isConnected: isConnectedRef.current,
+        extensionConnectionStatus: extensionStatusRef.current,
+      }),
+      requestMessages: (key, options) => requestMessagesRef.current(key, options),
+      triggerMessageExtraction: (key, options) =>
+        triggerMessageExtractionRef.current(key, options),
+    }),
+    [],
+  );
+  useEffect(() => startPortfolioScheduler(portfolioScanDeps), [portfolioScanDeps]);
+  const runPortfolioScan = useCallback(
+    (options = {}) => runPortfolioScanNow({ ...portfolioScanDeps, ...options }),
+    [portfolioScanDeps],
+  );
+
   useEffect(() => {
     const stop = startAutoReplyWatcher({
       getState: () => ({
@@ -3427,6 +3459,7 @@ export const WebSocketProvider = ({ children }) => {
     deleteClient,
     loadAssignments,
     clearCachedData,
+    runPortfolioScan,
   };
 
   return (

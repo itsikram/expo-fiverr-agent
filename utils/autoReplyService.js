@@ -266,7 +266,7 @@ const getClientIdentityKeys = (client, fallbackKey) => {
   return Array.from(new Set(keys));
 };
 
-const resolveConversationMessages = (messagesMap, client, fallbackKey) => {
+export const resolveConversationMessages = (messagesMap, client, fallbackKey) => {
   const keys = getClientIdentityKeys(client, fallbackKey);
   for (const key of keys) {
     const list = messagesMap?.[key];
