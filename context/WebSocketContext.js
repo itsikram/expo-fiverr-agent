@@ -779,9 +779,12 @@ export const WebSocketProvider = ({ children }) => {
   }, []);
 
   const getReconnectDelay = useCallback((attempt) => {
-    const base = SERVER_CONFIG.RECONNECT_INTERVAL || 3000;
+    const base = SERVER_CONFIG.RECONNECT_INTERVAL || 1000;
     const cappedAttempt = Math.min(Math.max(attempt, 1), 6);
-    return Math.min(base * Math.pow(1.6, cappedAttempt - 1), 30000);
+    return Math.min(
+      base * Math.pow(1.6, cappedAttempt - 1),
+      SERVER_CONFIG.MAX_RECONNECT_DELAY || 10000,
+    );
   }, []);
 
   const connectRef = useRef(null);
@@ -820,12 +823,12 @@ export const WebSocketProvider = ({ children }) => {
 
       setConnectionStatus("connecting");
 
-      // Quick health ping — don't block the UI for a long cold-start budget.
-      // If wake fails, still attempt the WebSocket (reconnect handles cold hosts).
-      await SERVER_CONFIG.wakeServer({
+      // Wake ping runs alongside the socket instead of in front of it; a cold
+      // host is covered by the reconnect loop.
+      SERVER_CONFIG.wakeServer({
         attempts: 2,
         timeoutMs: 4000,
-      });
+      }).catch(() => {});
 
       // Invalidate any stale socket callbacks from a previous attempt
       connectGenerationRef.current += 1;
@@ -952,7 +955,7 @@ export const WebSocketProvider = ({ children }) => {
           }
           if (
             Date.now() - lastPongAtRef.current >
-            (SERVER_CONFIG.PONG_TIMEOUT || 70000)
+            (SERVER_CONFIG.PONG_TIMEOUT || 45000)
           ) {
             try {
               ws.close();
@@ -1035,7 +1038,23 @@ export const WebSocketProvider = ({ children }) => {
   const ensureConnected = useCallback(() => {
     intentionalDisconnectRef.current = false;
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      lastPongAtRef.current = Date.now();
+      // After sleep or a network change the socket can look open but be dead.
+      // If it has been quiet past a ping cycle, drop it and reconnect now
+      // instead of waiting for the pong watchdog.
+      const quietMs = Date.now() - lastPongAtRef.current;
+      if (quietMs > (SERVER_CONFIG.PING_INTERVAL || 20000) * 1.5) {
+        const staleWs = wsRef.current;
+        connectGenerationRef.current += 1;
+        wsRef.current = null;
+        clearPingWatchdogs();
+        try {
+          staleWs.close();
+        } catch (_) {}
+        reconnectAttemptsRef.current = 0;
+        clearReconnectTimer();
+        connect();
+        return;
+      }
       try {
         wsRef.current.send(JSON.stringify({ type: "ping" }));
       } catch (_) {}
@@ -1044,7 +1063,7 @@ export const WebSocketProvider = ({ children }) => {
     reconnectAttemptsRef.current = 0;
     clearReconnectTimer();
     connect();
-  }, [clearReconnectTimer, connect]);
+  }, [clearPingWatchdogs, clearReconnectTimer, connect]);
 
   const sendMessage = useCallback((message) => {
     try {

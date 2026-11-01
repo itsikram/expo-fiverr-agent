@@ -14,8 +14,22 @@ import { Platform } from 'react-native';
 export const PRODUCTION_SERVER_URL =
 'https://47m9q3auwh.c38.airoapp.ai';
 
-const getBuildTimeServerUrl = () =>
-process.env.EXPO_PUBLIC_SERVER_URL || process.env.SERVER_URL || null;
+// Old servers that are no longer running; saved or built-in values pointing
+// at them are redirected to the current server.
+const LEGACY_SERVER_HOSTS = [
+'fiverr-agent-server.onrender.com',
+'fiverr-agent.onrender.com',
+'fiverr-agent-03vs.onrender.com'];
+
+const isLegacyServerUrl = (url) => {
+  const value = String(url || '').toLowerCase();
+  return LEGACY_SERVER_HOSTS.some((host) => value.includes(host));
+};
+
+const getBuildTimeServerUrl = () => {
+  const url = process.env.EXPO_PUBLIC_SERVER_URL || process.env.SERVER_URL || null;
+  return isLegacyServerUrl(url) ? null : url;
+};
 
 export const DEFAULT_SERVER_URL =
 getBuildTimeServerUrl() || PRODUCTION_SERVER_URL;
@@ -63,6 +77,7 @@ const normalizeHttpServerUrl = (url) => {
   if (!url) return null;
   const trimmed = url.trim().replace(/\/+$/, '');
   if (!trimmed) return null;
+  if (isLegacyServerUrl(trimmed)) return PRODUCTION_SERVER_URL;
 
   if (/^https?:\/\//i.test(trimmed)) {
     return trimmed;
@@ -126,13 +141,18 @@ const fetchRuntimeConfigJson = async () => {
 };
 
 const resolveWebServerUrl = async () => {
+  // Checked in order; runtime-config.json is only fetched when the inline
+  // runtime config doesn't settle it, so reconnects skip the round trip.
   const runtimeCandidates = [
-  getWindowRuntimeServerUrl(),
-  await fetchRuntimeConfigJson(),
-  getBuildTimeServerUrl()].
-  filter(Boolean);
+  getWindowRuntimeServerUrl,
+  fetchRuntimeConfigJson,
+  getBuildTimeServerUrl];
 
-  for (const candidate of runtimeCandidates) {
+  for (const getCandidate of runtimeCandidates) {
+    const candidate = await getCandidate();
+    if (!candidate) {
+      continue;
+    }
     const normalized = normalizeHttpServerUrl(candidate);
     if (!normalized) {
       continue;
@@ -296,8 +316,9 @@ export const SERVER_CONFIG = {
     return false;
   },
 
-  RECONNECT_INTERVAL: 3000,
+  RECONNECT_INTERVAL: 1000,
+  MAX_RECONNECT_DELAY: 10000,
   MAX_RECONNECT_ATTEMPTS: Infinity, // Never permanently give up; backoff still applies
-  PING_INTERVAL: 25000,
-  PONG_TIMEOUT: 70000
+  PING_INTERVAL: 20000,
+  PONG_TIMEOUT: 45000
 };
