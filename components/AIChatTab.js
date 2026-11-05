@@ -588,6 +588,8 @@ CRITICAL REQUIREMENTS:
 - Base suggestions on actual conversation content and context
 - If no seller messages exist, prioritize "first-message"
 - If client asks about pricing/budget/quote, prioritize "quotation"
+- If the client has not placed an order yet and the requirements are mostly clear, give "quotation" or "generate-offer" a high priority so the seller can move toward the order
+- If the client already placed an order, do not prioritize sales actions ("quotation", "generate-offer")
 - If client describes task/project, include "explain-task"
 - For software/dev work, include "cursor-prompt" and/or "chatgpt-prompt"
 - Always include at least one response generation option
