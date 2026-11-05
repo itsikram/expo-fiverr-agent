@@ -47,11 +47,15 @@ import {
 
 const normalizeAiResult = (result) => {
   if (typeof result === "string") {
-    return { text: result, images: [] };
+    return { text: result, images: [], audience: null };
   }
   return {
     text: result?.text || result?.content || result?.message || "",
     images: Array.isArray(result?.images) ? result.images : [],
+    // "seller" = a private answer for the seller, never sent to the client.
+    audience: result?.audience || null,
+    // Present when one response mixes a client draft and a note for the seller.
+    parts: Array.isArray(result?.parts) ? result.parts : [],
   };
 };
 
@@ -77,6 +81,28 @@ const extractTaskChecklist = (text) => {
       .trim(),
     tasks,
   };
+};
+
+/**
+ * Turns an AI result into chat messages: one per audience part, so a client
+ * draft and a private note for the seller never share a "Send to client".
+ */
+const buildAiResponseMessages = ({ text, images, audience, parts }) => {
+  const segments =
+    Array.isArray(parts) && parts.length > 1 ? parts : [{ text, audience }];
+  const time = new Date().toISOString();
+  return segments.map((segment, index) => {
+    const parsed = extractTaskChecklist(segment.text);
+    return {
+      text: parsed.text,
+      images: index === 0 ? images : [],
+      taskChecklist: parsed.tasks,
+      audience:
+        parsed.tasks.length > 0 ? "seller" : segment.audience || "client",
+      sender: "ai",
+      time,
+    };
+  });
 };
 
 const INPUT_LINE_HEIGHT = 20;
@@ -620,6 +646,8 @@ CRITICAL REQUIREMENTS:
 - Base suggestions on actual conversation content and context
 - If no seller messages exist, prioritize "first-message"
 - If client asks about pricing/budget/quote, prioritize "quotation"
+- If the client has not placed an order yet and the requirements are mostly clear, give "quotation" or "generate-offer" a high priority so the seller can move toward the order
+- If the client already placed an order, do not prioritize sales actions ("quotation", "generate-offer")
 - If client describes task/project, include "explain-task"
 - For software/dev work, include "cursor-prompt" and/or "chatgpt-prompt"
 - Always include at least one response generation option
@@ -896,6 +924,14 @@ Example (return exactly this format, no other text):
 
     // Context-aware suggestions based on message content
     if (
+      lastAIMessage?.audience === "seller" &&
+      !(lastAIMessage?.taskChecklist?.length > 0)
+    ) {
+      // A private answer to the seller: offer to turn it into a client reply.
+      prompts.push("Draft a reply to the client");
+      prompts.push("What should I do next?");
+      prompts.push("What should I charge?");
+    } else if (
       normalizedMessage.includes("additional") ||
       normalizedMessage.includes("extra charge") ||
       normalizedMessage.includes("custom offer") ||
@@ -1125,32 +1161,27 @@ Example (return exactly this format, no other text):
       text: m.text,
       time: m.time,
       images: m.images,
+      audience: m.audience,
     }));
 
     try {
       const allFiverrMessages = Array.isArray(messages) ? messages : [];
 
-      const { text: aiText, images: aiImages } = normalizeAiResult(
-        await getAiChatResponse({
-          userMessage: textToSend || displayText,
-          mode: isImageMode ? "image" : "reply",
-          client,
-          messages: allFiverrMessages,
-          chatHistory: historyForApi,
-          userProfile: userProfile,
-          attachments: attachmentsToSend,
-        }),
+      const aiResponses = buildAiResponseMessages(
+        normalizeAiResult(
+          await getAiChatResponse({
+            userMessage: textToSend || displayText,
+            mode: isImageMode ? "image" : "reply",
+            client,
+            messages: allFiverrMessages,
+            chatHistory: historyForApi,
+            userProfile: userProfile,
+            attachments: attachmentsToSend,
+          }),
+        ),
       );
-
-      const parsedAiResponse = extractTaskChecklist(aiText);
-      const aiResponse = {
-        text: parsedAiResponse.text,
-        images: aiImages,
-        taskChecklist: parsedAiResponse.tasks,
-        sender: "ai",
-        time: new Date().toISOString(),
-      };
-      const updated = [...nextWithUser, aiResponse];
+      const aiResponse = aiResponses[aiResponses.length - 1];
+      const updated = [...nextWithUser, ...aiResponses];
       if (requestSeq !== requestSeqRef.current || isClearingRef.current) {
         return;
       }
@@ -1172,6 +1203,8 @@ Example (return exactly this format, no other text):
         text:
           error.message ||
           "AI error: Unable to generate a response. Please check your Gemini API key and network.",
+        // Errors are for the seller only; never offer to send them.
+        audience: "seller",
         sender: "ai",
         time: new Date().toISOString(),
       };
@@ -1217,27 +1250,21 @@ Example (return exactly this format, no other text):
     try {
       const allFiverrMessages = Array.isArray(messages) ? messages : [];
 
-      const { text: aiText, images: aiImages } = normalizeAiResult(
-        await getAiChatResponse({
-          presetKind,
-          userMessage: trimmedSellerNote || undefined,
-          client,
-          messages: allFiverrMessages,
-          chatHistory: nextWithUser,
-          userProfile,
-        }),
+      const aiResponses = buildAiResponseMessages(
+        normalizeAiResult(
+          await getAiChatResponse({
+            presetKind,
+            userMessage: trimmedSellerNote || undefined,
+            client,
+            messages: allFiverrMessages,
+            chatHistory: nextWithUser,
+            userProfile,
+          }),
+        ),
       );
+      const aiResponse = aiResponses[aiResponses.length - 1];
 
-      const parsedAiResponse = extractTaskChecklist(aiText);
-      const aiResponse = {
-        text: parsedAiResponse.text,
-        images: aiImages,
-        taskChecklist: parsedAiResponse.tasks,
-        sender: "ai",
-        time: new Date().toISOString(),
-      };
-
-      const updated = [...nextWithUser, aiResponse];
+      const updated = [...nextWithUser, ...aiResponses];
       if (requestSeq !== requestSeqRef.current || isClearingRef.current) {
         return;
       }
@@ -1258,6 +1285,8 @@ Example (return exactly this format, no other text):
         text:
           error.message ||
           "AI error: Unable to generate a response. Please check your Gemini API key and network.",
+        // Errors are for the seller only; never offer to send them.
+        audience: "seller",
         sender: "ai",
         time: new Date().toISOString(),
       };
@@ -1782,12 +1811,13 @@ Example (return exactly this format, no other text):
         sender: m.sender === "ai" ? "assistant" : "user",
         text: m.text,
         time: m.time,
+        audience: m.audience,
       }));
 
       const allFiverrMessages = Array.isArray(messages) ? messages : [];
       const presetKind = OPTIONS_TYPE_TO_PRESET[selectedMessageType];
 
-      const { text: aiText } = normalizeAiResult(
+      const aiResult = normalizeAiResult(
         await getAiChatResponse({
           presetKind: presetKind || undefined,
           // A typed note is always sent, even when a preset is selected. The
@@ -1800,6 +1830,15 @@ Example (return exactly this format, no other text):
         }),
       );
 
+      // A mixed response puts a private note next to the draft; only the
+      // client part belongs in the message box.
+      const clientParts = aiResult.parts.filter(
+        (part) => part.audience === "client",
+      );
+      const aiText =
+        aiResult.parts.length > 1 && clientParts.length > 0
+          ? clientParts.map((part) => part.text).join("\n\n")
+          : aiResult.text;
       setOptionsModalInputText(aiText);
     } catch (error) {
       Alert.alert(
@@ -2017,6 +2056,18 @@ Example (return exactly this format, no other text):
                   {formatTime(message.time)}
                 </Text>
               )}
+              {message.audience === "seller" ? (
+                <View style={styles.privateNoteRow}>
+                  <Ionicons
+                    name="lock-closed-outline"
+                    size={12}
+                    color={colors.text.secondary}
+                  />
+                  <Text style={styles.privateNoteText}>
+                    Only for you, not a message for the client
+                  </Text>
+                </View>
+              ) : null}
               <View style={styles.aiMessageActions}>
                 {message.text || message.content ? (
                   <TouchableOpacity
@@ -2049,6 +2100,7 @@ Example (return exactly this format, no other text):
                   </TouchableOpacity>
                 ) : null}
                 {(message.text || message.content) &&
+                  message.audience !== "seller" &&
                   (sendingToClient &&
                   sendingMessageText === (message.text || message.content) ? (
                     <TouchableOpacity
@@ -2313,7 +2365,7 @@ Example (return exactly this format, no other text):
               placeholder={
                 pendingAttachments.length > 0
                   ? "Ask about the attachment, or describe an image…"
-                  : "Ask AI anything… or attach image/PDF"
+                  : "Ask about this client or Fiverr, or ask for a reply…"
               }
               placeholderTextColor={colors.text.muted}
               value={inputText}
@@ -3155,6 +3207,18 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     alignSelf: "flex-end",
     marginTop: spacing.xs / 2,
+  },
+  privateNoteRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 4,
+    marginTop: spacing.xs / 2,
+  },
+  privateNoteText: {
+    fontSize: typography.sizes.xs,
+    color: colors.text.secondary,
+    fontStyle: "italic",
   },
   aiMessageActions: {
     flexDirection: "row",

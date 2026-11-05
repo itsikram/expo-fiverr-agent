@@ -541,7 +541,7 @@ export const generateAutoReplyText = async ({
   if (!cleaned) {
     throw new Error("AI returned an empty auto-reply.");
   }
-  if (isSellerDirectedDraft(cleaned)) {
+  if (result?.audience === "seller" || isSellerDirectedDraft(cleaned)) {
     throw new Error(
       "AI produced a note for the seller instead of a buyer reply; not sending it."
     );
