@@ -913,6 +913,24 @@ export const WebSocketProvider = ({ children }) => {
                   session_id: sessionIdRef.current,
                 }),
               );
+            } else if (!webSubscription) {
+              // No permission yet: ask on the next tap and register right away,
+              // so pushes reach this browser even after the tab is closed.
+              notificationService.armWebPushOnUserGesture(
+                SERVER_CONFIG.serverUrl,
+                (subscription) => {
+                  const socket = wsRef.current;
+                  if (socket?.readyState === WebSocket.OPEN) {
+                    socket.send(
+                      JSON.stringify({
+                        type: "register_web_push",
+                        subscription,
+                        session_id: sessionIdRef.current,
+                      }),
+                    );
+                  }
+                },
+              );
             }
           } catch (webPushError) {}
         }

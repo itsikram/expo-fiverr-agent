@@ -176,6 +176,45 @@ class NotificationService {
   }
 
   /**
+   * Safari (including iOS home-screen apps) and Firefox only show the permission
+   * prompt from a user gesture, so a prompt on load never appears there and no
+   * push subscription is made. Ask on the next tap/key press instead, then
+   * subscribe and hand the subscription to onSubscribed.
+   */
+  armWebPushOnUserGesture(serverUrl, onSubscribed) {
+    if (
+      !this.isWebPlatform() ||
+      typeof window === 'undefined' ||
+      !('Notification' in window) ||
+      Notification.permission !== 'default' ||
+      this.webPushGestureHandler
+    ) {
+      return;
+    }
+
+    const events = ['pointerdown', 'keydown'];
+    const handler = () => {
+      events.forEach((name) => window.removeEventListener(name, handler, true));
+      this.webPushGestureHandler = null;
+      // Must be called inside the gesture for the prompt to show.
+      Promise.resolve(Notification.requestPermission())
+        .then(() =>
+          Notification.permission === 'granted'
+            ? this.registerWebPushSubscription(serverUrl)
+            : null
+        )
+        .then((subscription) => {
+          if (subscription && onSubscribed) {
+            onSubscribed(subscription);
+          }
+        })
+        .catch(() => {});
+    };
+    this.webPushGestureHandler = handler;
+    events.forEach((name) => window.addEventListener(name, handler, true));
+  }
+
+  /**
    * Request notification permissions
    * @returns {Promise<boolean>} True if permissions granted, false otherwise
    */
@@ -373,14 +412,38 @@ class NotificationService {
             }
           }
 
-          const browserNotification = new window.Notification(title, {
+          const notificationData = {
+            ...data,
+            type: data.type || NOTIFICATION_TYPES.NEW_MESSAGE
+          };
+          // Same tag as the service worker's push notification (public/sw.js),
+          // so a push and this in-app alert for one message collapse into one.
+          const tag = String(
+            data.conversationId || data.username || notificationData.type
+          );
+
+          // Android Chrome only allows notifications through the service
+          // worker; `new Notification()` throws there.
+          let registration = null;
+          try {
+            registration = await navigator.serviceWorker?.getRegistration?.();
+          } catch (_) {}
+          if (registration?.active && registration.showNotification) {
+            await registration.showNotification(title, {
+              body,
+              icon: '/apple-touch-icon.png',
+              badge: '/apple-touch-icon.png',
+              tag,
+              data: notificationData
+            });
+            return 'browser_notification';
+          }
+
+          new window.Notification(title, {
             body,
             icon: '/favicon.ico',
-            tag: data.type || NOTIFICATION_TYPES.NEW_MESSAGE,
-            data: {
-              ...data,
-              type: data.type || NOTIFICATION_TYPES.NEW_MESSAGE
-            }
+            tag,
+            data: notificationData
           });
 
           return 'browser_notification';
