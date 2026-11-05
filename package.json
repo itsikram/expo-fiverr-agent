@@ -8,7 +8,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "build:web": "expo export --platform web && node -e \"require('fs').copyFileSync('dist/index.html','dist/404.html')\"",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "node --experimental-detect-module --test tests/*.test.mjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",

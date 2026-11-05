@@ -20,7 +20,10 @@ import {
   clearAIChatHistory,
   loadSettings,
   clearCachedAppData,
+  loadGigCatalogs,
+  saveGigCatalogs,
 } from "../utils/storage";
+import { collectReferencedGigUrls } from "../utils/gigContext";
 import { startAutoReplyWatcher } from "../utils/autoReplyService";
 import {
   startPortfolioWatcher,
@@ -544,6 +547,13 @@ export const WebSocketProvider = ({ children }) => {
   const [sellerProfile, setSellerProfile] = useState(null); // { profileName, username, updated_at, online } - current from extension
   const [sellerProfiles, setSellerProfiles] = useState([]); // all unique profiles by username
   const [selectedSellerProfile, setSelectedSellerProfile] = useState(null); // profile user selected in app (for display/context)
+  // Seller gig catalogs from the extension (lowercase username -> catalog)
+  // and the progress of the latest "fetch gigs" request.
+  const [gigCatalogs, setGigCatalogs] = useState({});
+  const [gigFetchStatus, setGigFetchStatus] = useState(null); // { requestId, status, message, current, total, errors, at }
+  const gigCatalogsRef = useRef({});
+  const gigFetchRequestIdRef = useRef(null);
+  const gigFetchTimeoutRef = useRef(null);
   const [assignedClientIds, setAssignedClientIds] = useState([]);
   const [isAssignmentsLoaded, setIsAssignmentsLoaded] = useState(false);
   const assignedClientIdsRef = useRef([]);
@@ -1734,6 +1744,68 @@ export const WebSocketProvider = ({ children }) => {
     [clients, selectedConversationId],
   );
 
+  // Keep the newest extraction per seller account, in state and storage.
+  const applyGigCatalogs = useCallback((incoming) => {
+    const list = (Array.isArray(incoming) ? incoming : [incoming]).filter(
+      (catalog) => catalog?.sellerUsername && Array.isArray(catalog.gigs),
+    );
+    if (list.length === 0) return;
+    const next = { ...gigCatalogsRef.current };
+    list.forEach((catalog) => {
+      const key = String(catalog.sellerUsername).toLowerCase();
+      const existing = next[key];
+      if (
+        !existing ||
+        String(catalog.extractedAt || "") >= String(existing.extractedAt || "")
+      ) {
+        next[key] = catalog;
+      }
+    });
+    gigCatalogsRef.current = next;
+    setGigCatalogs(next);
+    saveGigCatalogs(next).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadGigCatalogs()
+      .then((stored) => applyGigCatalogs(Object.values(stored || {})))
+      .catch(() => {});
+  }, [applyGigCatalogs]);
+
+  // A gig fetch reports progress per page; give up if the extension goes quiet.
+  const armGigFetchTimeout = useCallback(() => {
+    if (gigFetchTimeoutRef.current) {
+      clearTimeout(gigFetchTimeoutRef.current);
+    }
+    const requestId = gigFetchRequestIdRef.current;
+    gigFetchTimeoutRef.current = setTimeout(() => {
+      gigFetchTimeoutRef.current = null;
+      setGigFetchStatus((current) =>
+        current &&
+        current.requestId === requestId &&
+        current.status !== "done" &&
+        current.status !== "error"
+          ? {
+              ...current,
+              status: "error",
+              message:
+                "No answer from the browser extension. Make sure a Fiverr tab is open and the extension is on, then try again.",
+              at: Date.now(),
+            }
+          : current,
+      );
+    }, 60000);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (gigFetchTimeoutRef.current) {
+        clearTimeout(gigFetchTimeoutRef.current);
+      }
+    },
+    [],
+  );
+
   const handleMessage = useCallback(
     (data) => {
       const { type } = data;
@@ -2905,6 +2977,59 @@ export const WebSocketProvider = ({ children }) => {
           break;
         }
 
+        case "gig_catalogs":
+          applyGigCatalogs(Array.isArray(data.data) ? data.data : []);
+          break;
+
+        case "gig_catalog": {
+          applyGigCatalogs(data.data);
+          if (
+            data.requestId &&
+            gigFetchRequestIdRef.current &&
+            data.requestId !== gigFetchRequestIdRef.current
+          ) {
+            break;
+          }
+          if (gigFetchTimeoutRef.current) {
+            clearTimeout(gigFetchTimeoutRef.current);
+            gigFetchTimeoutRef.current = null;
+          }
+          const gigCount = Array.isArray(data.data?.gigs)
+            ? data.data.gigs.length
+            : 0;
+          setGigFetchStatus({
+            requestId: data.requestId || null,
+            status: "done",
+            message:
+              `Saved ${gigCount} gig${gigCount === 1 ? "" : "s"} from Fiverr.` +
+              (data.data?.partial ? " Some details could not be read." : ""),
+            errors: Array.isArray(data.data?.errors) ? data.data.errors : [],
+            at: Date.now(),
+          });
+          break;
+        }
+
+        case "gig_fetch_status": {
+          const status = data.data || {};
+          if (
+            status.requestId &&
+            gigFetchRequestIdRef.current &&
+            status.requestId !== gigFetchRequestIdRef.current
+          ) {
+            break;
+          }
+          if (status.status === "error") {
+            if (gigFetchTimeoutRef.current) {
+              clearTimeout(gigFetchTimeoutRef.current);
+              gigFetchTimeoutRef.current = null;
+            }
+          } else {
+            armGigFetchTimeout();
+          }
+          setGigFetchStatus({ ...status, at: Date.now() });
+          break;
+        }
+
         case "ack":
           // Handle error acks for fetch_client_details
           if (data.status === "error" && data.message) {
@@ -3007,6 +3132,8 @@ export const WebSocketProvider = ({ children }) => {
       settleSend,
       updateOptimisticDelivery,
       armSendTimeout,
+      applyGigCatalogs,
+      armGigFetchTimeout,
     ],
   );
 
@@ -3437,6 +3564,41 @@ export const WebSocketProvider = ({ children }) => {
     }
   }, [isConnected, requestAllData]);
 
+  // Ask the extension to read the seller's gigs (packages, prices, extras).
+  // Gigs clients referenced in their messages are included in the read.
+  const fetchGigs = useCallback(
+    ({ sellerUsername } = {}) => {
+      const requestId = `gigs-${Date.now().toString(36)}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      gigFetchRequestIdRef.current = requestId;
+      const sent = sendMessage({
+        type: "fetch_gigs",
+        requestId,
+        sellerUsername: sellerUsername || undefined,
+        gigUrls: collectReferencedGigUrls(messagesRef.current),
+      });
+      if (!sent) {
+        setGigFetchStatus({
+          requestId,
+          status: "error",
+          message: "Not connected to the server. Reconnect and try again.",
+          at: Date.now(),
+        });
+        return false;
+      }
+      setGigFetchStatus({
+        requestId,
+        status: "requested",
+        message: "Asking the browser extension to read your gigs...",
+        at: Date.now(),
+      });
+      armGigFetchTimeout();
+      return true;
+    },
+    [armGigFetchTimeout, sendMessage],
+  );
+
   const value = {
     isConnected,
     connectionStatus,
@@ -3479,6 +3641,9 @@ export const WebSocketProvider = ({ children }) => {
     loadAssignments,
     clearCachedData,
     runPortfolioScan,
+    gigCatalogs,
+    gigFetchStatus,
+    fetchGigs,
   };
 
   return (

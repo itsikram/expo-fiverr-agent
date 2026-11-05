@@ -32,6 +32,7 @@ import { SERVER_CONFIG } from "../config/server";
 import { useWebSocket } from "../context/WebSocketContext";
 import { useAuth } from "../context/AuthContext";
 import AdminDashboard from "../components/AdminDashboard";
+import GigCatalogSection from "../components/GigCatalogSection";
 import { showAlert, showConfirm } from "../utils/notify";
 
 const SettingsScreen = ({ onBack }) => {
@@ -364,6 +365,9 @@ const SettingsScreen = ({ onBack }) => {
               />
             </View>
           </View>
+
+          {/* Gigs + pricing rules the AI uses */}
+          <GigCatalogSection />
 
           {role === "admin" ? (
             <View style={styles.section}>

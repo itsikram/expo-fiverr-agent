@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   View,
   Text,
@@ -38,6 +38,12 @@ import {
 } from "../utils/storage";
 import { useWebSocket } from "../context/WebSocketContext";
 import { getClientConversationId } from "../utils/clientIdentity";
+import {
+  findConversationGigRefs,
+  findGigForRef,
+  formatMoney,
+  listCatalogGigs,
+} from "../utils/gigContext";
 
 const normalizeAiResult = (result) => {
   if (typeof result === "string") {
@@ -115,6 +121,7 @@ const PRESET_LABELS = {
   cost: "Generate pricing message",
   quote: "Generate quotation",
   quotation: "Generate quotation",
+  priceCalc: "Calculate price from my gigs",
   offer: "Generate custom offer description",
   clarify: "Ask clarifying questions",
   task: "Explain the task",
@@ -231,6 +238,14 @@ const QUICK_ACTIONS = [
     styleKey: "generateOfferButton",
   },
   {
+    id: "priceCalc",
+    presetKind: "priceCalc",
+    label: "Price Breakdown",
+    subtitle: "Private price calculation from your gig packages",
+    icon: "calculator",
+    styleKey: "quotationButton",
+  },
+  {
     id: "offer",
     presetKind: "offer",
     label: "Custom Offer",
@@ -257,8 +272,25 @@ const AIChatTab = ({
   externalInputText = '',
   onExternalInputTextApplied,
 }) => {
-  const { cancelOptimisticMessage, sellerProfile, selectedSellerProfile } =
-    useWebSocket();
+  const {
+    cancelOptimisticMessage,
+    sellerProfile,
+    selectedSellerProfile,
+    gigCatalogs,
+  } = useWebSocket();
+
+  // The gig this client contacted the seller from ("This message relates to").
+  const relatedGigInfo = useMemo(() => {
+    const refs = findConversationGigRefs(messages);
+    const ref = refs[refs.length - 1];
+    if (!ref) return null;
+    const gig = findGigForRef(listCatalogGigs(gigCatalogs), ref);
+    const prices = (gig?.packages || [])
+      .filter((pkg) => pkg.price !== null && pkg.price !== undefined)
+      .map((pkg) => `${pkg.tier || pkg.name} ${formatMoney(pkg.price, gig.currency)}`)
+      .join(" / ");
+    return { title: gig?.title || ref.title || ref.slug, prices };
+  }, [gigCatalogs, messages]);
   const { messageHorizontalPadding } = useResponsiveLayout();
   const [chatMessages, setChatMessages] = useState([]);
   const [inputText, setInputText] = useState("");
@@ -2191,6 +2223,25 @@ Example (return exactly this format, no other text):
         </TouchableOpacity>
       </View>
 
+      {relatedGigInfo ? (
+        <View
+          style={[
+            styles.relatedGigBar,
+            { paddingHorizontal: messageHorizontalPadding },
+          ]}
+        >
+          <Ionicons
+            name="pricetag-outline"
+            size={14}
+            color={colors.accent.secondary}
+          />
+          <Text style={styles.relatedGigText} numberOfLines={1}>
+            From gig: {relatedGigInfo.title}
+            {relatedGigInfo.prices ? ` · ${relatedGigInfo.prices}` : ""}
+          </Text>
+        </View>
+      ) : null}
+
       <ScrollView
         ref={scrollViewRef}
         style={styles.messagesScroll}
@@ -2866,6 +2917,20 @@ const styles = StyleSheet.create({
   },
   generateOfferButton: {
     backgroundColor: colors.accent.success,
+  },
+  relatedGigBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+    backgroundColor: colors.accent.primaryMuted,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border.light,
+  },
+  relatedGigText: {
+    flex: 1,
+    fontSize: typography.sizes.sm,
+    color: colors.text.primary,
   },
   generateFirstMessageButton: {
     backgroundColor: colors.accent.warning || "#f59e0b",

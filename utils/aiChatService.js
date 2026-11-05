@@ -1,5 +1,10 @@
 import { AI_CONFIG, RETIRED_GEMINI_MODELS } from "../config/ai";
-import { loadSettings } from "./storage";
+import { loadGigCatalogs, loadGigPricing, loadSettings } from "./storage";
+import {
+  EMPTY_GIG_CONTEXT,
+  buildGigPricingContext,
+  describeMessageCards,
+} from "./gigContext";
 import {
   prepareAttachmentsForApi,
   shouldGenerateAiImage,
@@ -145,6 +150,30 @@ const CUSTOM_OFFER_SYSTEM_PROMPT = [
   "Follow Fiverr offer standards: clear scope, realistic inclusions, no off-platform payment/contact, no guarantee language.",
 ].join("\n");
 
+const PRICE_BREAKDOWN_SYSTEM_PROMPT = [
+  "You are the seller's private pricing assistant for a Fiverr conversation.",
+  "This is NOT a buyer-facing message. Write a short, clear price calculation for the seller.",
+  "Base every number on the SELLER GIGS & PRICING context (packages, extras, extra-fast delivery, seller pricing rules, custom offers already sent) and on the buyer's requirements in the thread.",
+  "Never invent prices, extras, or rates. If something the buyer needs has no listed price, say what the seller must decide.",
+  "Output plain text (no markdown) with exactly these labeled lines:",
+  "Gig: <the gig the buyer contacted you from, or the best-matching gig>",
+  "Buyer needs: <short list of concrete requirements>",
+  "Recommended: <package> — <price> — <delivery days> — <revisions>",
+  "Add-ons: <extras with prices, or None>",
+  "Total: <total price> | Delivery: <total days>",
+  "Why: <one or two sentences mapping the requirements to the package>",
+  "Confirm first: <missing details that could change the price, or None>",
+  "Suggested reply: <one short paste-ready message to the buyer stating the price>",
+].join("\n");
+
+// Presets that get the seller's gig + pricing context. Engineering prompts
+// and communication analysis don't need prices.
+const GIG_CONTEXT_EXCLUDED_PRESETS = new Set([
+  "analysis",
+  "cursorPrompt",
+  "chatgptPrompt",
+]);
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const isFromSeller = (msg) => {
@@ -223,7 +252,11 @@ const buildInboxTranscript = (messages = []) => {
   const sorted = sortMessagesChronologically(messages);
   let items = sorted
     .map((msg) => {
-      const text = getMessageText(msg);
+      // Gig ("This message relates to") and custom offer cards are not part
+      // of the message text, so add them as notes the model can see.
+      const text = [getMessageText(msg), describeMessageCards(msg)]
+        .filter(Boolean)
+        .join("\n");
       if (!text) return null;
       const role = isFromSeller(msg) ? "seller" : "buyer";
       const timeStr = msg.time || msg.timestamp || msg.date || "";
@@ -513,6 +546,9 @@ const buildPresetUserText = (kind, transcript, opts = {}) => {
       String(opts.sellerChatHistory).trim()) ||
     "";
   const preOrder = isPreOrderStage(opts && opts.stageInfo);
+  const gigPricingAvailable = Boolean(opts && opts.gigPricingAvailable);
+  const gigPriceInstruction =
+    "\n\nPrice it from my gig packages, extras, and pricing rules in SELLER GIGS & PRICING (follow HOW TO PRICE FROM THE GIGS). Name the package or custom offer, what it includes, the delivery time, and the total.";
 
   const continuityBlock =
     "\n\nLATEST SELLER MESSAGE (your previous message — stay consistent with this):\n" +
@@ -562,7 +598,9 @@ const buildPresetUserText = (kind, transcript, opts = {}) => {
         (preOrder
           ? "3. Keeps the conversation moving toward an order: show you get their goal, add one useful point about how you'd handle it, and end with one easy next step (the most useful scoping question, or an offer to send a custom offer once the scope is clear). Never end on a vague 'I'll get back to you'\n"
           : "3. Supports the existing order: acknowledge their message, answer what the thread already covers, and keep them confident\n") +
-        "4. Commits to nothing new: no prices, discounts, deadlines, completed work, or availability that are not already in the thread. If they ask for a price that isn't in the thread, ask for the scope details you need and say you'll send a custom offer once those are clear\n" +
+        (gigPricingAvailable
+          ? "4. Commits to nothing new: no custom prices, discounts, deadlines, completed work, or availability that are not already in the thread. If the buyer asks about price, you may state the related gig's listed package prices exactly as listed, but never a custom price or discount; if their request doesn't fit a listed package, ask for the scope details you need and say you'll send a custom offer once those are clear\n"
+          : "4. Commits to nothing new: no prices, discounts, deadlines, completed work, or availability that are not already in the thread. If they ask for a price that isn't in the thread, ask for the scope details you need and say you'll send a custom offer once those are clear\n") +
         "5. Stays short (1–2 short paragraphs), on-platform, in the buyer's language\n" +
         "Output only the paste-ready message addressed to the buyer."
       );
@@ -645,7 +683,9 @@ const buildPresetUserText = (kind, transcript, opts = {}) => {
     case "cost": {
       const costContext = costPrice
         ? `\n\nSeller's specific price to mention: ${costPrice}`
-        : analyzeTaskAndEstimateCost(transcript);
+        : gigPricingAvailable
+          ? gigPriceInstruction
+          : analyzeTaskAndEstimateCost(transcript);
       return (
         "Conversation:\n" +
         transcript +
@@ -659,7 +699,9 @@ const buildPresetUserText = (kind, transcript, opts = {}) => {
     case "quotation": {
       const quotePrice = costPrice
         ? `\n\nSeller's specific price to use in the quotation: ${costPrice}`
-        : analyzeTaskAndEstimateCost(transcript);
+        : gigPricingAvailable
+          ? gigPriceInstruction
+          : analyzeTaskAndEstimateCost(transcript);
       return (
         "Conversation with this buyer:\n" +
         transcript +
@@ -681,7 +723,22 @@ const buildPresetUserText = (kind, transcript, opts = {}) => {
         "Inbox conversation with this buyer:\n" +
         transcript +
         sellerChatBlock +
-        "\n\nProduce the Fiverr custom offer description text only. If the thread is empty or uninformative, write a short professional scope summary and invite the buyer to confirm details—do not invent a specific project."
+        "\n\nProduce the Fiverr custom offer description text only. If the thread is empty or uninformative, write a short professional scope summary and invite the buyer to confirm details—do not invent a specific project." +
+        (gigPricingAvailable
+          ? " Base the scope and inclusions on the package of my related gig that fits the buyer's requirements (see SELLER GIGS & PRICING)."
+          : "")
+      );
+
+    case "priceCalc":
+      return (
+        "Fiverr conversation (buyer + seller, oldest → newest):\n" +
+        transcript +
+        continuityBlock +
+        sellerChatBlock +
+        (gigPricingAvailable
+          ? "\n\nCalculate the price for this buyer's request from my gig packages, extras, and pricing rules. Use the labeled format exactly."
+          : analyzeTaskAndEstimateCost(transcript) +
+            "\n\nNo gig packages are loaded for this conversation. Say so on the first line (they can be fetched in Settings > My Gigs & Pricing), then use the labeled format and mark every number as a rough estimate.")
       );
 
     case "cursorPrompt":
@@ -767,6 +824,12 @@ const buildSystemMessageForPreset = (
   if (kind === "offer" || kind === "customOffer") {
     return CUSTOM_OFFER_SYSTEM_PROMPT + `\nSeller display name: ${sellerName}`;
   }
+  if (kind === "priceCalc") {
+    const clientBlock = buildClientContextBlock(client, userProfile);
+    return clientBlock
+      ? `${PRICE_BREAKDOWN_SYSTEM_PROMPT}\n\n${clientBlock}`
+      : PRICE_BREAKDOWN_SYSTEM_PROMPT;
+  }
   if (kind === "quote" || kind === "quotation") {
     let sys = QUOTATION_SYSTEM_PROMPT;
     if (sellerStyle) sys += `\n\n${sellerStyle}`;
@@ -850,6 +913,7 @@ const SELLER_ASSISTANT_PROMPT = [
   "WHEN ANSWERING THE SELLER (B):",
   "- Reply in the language the seller wrote in (Bangla, English, or a mix), not the client's language.",
   "- Ground everything about this client in the thread and client context: what they want, their business or product, requirements, budget, tone, red flags, and what's still unclear. If something isn't in the thread, say you don't know instead of guessing.",
+  "- For questions about the seller's own gigs, packages, extras, prices, or which package fits this client, use SELLER GIGS & PRICING when it is provided, and never invent a price, extra, or delivery time that isn't listed there or in the thread.",
   "- For Fiverr questions (custom offers, milestones, extensions, revisions, cancellations, fees, seller levels, reviews, Terms of Service), give practical, accurate guidance. Fiverr's rules and fees change, so when you aren't sure of a current detail, say so and suggest checking Fiverr's Help Center. Never invent links.",
   "- Keep it short and useful: the direct answer first, then a few short points only if they help. Plain text; light hyphen bullets are fine.",
   "- When it helps, end with a concrete offer, e.g. 'Want me to draft a reply that asks about the deadline?'.",
@@ -1044,6 +1108,7 @@ const normalizeAiDashes = (text) => {
 
 // Presets whose output is for the seller (or another AI), not the buyer.
 const NON_BUYER_PRESET_KINDS = new Set([
+  "priceCalc",
   "task",
   "analysis",
   "cursorPrompt",
@@ -1838,6 +1903,7 @@ const resolveTemperature = (presetKind) => {
     return 0.45;
   }
   if (presetKind === "quote" || presetKind === "quotation") return 0.55;
+  if (presetKind === "priceCalc") return 0.35;
   if (presetKind) return 0.6;
   return 0.65;
 };
@@ -2003,6 +2069,24 @@ export const generateAiImage = async ({
  * Generate an AI reply the same way as fiverr-assistant inbox AI.
  * @returns {Promise<{text: string, images: array}>}
  */
+/** Seller gig + pricing context for this conversation (empty on failure). */
+const loadGigPricingContext = async (messages, userProfile) => {
+  try {
+    const [catalogs, pricing] = await Promise.all([
+      loadGigCatalogs(),
+      loadGigPricing(),
+    ]);
+    return buildGigPricingContext({
+      catalogs,
+      messages: sortMessagesChronologically(messages),
+      pricing,
+      sellerUsername: userProfile?.username || "",
+    });
+  } catch (error) {
+    return EMPTY_GIG_CONTEXT;
+  }
+};
+
 export const getAiChatResponse = async ({
   userMessage,
   presetKind,
@@ -2061,6 +2145,12 @@ export const getAiChatResponse = async ({
     userProfile?.name ||
     "the seller";
   const transcript = buildInboxTranscript(allMessages);
+  const useGigContext =
+    mode !== "meta" &&
+    !(presetKind && GIG_CONTEXT_EXCLUDED_PRESETS.has(presetKind));
+  const gigContext = useGigContext
+    ? await loadGigPricingContext(allMessages, userProfile)
+    : EMPTY_GIG_CONTEXT;
   const { latestBuyer, latestSeller } = getLatestRoleMessages(allMessages);
   const sellerChatHistory = buildPrivateSellerChatTranscript(chatHistory || []);
   const sellerStyle = extractSellerWritingStyle(allMessages);
@@ -2092,12 +2182,20 @@ export const getAiChatResponse = async ({
       userProfile || {},
       stageInfo,
     );
+    if (gigContext.block) {
+      systemMessage += `\n\n${gigContext.block}`;
+      if (presetKind === "first" && gigContext.relatedGig) {
+        systemMessage +=
+          "\n\nFIRST MESSAGE AND THE GIG: The buyer contacted you from the RELATED GIG above. Connect your reply to that service naturally, but still do not include prices or packages in this first message.";
+      }
+    }
     const presetUserText = buildPresetUserText(presetKind, transcript, {
       costPrice,
       latestBuyer,
       latestSeller,
       sellerChatHistory,
       stageInfo,
+      gigPricingAvailable: gigContext.hasPricingData,
     });
     const trimmedSellerNote = String(userMessage || "").trim();
     const userText = trimmedSellerNote
@@ -2122,6 +2220,7 @@ export const getAiChatResponse = async ({
     }
     const clientBlock = buildClientContextBlock(client, userProfile || {});
     if (clientBlock) systemMessage += `\n\n${clientBlock}`;
+    if (gigContext.block) systemMessage += `\n\n${gigContext.block}`;
 
     systemMessage +=
       "\n\nCURRENT FIVERR THREAD (buyer + seller, oldest → newest):\n" +
@@ -2258,8 +2357,25 @@ export const getAiChatResponse = async ({
     audience = "seller";
   }
 
+  // Price Breakdown is private, but its last line is a paste-ready reply for
+  // the buyer: give that line its own sendable message.
+  const priceCalcReply =
+    presetKind === "priceCalc" && tagged.parts.length === 0 && cleaned
+      ? cleaned.match(/^[ \t]*Suggested reply:[ \t]*(\S[\s\S]*)$/im)
+      : null;
+  const rawParts = priceCalcReply
+    ? [
+        {
+          audience: "seller",
+          text: cleaned.slice(0, priceCalcReply.index).trim(),
+        },
+        { audience: "client", text: priceCalcReply[1].trim() },
+      ]
+    : tagged.parts;
+
   const allowedSources = [
     transcript,
+    gigContext.block,
     userProfile?.aboutMe,
     userProfile?.experience,
     userProfile?.portfolio,
@@ -2278,7 +2394,7 @@ export const getAiChatResponse = async ({
     return out;
   };
   cleaned = finishText(cleaned, audience);
-  let parts = tagged.parts
+  let parts = rawParts
     .map((part) => ({
       audience:
         /\[\/?TASK_CHECKLIST\]/i.test(part.text) ? "seller" : part.audience,
@@ -2286,7 +2402,7 @@ export const getAiChatResponse = async ({
     }))
     .map((part) => ({ ...part, text: finishText(part.text, part.audience) }))
     .filter((part) => part.text);
-  if (tagged.parts.length > 1 && parts.length < 2) {
+  if (rawParts.length > 1 && parts.length < 2) {
     // Cleaning emptied one side (e.g. a bare "Here's a draft:" lead), so the
     // part that is left decides who the response is for.
     if (parts.length === 1) {

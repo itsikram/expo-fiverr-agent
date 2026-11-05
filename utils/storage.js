@@ -65,8 +65,12 @@ const STORAGE_KEYS = {
   LAST_SYNC: '@fiverr_expo:last_sync',
   AI_CHAT_HISTORY: '@fiverr_expo:ai_chat_history',
   SETTINGS: '@fiverr_expo:settings',
-  AUTH: '@fiverr_expo:auth'
+  AUTH: '@fiverr_expo:auth',
+  GIG_CATALOGS: '@fiverr_expo:gig_catalogs',
+  GIG_PRICING: '@fiverr_expo:gig_pricing'
 };
+
+const DEFAULT_GIG_PRICING = { generalRules: '', gigNotes: {}, disabledGigs: {} };
 
 /**
  * Save clients to storage
@@ -365,7 +369,9 @@ export const clearAllStorage = async () => {
     STORAGE_KEYS.LAST_SYNC,
     STORAGE_KEYS.AI_CHAT_HISTORY,
     STORAGE_KEYS.SETTINGS,
-    STORAGE_KEYS.AUTH]
+    STORAGE_KEYS.AUTH,
+    STORAGE_KEYS.GIG_CATALOGS,
+    STORAGE_KEYS.GIG_PRICING]
     );
 
     return true;
@@ -400,4 +406,56 @@ export const clearCachedAppData = async () => {
   }
 
   return true;
+};
+
+/**
+ * Seller gig catalogs from the extension, keyed by lowercase seller username.
+ */
+export const saveGigCatalogs = async (catalogs) => {
+  try {
+    await storageSetItem(STORAGE_KEYS.GIG_CATALOGS, JSON.stringify(catalogs || {}));
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
+export const loadGigCatalogs = async () => {
+  try {
+    const jsonValue = await storageGetItem(STORAGE_KEYS.GIG_CATALOGS);
+    const parsed = jsonValue ? JSON.parse(jsonValue) : null;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    return {};
+  }
+};
+
+/**
+ * Seller pricing rules for the AI: general rules, per-gig notes, and gigs
+ * left out of AI replies (keyed by gig slug).
+ */
+export const saveGigPricing = async (pricing) => {
+  try {
+    const value = { ...DEFAULT_GIG_PRICING, ...(pricing || {}) };
+    await storageSetItem(STORAGE_KEYS.GIG_PRICING, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
+export const loadGigPricing = async () => {
+  try {
+    const jsonValue = await storageGetItem(STORAGE_KEYS.GIG_PRICING);
+    const parsed = jsonValue ? JSON.parse(jsonValue) : null;
+    return parsed && typeof parsed === 'object' ?
+    {
+      generalRules: String(parsed.generalRules || ''),
+      gigNotes: parsed.gigNotes && typeof parsed.gigNotes === 'object' ? parsed.gigNotes : {},
+      disabledGigs: parsed.disabledGigs && typeof parsed.disabledGigs === 'object' ? parsed.disabledGigs : {}
+    } :
+    { ...DEFAULT_GIG_PRICING };
+  } catch (error) {
+    return { ...DEFAULT_GIG_PRICING };
+  }
 };
