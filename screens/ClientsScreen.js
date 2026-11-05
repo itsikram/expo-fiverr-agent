@@ -48,7 +48,9 @@ import {
 
 const ClientsScreen = ({ onNavigateToSettings, onNavigateToPortfolio }) => {
   const { width: windowWidth } = useWindowDimensions();
-  const isDesktopWeb = Platform.OS === "web" && windowWidth >= 768;
+  // Wide web screens get a persistent client sidebar; narrower screens use the
+  // compact top strip plus the slide-out menu.
+  const isDesktopWeb = Platform.OS === "web" && windowWidth >= 1024;
   const {
     isConnected,
     connectionStatus,
@@ -82,6 +84,7 @@ const ClientsScreen = ({ onNavigateToSettings, onNavigateToPortfolio }) => {
 
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isDesktopSidebarVisible, setIsDesktopSidebarVisible] = useState(true);
   const [isTranslationModalVisible, setIsTranslationModalVisible] =
     useState(false);
   const [translationInitialText, setTranslationInitialText] = useState("");
@@ -1148,8 +1151,19 @@ const ClientsScreen = ({ onNavigateToSettings, onNavigateToPortfolio }) => {
   };
 
   const handleMenuToggle = () => {
+    if (isDesktopWeb) {
+      setIsDesktopSidebarVisible((prev) => !prev);
+      return;
+    }
     setIsSidebarOpen((prev) => !prev);
   };
+
+  // Moving to a wide layout replaces the slide-out menu with the sidebar.
+  useEffect(() => {
+    if (isDesktopWeb) {
+      setIsSidebarOpen(false);
+    }
+  }, [isDesktopWeb]);
 
   const handleOpenAdminDashboard = () => {
     if (role === "admin") {
@@ -1260,7 +1274,7 @@ const ClientsScreen = ({ onNavigateToSettings, onNavigateToPortfolio }) => {
       onSelectClient={handleSelectClient}
       onDeleteClient={handleDeleteClient}
       isLoading={isLoadingClients}
-      showProfileSelector={isAdminRole}
+      showProfileSelector={false}
       horizontal
     />
   );
@@ -1282,24 +1296,58 @@ const ClientsScreen = ({ onNavigateToSettings, onNavigateToPortfolio }) => {
     <View
       style={[styles.container, Platform.OS === "web" && styles.containerWeb]}
     >
-      {showClientNavigation ? topClientList : null}
-      <OffcanvasSidebar
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        onOpen={() => setIsSidebarOpen(true)}
-        enableSwipeOpen
-        onRefetch={handleRefetch}
-        isRefetching={isRefetching}
-      >
-        {sidebarClientList}
-      </OffcanvasSidebar>
-      <View style={styles.content}>
+      {showClientNavigation && !isDesktopWeb ? topClientList : null}
+      {!isDesktopWeb ? (
+        <OffcanvasSidebar
+          isOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
+          onOpen={() => setIsSidebarOpen(true)}
+          enableSwipeOpen
+          onRefetch={handleRefetch}
+          isRefetching={isRefetching}
+        >
+          {sidebarClientList}
+        </OffcanvasSidebar>
+      ) : null}
+      <View style={[styles.content, isDesktopWeb && styles.contentDesktop]}>
+        {isDesktopWeb && isDesktopSidebarVisible ? (
+          <View style={styles.desktopSidebar}>
+            {sidebarClientList}
+            <View style={styles.desktopSidebarFooter}>
+              <TouchableOpacity
+                style={[
+                  styles.desktopRefetchButton,
+                  isRefetching && styles.desktopRefetchButtonDisabled,
+                ]}
+                onPress={handleRefetch}
+                activeOpacity={0.7}
+                disabled={isRefetching}
+              >
+                {isRefetching ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.text.secondary}
+                  />
+                ) : (
+                  <Ionicons
+                    name="refresh"
+                    size={18}
+                    color={colors.text.secondary}
+                  />
+                )}
+                <Text style={styles.desktopRefetchButtonText}>
+                  {isRefetching ? "Fetching..." : "Refetch clients"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
 
         {/* Main Content */}
         <View
           style={[
             styles.details,
-            isDesktopWeb && isSidebarOpen && styles.detailsWithSidebar,
+            isDesktopWeb && styles.detailsWithSidebar,
           ]}
         >
           {displaySelectedClient ? (
@@ -1330,7 +1378,8 @@ const ClientsScreen = ({ onNavigateToSettings, onNavigateToPortfolio }) => {
               style={styles.emptyState}
             >
               <View style={styles.emptyContent}>
-                {showClientNavigation ? (
+                {showClientNavigation &&
+                !(isDesktopWeb && isDesktopSidebarVisible) ? (
                   <ProfileSelector
                     sellerProfiles={sellerProfiles}
                     selectedSellerProfile={selectedSellerProfile}
@@ -1441,7 +1490,16 @@ const ClientsScreen = ({ onNavigateToSettings, onNavigateToPortfolio }) => {
       {/* Bottom Bar with Menu Toggle */}
       <BottomBar
         onMenuToggle={handleMenuToggle}
-        isMenuOpen={isSidebarOpen}
+        isMenuOpen={isDesktopWeb ? false : isSidebarOpen}
+        menuToggleLabel={
+          isDesktopWeb
+            ? isDesktopSidebarVisible
+              ? "Hide client list"
+              : "Show client list"
+            : isSidebarOpen
+              ? "Close client list"
+              : "Open client list"
+        }
         onRefetch={handleReloadCurrentClientMessages}
         isRefetching={isRefetching}
         showRefetch={!!displaySelectedClient}
@@ -1624,10 +1682,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   desktopSidebar: {
-    width: layout.sidebarWidth,
+    width: layout.sidebarWidth + 20,
     flexShrink: 0,
-    flex: 1,
-    maxHeight: "100%",
+    flexGrow: 0,
+    alignSelf: "stretch",
+    minHeight: 0,
     backgroundColor: colors.background.sidebar,
     borderRightWidth: 1,
     borderRightColor: colors.border.light,
@@ -1663,6 +1722,7 @@ const styles = StyleSheet.create({
   },
   detailsWithSidebar: {
     flex: 1,
+    width: "auto",
     minWidth: 0,
   },
   retryButton: {

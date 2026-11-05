@@ -1,12 +1,15 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
+  Pressable,
+  Modal,
   StyleSheet,
   SafeAreaView,
   ActivityIndicator,
   Platform,
+  useWindowDimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -16,8 +19,16 @@ import {
   typography,
 } from "../constants/theme";
 
+// Below this width the secondary actions move into a "More" menu so the bar
+// never overflows on small phones.
+const COMPACT_BAR_WIDTH = 520;
+
 const StatusIndicators = ({ serverColor, extensionColor }) => (
-  <View style={styles.statusIndicators}>
+  <View
+    style={styles.statusIndicators}
+    accessible
+    accessibilityLabel="S: server connection, E: browser extension connection"
+  >
     <View style={styles.statusRow}>
       <Text style={styles.statusLabel}>S</Text>
       <View style={[styles.statusColor, { backgroundColor: serverColor }]} />
@@ -45,20 +56,61 @@ const BottomBar = ({
   showMessageInputToggle = false,
   onLogout,
   onOpenAdminDashboard,
+  menuToggleLabel,
 }) => {
+  const { width } = useWindowDimensions();
+  const isCompact = width < COMPACT_BAR_WIDTH;
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
+
+  const overflowItems = [
+    onNavigateToPortfolio && {
+      key: "portfolio",
+      icon: "briefcase-outline",
+      label: "Portfolio",
+      onPress: onNavigateToPortfolio,
+    },
+    onNavigateToSettings && {
+      key: "settings",
+      icon: "settings-outline",
+      label: "Settings",
+      onPress: onNavigateToSettings,
+    },
+    onOpenAdminDashboard && {
+      key: "admin",
+      icon: "shield-checkmark-outline",
+      label: "Admin dashboard",
+      onPress: onOpenAdminDashboard,
+    },
+    onLogout && {
+      key: "logout",
+      icon: "log-out-outline",
+      label: "Log out",
+      onPress: onLogout,
+      variant: "danger",
+    },
+  ].filter(Boolean);
+
+  const handleOverflowPress = (item) => {
+    setIsMoreOpen(false);
+    item.onPress?.();
+  };
+
   const renderIconButton = (icon, onPress, options = {}) => {
     const { disabled, loading, variant = "default", label } = options;
     return (
-      <TouchableOpacity
-        style={[
+      <Pressable
+        style={({ pressed, hovered }) => [
           styles.iconButton,
           variant === "danger" && styles.iconButtonDanger,
           variant === "accent" && styles.iconButtonAccent,
+          hovered && !disabled && styles.iconButtonHover,
+          hovered && variant === "accent" && styles.iconButtonAccentHover,
+          pressed && styles.iconButtonPressed,
           disabled && styles.iconButtonDisabled,
         ]}
         onPress={onPress}
-        activeOpacity={0.7}
         disabled={disabled || loading}
+        accessibilityRole="button"
         accessibilityLabel={label}
       >
         {loading ? (
@@ -76,7 +128,7 @@ const BottomBar = ({
             }
           />
         )}
-      </TouchableOpacity>
+      </Pressable>
     );
   };
 
@@ -90,7 +142,7 @@ const BottomBar = ({
           {renderIconButton(
             isMenuOpen ? "close" : "menu",
             onMenuToggle,
-            { variant: "accent" },
+            { variant: "accent", label: menuToggleLabel || "Client list" },
           )}
         </View>
 
@@ -100,35 +152,61 @@ const BottomBar = ({
             extensionColor={extensionStatusColor}
           />
           {onOpenVoiceModal
-            ? renderIconButton("mic-outline", onOpenVoiceModal)
+            ? renderIconButton("mic-outline", onOpenVoiceModal, {
+                label: "Voice input",
+              })
             : null}
           {showRefetch
             ? renderIconButton("refresh-outline", onRefetch, {
                 loading: isRefetching,
                 disabled: isRefetching,
+                label: "Reload messages",
               })
             : null}
-          {onNavigateToPortfolio
-            ? renderIconButton("briefcase-outline", onNavigateToPortfolio, {
-                label: "Portfolio",
-              })
-            : null}
-          {renderIconButton("settings-outline", onNavigateToSettings, {
-            label: "Settings",
-          })}
-          {onOpenAdminDashboard
-            ? renderIconButton("shield-checkmark-outline", onOpenAdminDashboard)
-            : null}
-          {onLogout
-            ? renderIconButton("log-out-outline", onLogout, {
-                variant: "danger",
-              })
-            : null}
+          {isCompact ? (
+            overflowItems.length > 0 ? (
+              renderIconButton(
+                "ellipsis-horizontal",
+                () => setIsMoreOpen(true),
+                { label: "More" },
+              )
+            ) : null
+          ) : (
+            <>
+              {onNavigateToPortfolio
+                ? renderIconButton("briefcase-outline", onNavigateToPortfolio, {
+                    label: "Portfolio",
+                  })
+                : null}
+              {renderIconButton("settings-outline", onNavigateToSettings, {
+                label: "Settings",
+              })}
+              {onOpenAdminDashboard
+                ? renderIconButton(
+                    "shield-checkmark-outline",
+                    onOpenAdminDashboard,
+                    { label: "Admin dashboard" },
+                  )
+                : null}
+              {onLogout
+                ? renderIconButton("log-out-outline", onLogout, {
+                    variant: "danger",
+                    label: "Log out",
+                  })
+                : null}
+            </>
+          )}
           {showMessageInputToggle && onToggleMessageInput ? (
             <TouchableOpacity
               style={styles.collapseButton}
               onPress={onToggleMessageInput}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isMessageInputMinimized
+                  ? "Show message input"
+                  : "Hide message input"
+              }
             >
               <Ionicons
                 name={isMessageInputMinimized ? "chevron-up" : "chevron-down"}
@@ -139,6 +217,51 @@ const BottomBar = ({
           ) : null}
         </View>
       </View>
+
+      <Modal
+        visible={isCompact && isMoreOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsMoreOpen(false)}
+      >
+        <Pressable
+          style={styles.moreBackdrop}
+          onPress={() => setIsMoreOpen(false)}
+          accessibilityLabel="Close menu"
+        >
+          <Pressable style={styles.moreSheet} onPress={() => {}}>
+            {overflowItems.map((item) => (
+              <Pressable
+                key={item.key}
+                style={({ pressed, hovered }) => [
+                  styles.moreItem,
+                  (pressed || hovered) && styles.moreItemActive,
+                ]}
+                onPress={() => handleOverflowPress(item)}
+                accessibilityRole="menuitem"
+              >
+                <Ionicons
+                  name={item.icon}
+                  size={20}
+                  color={
+                    item.variant === "danger"
+                      ? colors.accent.error
+                      : colors.text.secondary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.moreItemText,
+                    item.variant === "danger" && styles.moreItemTextDanger,
+                  ]}
+                >
+                  {item.label}
+                </Text>
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -152,13 +275,14 @@ const styles = StyleSheet.create({
   },
   safeAreaWeb: {
     marginBottom: 0,
+    paddingBottom: "env(safe-area-inset-bottom)",
   },
   container: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: spacing.sm + 2,
-    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     backgroundColor: colors.background.secondary,
     borderTopWidth: 1,
     borderTopColor: colors.border.light,
@@ -213,8 +337,65 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent.errorMuted,
     borderColor: "rgba(239,68,68,0.2)",
   },
+  iconButtonHover: {
+    backgroundColor: colors.surface.active,
+    borderColor: colors.border.medium,
+  },
+  iconButtonAccentHover: {
+    backgroundColor: colors.button.primaryHover,
+    borderColor: colors.button.primaryHover,
+  },
+  iconButtonPressed: {
+    opacity: 0.75,
+    transform: [{ scale: 0.96 }],
+  },
   iconButtonDisabled: {
     opacity: 0.5,
+  },
+  moreBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    justifyContent: "flex-end",
+    alignItems: "flex-end",
+    padding: spacing.md,
+    paddingBottom: 72,
+  },
+  moreSheet: {
+    minWidth: 220,
+    maxWidth: "100%",
+    backgroundColor: colors.background.elevated,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border.medium,
+    paddingVertical: spacing.xs,
+    ...(Platform.OS === "web"
+      ? { boxShadow: "0 12px 32px rgba(0, 0, 0, 0.45)" }
+      : {
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.35,
+          shadowRadius: 16,
+          elevation: 12,
+        }),
+  },
+  moreItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    ...(Platform.OS === "web" ? { cursor: "pointer" } : {}),
+  },
+  moreItemActive: {
+    backgroundColor: colors.surface.active,
+  },
+  moreItemText: {
+    color: colors.text.primary,
+    fontSize: typography.sizes.base,
+    fontWeight: typography.weights.medium,
+  },
+  moreItemTextDanger: {
+    color: colors.accent.error,
   },
   collapseButton: {
     width: 32,

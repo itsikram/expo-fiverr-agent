@@ -4,7 +4,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 import { formatTime } from '../utils/formatTime';
 
-const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
+// On devices with a mouse, row actions appear on hover to keep the list calm.
+const canHover =
+  Platform.OS === 'web' &&
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+const ClientListItem = ({ client, isSelected, onPress, onDelete, compact = false }) => {
+  const [isHovered, setIsHovered] = React.useState(false);
   const getInitials = (name) => {
     if (!name) return '?';
     const parts = name.trim().split(' ');
@@ -32,19 +40,41 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
 
   return (
     <Pressable
-      style={({ pressed }) => [
+      style={({ pressed, hovered }) => [
         styles.container,
+        compact && styles.containerCompact,
+        hovered && !isSelected && styles.hovered,
         isSelected && styles.selected,
+        compact && isSelected && styles.selectedCompact,
         pressed && styles.pressed,
       ]}
       onPress={onPress}
+      onHoverIn={canHover ? () => setIsHovered(true) : undefined}
+      onHoverOut={canHover ? () => setIsHovered(false) : undefined}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!isSelected }}
+      accessibilityLabel={client.name || client.username || 'Client'}
     >
-      <View style={[styles.indicator, isSelected && styles.indicatorActive]} />
-      <View style={styles.content} pointerEvents="box-none">
-        <View style={styles.avatarWrap}>
-          <View style={[styles.avatar, isSelected && styles.avatarSelected]}>
+      {!compact ? (
+        <View style={[styles.indicator, isSelected && styles.indicatorActive]} />
+      ) : null}
+      <View
+        style={[styles.content, compact && styles.contentCompact]}
+        pointerEvents="box-none"
+      >
+        <View style={[styles.avatarWrap, compact && styles.avatarWrapCompact]}>
+          <View
+            style={[
+              styles.avatar,
+              compact && styles.avatarCompact,
+              isSelected && styles.avatarSelected,
+            ]}
+          >
             {clientAvatarUrl ? (
-              <Image source={{ uri: clientAvatarUrl }} style={styles.avatarImage} />
+              <Image
+                source={{ uri: clientAvatarUrl }}
+                style={[styles.avatarImage, compact && styles.avatarCompact]}
+              />
             ) : (
               <Text
                 style={[styles.avatarText, isSelected && styles.avatarTextSelected]}
@@ -99,8 +129,13 @@ const ClientListItem = ({ client, isSelected, onPress, onDelete }) => {
           )}
           {onDelete && (
             <Pressable
-              style={styles.deleteButton}
+              style={[
+                styles.deleteButton,
+                canHover && !isHovered && !isSelected && styles.deleteButtonHidden,
+              ]}
               onPress={handleDeletePress}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${client.name || client.username || 'client'}`}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Ionicons
@@ -122,10 +157,25 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
     overflow: 'hidden',
     flexDirection: 'row',
-    ...(Platform.OS === 'web' ? { cursor: 'pointer' } : {}),
+    ...(Platform.OS === 'web'
+      ? { cursor: 'pointer', transitionProperty: 'background-color, border-color', transitionDuration: '150ms' }
+      : {}),
+  },
+  containerCompact: {
+    marginVertical: 0,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border.light,
+    backgroundColor: colors.background.card,
+  },
+  hovered: {
+    backgroundColor: colors.surface.hover,
   },
   selected: {
     backgroundColor: colors.accent.primaryMuted,
+  },
+  selectedCompact: {
+    borderColor: 'rgba(99, 102, 241, 0.45)',
   },
   pressed: {
     backgroundColor: colors.surface.hover,
@@ -145,10 +195,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     gap: spacing.md,
   },
+  contentCompact: {
+    paddingVertical: spacing.xs + 2,
+    paddingHorizontal: spacing.sm,
+    gap: spacing.sm,
+  },
   avatarWrap: {
     width: 40,
     height: 40,
     position: 'relative',
+  },
+  avatarWrapCompact: {
+    width: 32,
+    height: 32,
+  },
+  avatarCompact: {
+    width: 32,
+    height: 32,
   },
   avatar: {
     width: 40,
@@ -238,6 +301,9 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     padding: 2,
+  },
+  deleteButtonHidden: {
+    opacity: 0,
   },
 });
 

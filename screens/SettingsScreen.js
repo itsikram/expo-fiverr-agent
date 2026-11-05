@@ -801,7 +801,7 @@ const styles = StyleSheet.create({
   },
   gradient: {
     flex: 1,
-    paddingTop: 40,
+    paddingTop: Platform.OS === "web" ? 0 : 40,
   },
   header: {
     flexDirection: "row",
@@ -819,7 +819,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerTitle: {
-    fontSize: typography.sizes["2xl"],
+    fontSize: Platform.OS === "web" ? typography.sizes.xl : typography.sizes["2xl"],
     fontWeight: typography.weights.bold,
     color: colors.text.primary,
   },
@@ -832,6 +832,9 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: spacing.lg,
     paddingBottom: spacing.xxxl,
+    width: "100%",
+    maxWidth: 760,
+    alignSelf: "center",
   },
   section: {
     marginBottom: spacing.lg,

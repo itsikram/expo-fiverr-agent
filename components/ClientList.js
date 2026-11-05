@@ -30,8 +30,12 @@ const ClientList = ({
   onSelectProfile,
   isLoading = false,
   showProfileSelector = true,
+  showSearch,
   horizontal = false,
 }) => {
+  // The horizontal strip is a compact quick-switcher; search lives in the
+  // full list (sidebar / menu) unless explicitly requested.
+  const isSearchVisible = showSearch ?? !horizontal;
   const [searchText, setSearchText] = useState("");
 
   const normalizedClients = useMemo(() => {
@@ -83,7 +87,8 @@ const ClientList = ({
         client={item}
         isSelected={isSelected}
         onPress={() => onSelectClient(rowId)}
-        onDelete={() => onDeleteClient(rowId)}
+        onDelete={horizontal ? undefined : () => onDeleteClient(rowId)}
+        compact={horizontal}
       />
     );
 
@@ -107,34 +112,41 @@ const ClientList = ({
         </View>
       ) : null}
 
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <Ionicons
-            name="search"
-            size={16}
-            color={colors.text.muted}
-            style={styles.searchIcon}
-          />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search clients..."
-            placeholderTextColor={colors.text.muted}
-            value={searchText}
-            onChangeText={setSearchText}
-          />
-          {searchText.length > 0 && (
-            <TouchableOpacity
-              onPress={() => setSearchText("")}
-              style={styles.clearButton}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="close-circle" size={16} color={colors.text.muted} />
-            </TouchableOpacity>
-          )}
+      {isSearchVisible ? (
+        <View style={styles.searchContainer}>
+          <View style={styles.searchInputContainer}>
+            <Ionicons
+              name="search"
+              size={16}
+              color={colors.text.muted}
+              style={styles.searchIcon}
+            />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search clients..."
+              placeholderTextColor={colors.text.muted}
+              value={searchText}
+              onChangeText={setSearchText}
+            />
+            {searchText.length > 0 && (
+              <TouchableOpacity
+                onPress={() => setSearchText("")}
+                style={styles.clearButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="close-circle" size={16} color={colors.text.muted} />
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
-      </View>
+      ) : null}
 
-      {isLoading && filteredClients.length === 0 ? (
+      {isLoading && filteredClients.length === 0 && horizontal ? (
+        <View style={styles.horizontalLoading}>
+          <ActivityIndicator size="small" color={colors.accent.primary} />
+          <Text style={styles.loadingText}>Loading clients...</Text>
+        </View>
+      ) : isLoading && filteredClients.length === 0 ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.accent.primary} />
           <Text style={styles.loadingTitle}>Loading clients</Text>
@@ -158,10 +170,22 @@ const ClientList = ({
           showsVerticalScrollIndicator={!horizontal}
           ListHeaderComponent={
             isLoading ? (
-              <View style={styles.loadingBanner}>
-                <ActivityIndicator size="small" color={colors.accent.primary} />
-                <Text style={styles.loadingText}>Fetching clients...</Text>
-              </View>
+              horizontal ? (
+                <View style={styles.horizontalLoadingChip}>
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.accent.primary}
+                  />
+                </View>
+              ) : (
+                <View style={styles.loadingBanner}>
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.accent.primary}
+                  />
+                  <Text style={styles.loadingText}>Fetching clients...</Text>
+                </View>
+              )
             ) : null
           }
           ListEmptyComponent={
@@ -185,17 +209,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background.sidebar,
   },
   horizontalContainer: {
-    flex: 0,
+    flexGrow: 0,
+    flexShrink: 0,
+    flexBasis: "auto",
     width: "100%",
-    padding: spacing.sm,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.sm,
+    padding: 0,
+    paddingTop: spacing.xs + 2,
+    paddingBottom: spacing.xs + 2,
     borderBottomWidth: 1,
     borderBottomColor: colors.border.light,
   },
   horizontalItem: {
-    width: 210,
-    marginRight: spacing.sm,
+    width: 188,
+  },
+  horizontalLoading: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    height: 48,
+    paddingHorizontal: spacing.lg,
+  },
+  horizontalLoadingChip: {
+    width: 40,
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
   },
   profileSection: {
     marginBottom: spacing.md,
@@ -235,9 +273,10 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
   },
   horizontalListContent: {
-    gap: spacing.sm,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.xs,
+    gap: spacing.xs + 2,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: 0,
+    alignItems: "center",
   },
   listContentEmpty: {
     flexGrow: 1,

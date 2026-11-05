@@ -1057,6 +1057,9 @@ const styles = StyleSheet.create({
   },
   infoContent: {
     padding: spacing.lg,
+    width: "100%",
+    maxWidth: 960,
+    alignSelf: "center",
   },
   infoCard: {
     backgroundColor: colors.background.card,

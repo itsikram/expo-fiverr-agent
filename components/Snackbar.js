@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Animated, TouchableOpacity, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '../constants/theme';
 
@@ -105,12 +105,15 @@ const Snackbar = ({ visible, message, onDismiss, duration = 3000, type = 'info' 
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 60,
+    top: Platform.OS === 'web' ? spacing.md : 60,
     left: spacing.md,
     right: spacing.md,
     zIndex: 9999,
+    alignItems: 'center',
   },
   snackbar: {
+    width: '100%',
+    maxWidth: 560,
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.md,
