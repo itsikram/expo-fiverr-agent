@@ -338,15 +338,21 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
   },
   passwordRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    position: 'relative',
+    justifyContent: 'center',
   },
   passwordInput: {
-    flex: 1,
-    marginRight: spacing.sm,
+    paddingRight: 48,
   },
+  // Eye toggle sits inside the input on the right
   eyeButton: {
-    padding: spacing.sm,
+    position: 'absolute',
+    right: spacing.xs,
+    top: 0,
+    bottom: 0,
+    width: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   submitButton: {
     marginTop: spacing.lg,

@@ -5,6 +5,9 @@ import {
   StyleSheet,
   AppState,
   ActivityIndicator,
+  Animated,
+  Easing,
+  Platform,
   Text } from
 "react-native";
 import { WebSocketProvider, useWebSocket } from "./context/WebSocketContext";
@@ -59,6 +62,47 @@ const getPublicPortfolioUsername = () => {
     return null;
   }
 };
+
+// Short fade/slide when switching between top-level screens.
+function ScreenTransition({ screenKey, children }) {
+  const progress = useRef(new Animated.Value(1)).current;
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    progress.setValue(0);
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: Platform.OS !== "web"
+    }).start();
+  }, [screenKey, progress]);
+
+  return (
+    <Animated.View
+      style={[
+      styles.screen,
+      {
+        opacity: progress,
+        transform: [
+        {
+          translateY: progress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [8, 0]
+          })
+        }]
+
+      }]
+      }>
+      
+      {children}
+    </Animated.View>);
+
+}
 
 function AppContent({
   currentScreen,
@@ -142,15 +186,17 @@ function AppContent({
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      {currentScreen === "clients" ?
-      <ClientsScreen
-        onNavigateToSettings={onNavigateToSettings}
-        onNavigateToPortfolio={onNavigateToPortfolio} /> :
-      currentScreen === "portfolio" ?
-      <PortfolioScreen onBack={onNavigateToClients} /> :
+      <ScreenTransition screenKey={currentScreen}>
+        {currentScreen === "clients" ?
+        <ClientsScreen
+          onNavigateToSettings={onNavigateToSettings}
+          onNavigateToPortfolio={onNavigateToPortfolio} /> :
+        currentScreen === "portfolio" ?
+        <PortfolioScreen onBack={onNavigateToClients} /> :
 
-      <SettingsScreen onBack={onNavigateToClients} />
-      }
+        <SettingsScreen onBack={onNavigateToClients} />
+        }
+      </ScreenTransition>
     </View>);
 
 }
@@ -221,8 +267,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background.primary,
-    maxHeight: "100vh",
-    maxWidth: "100vw"
+    width: "100%",
+    overflow: "hidden"
+  },
+  screen: {
+    flex: 1
   },
   loadingContainer: {
     flex: 1,

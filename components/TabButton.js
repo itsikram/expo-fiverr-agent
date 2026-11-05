@@ -1,14 +1,20 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, View } from 'react-native';
+import { Pressable, Text, StyleSheet, View, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography } from '../constants/theme';
 
 const TabButton = ({ label, isActive, onPress, iconName }) => {
   return (
-    <TouchableOpacity
-      style={[styles.tab, isActive && styles.tabActive]}
+    <Pressable
+      style={({ pressed, hovered }) => [
+        styles.tab,
+        hovered && !isActive && styles.tabHover,
+        isActive && styles.tabActive,
+        pressed && styles.tabPressed,
+      ]}
       onPress={onPress}
-      activeOpacity={0.7}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: !!isActive }}
     >
       {iconName ? (
         <Ionicons
@@ -21,7 +27,7 @@ const TabButton = ({ label, isActive, onPress, iconName }) => {
       <Text style={[styles.label, isActive && styles.labelActive]}>
         {label}
       </Text>
-    </TouchableOpacity>
+    </Pressable>
   );
 };
 
@@ -35,6 +41,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     borderRadius: borderRadius.sm,
     gap: spacing.xs,
+    ...(Platform.OS === 'web'
+      ? { cursor: 'pointer', transitionProperty: 'background-color', transitionDuration: '150ms' }
+      : {}),
+  },
+  tabHover: {
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+  },
+  tabPressed: {
+    opacity: 0.8,
   },
   tabActive: {
     backgroundColor: colors.accent.primaryMuted,
